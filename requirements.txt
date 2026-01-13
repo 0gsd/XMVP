@@ -1,0 +1,14 @@
+# Local Training
+mlx
+mlx-lm
+huggingface_hub
+
+# Cloud Generation
+google-cloud-aiplatform
+google-generativeai
+google-genai
+
+# Utilities
+tqdm
+requests
+pillow

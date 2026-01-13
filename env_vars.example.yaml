@@ -1,0 +1,4 @@
+# API Keys for the Modular Vision Pipeline
+# Rename this file to 'env_vars.yaml' and fill in your keys.
+
+ACTION_KEYS_LIST: "AIzaTheFirstKey,AIzaTheSecondKey,AIzaTheBackupKey"

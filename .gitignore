@@ -1,0 +1,28 @@
+# Secrets
+env_vars.yaml
+secrets.yaml
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv
+venv/
+
+# Outputs & Artifacts
+*.mp4
+*.png
+*.jpg
+*.wav
+bible.json
+story.json
+portions.json
+manifest.json
+manifest_updated.json
+finalcuts/
+componentparts/
+z_test-outputs/
+
+# OS
+.DS_Store

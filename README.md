@@ -1,4 +1,6 @@
-# XMVP API v0.5 Documentation
+# XMVP
+> A reasoning, bureaucratic chain of simulated Hollywood specialists; your own creative technostructure. Free and open for use by all (you'll need your own API keys) in the interest of creating more coherent, universally interesting, and entertainment-forward audiovisual outputs via the APIs you trust (and that trust you; bring your own keys), in the formats you want, from nothing or anything.
+
 **Status**: Beta
 **Date**: Jan 13, 2026
 

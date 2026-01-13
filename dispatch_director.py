@@ -20,6 +20,8 @@ except ImportError:
     logging.warning("⚠️ action.py not found. Video generation will be disabled.")
     action = None
 
+import sanitizer
+
 # --- MPS Memory Optimization (Crucial for M-Series) ---
 os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
 
@@ -83,22 +85,50 @@ class FluxDirector:
 
 class VideoDirectorAdapter:
     """
-    Wraps action.VeoDirector for the MVP Dispatcher.
+    Wraps action.VeoDirector for the MVP Dispatcher with Key Rotation.
     """
-    def __init__(self, api_key: str, model_name: str):
+    def __init__(self, keys: list, model_name: str):
         if not action:
             raise ImportError("action module missing")
-        self.director = action.VeoDirector(api_key=api_key, model_name=model_name)
-        self.keys = [api_key] # Store for download usage if needed
-        self.current_key = api_key
+        self.keys = keys
+        self.model_name = model_name
+        import random
+        # Start at a random position to balance load across restarts
+        self.current_key_index = random.randint(0, len(self.keys) - 1)
         
     def generate(self, prompt: str, output_path: str, context_uri: str = None) -> bool:
         logging.info(f"   🎥 Rolling Video: {prompt[:50]}...")
         
+        # 0. Pre-emptive Sanitization (Proactive Safety)
+        try:
+            # We use a random key for the sanitizer to spread load, though it's L-tier (Flash)
+            sanitizer_key = self.keys[self.current_key_index] # Use current rotation key
+            cleaner = sanitizer.Sanitizer(api_key=sanitizer_key)
+            
+            # This will replace "Nicolas Cage" with "impersonator", etc.
+            prompt = cleaner.soften_prompt(prompt)
+            
+        except Exception as e:
+            logging.warning(f"   ⚠️ Sanitizer unreachable: {e}. Proceeding with raw prompt.")
+
         max_retries = 3
         backoff = 10 
         
         for attempt in range(max_retries):
+            # ROTATION: Round-Robin
+            # We always move to the next key, ensuring we don't retry a failed key immediately
+            # and we cycle through the whole ring over time.
+            current_key = self.keys[self.current_key_index]
+            key_id = self.current_key_index + 1
+            logging.info(f"   🔑 [Key {key_id}/{len(self.keys)}] Action!")
+            
+            # Increment for next time (or next retry)
+            self.current_key_index = (self.current_key_index + 1) % len(self.keys)
+            
+            # Instantiate Director on the fly (lightweight) to swap key            
+            # Instantiate Director on the fly (lightweight) to swap key
+            director = action.VeoDirector(api_key=current_key, model_name=self.model_name)
+            
             # 1. Generate
             try:
                 if attempt > 0:
@@ -106,7 +136,7 @@ class VideoDirectorAdapter:
                     time.sleep(backoff)
                     backoff *= 2 # Exponential backoff
                 
-                op_name = self.director.generate_segment(
+                op_name = director.generate_segment(
                     prompt=prompt, 
                     context_uri=context_uri, 
                     context_type="video" if context_uri else "image" # Heuristic
@@ -117,7 +147,7 @@ class VideoDirectorAdapter:
                     continue
                     
                 # 2. Wait
-                result = self.director.wait_for_lro(op_name)
+                result = director.wait_for_lro(op_name)
                 if not result:
                     logging.warning("   ⚠️ LRO failed or timed out. Retrying...")
                     continue
@@ -162,7 +192,7 @@ class VideoDirectorAdapter:
                     continue # Retry on weird response?
                     
                 # 4. Download
-                action.download_video(video_uri, output_path, self.current_key)
+                action.download_video(video_uri, output_path, current_key)
                 return True
                 
             except Exception as e:
@@ -209,10 +239,8 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
         except:
              model_name = "veo-2.0-generate-001"
              
-        # Simple R-R or Random Logic? MVP = Random choice for now.
-        import random
-        api_key = random.choice(keys)
-        director = VideoDirectorAdapter(api_key, model_name=model_name)
+        # Pass ALL keys to the adapter for rotation
+        director = VideoDirectorAdapter(keys, model_name=model_name)
     else:
         logging.error(f"Unknown mode: {mode}")
         return False
@@ -225,15 +253,23 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
     # Sort segments by ID to ensure sequence (critical for video context)
     sorted_segs = sorted(manifest.segs, key=lambda s: s.id)
     
+    consecutive_failures = 0
+    MAX_CONSECUTIVE_FAILURES = 3
+    
     for seg in sorted_segs:
         # Check if done
         if seg.id in manifest.files:
             if os.path.exists(manifest.files[seg.id]):
                 logging.info(f"   ⏩ Skipping Seg {seg.id} (Already wrapped).")
                 last_file = manifest.files[seg.id]
+                consecutive_failures = 0 # Reset on success/skip
                 continue
                 
         print(f"\n🎥 SEGMENT {seg.id}: {seg.prompt[:60]}...")
+        
+        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+            logging.error(f"❌ Aborting Dispatch: {consecutive_failures} consecutive failures (Likely API Quota or Outage).")
+            return False
         
         base_name = f"seg_{seg.id:03d}_{int(time.time())}"
         ext = ".mp4" if mode == "video" else ".png"
@@ -286,9 +322,17 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
         if success:
             manifest.files[seg.id] = str(filepath)
             last_file = filepath
+            consecutive_failures = 0 # Reset
             logging.info(f"   ✅ Wrapped: {filepath}")
+            
+            # Rate Limit Protection (Veo 3 Preview is very strict)
+            if mode == "video":
+                cooldown = 30
+                logging.info(f"   ⏳ Cooling down for {cooldown}s to protect Key/Project Quota...")
+                time.sleep(cooldown)
         else:
             logging.warning(f"   ❌ Failed to shoot Seg {seg.id}")
+            consecutive_failures += 1
             # If video fails, maybe we should stop? 
             # Or continue without context? 
             # For MVP, we continue.

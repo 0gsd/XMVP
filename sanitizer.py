@@ -20,7 +20,8 @@ class Sanitizer:
 
         self.client = genai.Client(api_key=api_key)
         self.l_model = definitions.VIDEO_MODELS["L"] # Gemini Flash Lite/Preview
-        self.image_model = definitions.IMAGE_MODEL # Imagen 4 Fast
+        # Switch to Gemini 2.5 Flash Image (Polyglot) to save quota/cost
+        self.image_model = "gemini-2.5-flash-image"
         self.safety_prompt = definitions.SANITIZATION_PROMPT
 
     def describe_image(self, image_path):
@@ -71,48 +72,42 @@ class Sanitizer:
         full_prompt = f"{description}\n\nSTYLE INSTRUCTION: {self.safety_prompt}"
         
         logging.info(f"   🎨 Repainting with Image Model: {self.image_model}...")
-        # Try Imagen First
+        
         try:
-            logging.info(f"   🎨 Repainting with Image Model: {self.image_model}...")
-            response = self.client.models.generate_images(
-                model=self.image_model,
-                prompt=full_prompt,
-                config=types.GenerateImagesConfig(
-                    number_of_images=1,
-                    aspect_ratio="16:9" 
+            # POLYGLOT LOGIC (Same as cartoon_producer.py)
+            if "imagen" in self.image_model.lower():
+                # Method A: Imagen (generate_images)
+                response = self.client.models.generate_images(
+                    model=self.image_model,
+                    prompt=full_prompt,
+                    config=types.GenerateImagesConfig(
+                        number_of_images=1,
+                        aspect_ratio="16:9" 
+                    )
                 )
-            )
+                if response.generated_images:
+                    new_image_bytes = response.generated_images[0].image.image_bytes
+                    return self._save_image(new_image_bytes, image_path)
             
-            if response.generated_images:
-                new_image_bytes = response.generated_images[0].image.image_bytes
-                return self._save_image(new_image_bytes, image_path)
+            else:
+                # Method B: Gemini Flash (generate_content)
+                ar_prompt = f"Generate an image of {full_prompt} --aspect_ratio 16:9"
                 
-        except Exception as e:
-            logging.warning(f"   ⚠️ Imagen Repaint Failed: {e}. Falling back to Gemini...")
-            
-            # Fallback: Gemini 2.5 Flash Image
-            try:
-                fallback_model = "models/gemini-2.5-flash-image"
-                logging.info(f"   🎨 Repainting with Fallback: {fallback_model}...")
-                
-                # Gemini generate_content for images
-                start_t = time.time()
                 response = self.client.models.generate_content(
-                    model=fallback_model,
-                    contents=full_prompt,
-                    config=types.GenerateContentConfig(response_mime_type="image/png") 
+                    model=self.image_model,
+                    contents=ar_prompt
                 )
                 
                 # Check for inline data
-                if response.candidates and response.candidates[0].content.parts:
+                if response.candidates:
                     for part in response.candidates[0].content.parts:
                         if part.inline_data:
                             return self._save_image(part.inline_data.data, image_path)
-                
-                logging.error("   ❌ Fallback failed: No inline image data returned.")
+                            
+            logging.warning("   ⚠️ Repaint failed: No image data returned.")
 
-            except Exception as e2:
-                logging.error(f"   ❌ Fallback Repaint Failed: {e2}")
+        except Exception as e:
+            logging.error(f"   ❌ Repaint Failed: {e}")
 
         return image_path # Final Fallback to original
 

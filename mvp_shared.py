@@ -111,8 +111,14 @@ def load_api_keys(env_path: Union[str, Path] = "env_vars.yaml") -> List[str]:
     if not path.exists():
         # Fallback to local dir check
         path = Path(__file__).parent / "env_vars.yaml"
+        # If not there, check CENTRAL location (tools/fmv/env_vars.yaml)
         if not path.exists():
-            return []
+             # Assumes mvp_shared.py is in tools/fmv/mvp/v0.5/
+             central_path = Path(__file__).resolve().parent.parent.parent / "env_vars.yaml"
+             if central_path.exists():
+                 path = central_path
+             else:
+                 return []
             
     try:
         with open(path, 'r') as f:

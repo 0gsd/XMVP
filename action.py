@@ -18,7 +18,8 @@ import base64
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Configuration
-ENV_FILE = Path(__file__).resolve().parent / "env_vars.yaml"
+# Point to CENTRAL env_vars.yaml in tools/fmv/
+ENV_FILE = Path(__file__).resolve().parent.parent.parent / "env_vars.yaml"
 
 # Output Directories
 DIR_SCRIPTS = "actionscript"

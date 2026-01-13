@@ -23,6 +23,7 @@ manifest_updated.json
 finalcuts/
 componentparts/
 z_test-outputs/
+# test_gen_capabilities.py
 
 # OS
 .DS_Store

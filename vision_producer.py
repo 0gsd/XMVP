@@ -29,6 +29,18 @@ VP_FORMS = {
         fps=1, # Audio focused
         mime_type="audio/mp3", 
         description="A two-person interview podcast."
+    ),
+    "movies-movie": VPForm(
+        name="movies-movie",
+        fps=24,
+        mime_type="video/mp4",
+        description="A condensed Hollywood Blockbuster remake (1979-2001 era)."
+    ),
+    "studio-movie": VPForm(
+        name="studio-movie",
+        fps=24,
+        mime_type="video/mp4",
+        description="A chaotic 'Making Of' mockumentary about a film production."
     )
 }
 
@@ -46,6 +58,20 @@ def get_default_vision(form_name: str) -> str:
             "STYLE: Modern Sci-Fi Drama. "
             "AESTHETIC: Cold blues, warm oranges, lens flares, high-tech interfaces. "
             "PACING: Narrative-driven, suspenseful."
+        )
+    elif form_name == "movies-movie":
+        return (
+            "STYLE: Hollywood Blockbuster (1979-2001). "
+            "AESTHETIC: 35mm film grain, high-budget action/drama, cinematic anamorphic lens. "
+            "PACING: Condensed, urgent, 'Movie Trailer' energy. "
+            "CRITICAL: Must look like a real movie from that era."
+        )
+    elif form_name == "studio-movie":
+        return (
+            "STYLE: Behind-The-Scenes Mockumentary / Found Footage. "
+            "AESTHETIC: Handheld camera, raw lighting, visible film equipment (boom mics, light stands, craft services). "
+            "CONTENT: Actors out of character, crew members struggling, set disasters. "
+            "VIBE: Chaotic, funny, disastrous production."
         )
     else:
         return "Standard Production."

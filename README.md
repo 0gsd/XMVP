@@ -7,8 +7,9 @@
 ## Setup & Configuration
 1.  **Install Requirements**: `pip install -r requirements.txt`
 2.  **API Keys**: 
-    - Copy `env_vars.example.yaml` to `env_vars.yaml`.
-    - Add your Gemini/Veo API keys to `ACTION_KEYS_LIST`.
+    - The pipeline shares a centralized configuration with the legacy suite.
+    - Copy `env_vars.example.yaml` to `../../env_vars.yaml` (root of `tools/fmv/`).
+    - Add your Gemini/Veo API keys to `ACTION_KEYS_LIST` in `tools/fmv/env_vars.yaml`.
     - **Note**: `env_vars.yaml` is gitignored to protect your secrets.
 
 The Modular Vision Pipeline (MVP) breaks video generation into a 7-stage Value Chain, orchestrated by `movie_producer.py`. Each module isolates a specific creative or technical decision, passing standardized Data Contracts (JSON) to the next stage.

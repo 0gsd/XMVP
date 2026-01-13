@@ -36,7 +36,7 @@ def clean_artifacts(out_dir):
                 logging.warning(f"Could not remove {path}: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Movie Producer: The MVP Orchestrator (v1.0)")
+    parser = argparse.ArgumentParser(description="Movie Producer: The MVP Orchestrator (1.1)")
     parser.add_argument("concept", nargs='?', help="The concept text (quoted string).")
     
     # Producer Args
@@ -45,14 +45,26 @@ def main():
     parser.add_argument("--vpform", type=str, default="tech-movie", help="Form/Genre (realize-ad, tech-movie)")
     parser.add_argument("--cs", type=int, default=0, help="Chaos Seeds level")
     parser.add_argument("--cf", type=str, default=None, help="Cameo Feature: Wikipedia URL or Search Query")
-    parser.add_argument("--vm", type=str, default="J", help="Video Model Tier (L, J, K)")
+    parser.add_argument("--vm", type=str, default="K", help="Video Model Tier (L, J, K)")
     
     # Ops Args
     parser.add_argument("--clean", action="store_true", help="Clean intermediate JSONs before running")
     parser.add_argument("--xb", type=str, help="XMVP Re-hydration path (Bypasses Vision Producer)")
+    parser.add_argument("-f", "--fast", action="store_true", help="Use Faster/Cheaper Model Tier (Overwrites --vm)")
+    parser.add_argument("--vfast", action="store_true", help="Use Legacy Veo 2.0 (Fastest)")
     parser.add_argument("--out", type=str, default=None, help="Override output directory")
     
     args = parser.parse_args()
+
+    # Fast Mode Override
+    if args.fast:
+        logging.info("🏎️ Fast Mode Enabled: Switching to Tier J.")
+        args.vm = "J"
+        
+    # V-Fast Mode Override (Legacy)
+    if args.vfast:
+        logging.info("🦕 V-Fast Mode Enabled: Switching to Tier V2 (Veo 2.0).")
+        args.vm = "V2"
 
     # 1. Setup Output Directory
     OUT_DIR = args.out if args.out else get_output_dir()
@@ -72,7 +84,7 @@ def main():
         clean_artifacts(OUT_DIR)
         
     ts = int(time.time())
-    logging.info("🎬 MOVIE PRODUCER v1.0: Spinning up the Modular Vision Pipeline...")
+    logging.info("🎬 MOVIE PRODUCER 1.1: Spinning up the Modular Vision Pipeline...")
 
     # Define paths
     p_bible = os.path.join(OUT_DIR, "bible.json")

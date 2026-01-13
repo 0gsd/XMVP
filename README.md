@@ -76,7 +76,46 @@ The Master Controller.
 - **XMVP**: `<Bible>`, `<Story>`, `<Portions>`, `<Manifest>` wrapped in `<XMVP>` XML tags.
 - **Re-hydration**: Logic to load `bible.json` from `run.xml` via `--xb`.
 
-## 6. Deprecated / Merged
+## 7. Specialized Producers (v1.1)
+
+### `cartoon_producer.py`
+The Animation Studio.
+- **Role**: Generates Frame-by-Frame (FBF) animation sequences and XMVP Storyboards.
+- **Modes**:
+    - **Flipbook (FBF)** (`--vpform fbf-cartoon`): Generates "Keyframes" from audio transcripts, then "Expands" them into smooth animation sequences using frame interpolation logic.
+    - **Storyboard Export**: Automatically hallucinates a "Movie Bible" (Title/Synopsis/Vibe) from the visual frames and exports a valid XMVP XML file. This allows you to generate a cartoon, and then immediately "remake" it as a live-action movie using `movie_producer.py --xb`.
+- **Key Flags**:
+    - `--fps N`: Controls **Expansion Factor** in FBF mode (e.g., `--fps 4` expands 1 row to 4 frames).
+    - `--vpform`: `fbf-cartoon` (default).
+
+### `post_production.py` (Post)
+The VFX Suite.
+- **Role**: Enhances video output via hallucinated tweening and detail injection.
+- **Pipeline**: Extract Frames -> Tween (Gemini) -> Upscale (Obsessive/Lancaster) -> Stitch.
+- **Key Flags**:
+    - `-x N`: Tweening factor (e.g., `-x 2` doubles framerate).
+    - `--scale N`: Upscaling factor (e.g., `--scale 2` doubles resolution).
+
+### `model_scout.py`
+The Casting Director for Models.
+- **Role**: Audits available Google Cloud models (Gemini/Veo/Imagen).
+- **Features**:
+    - `--probe`: Stress-tests model endpoints to determine empirical rate limits and quota costs.
+
+## 8. CLI Reference (Movie Producer)
+
+| Flag | Description | Tier / Model |
+| :--- | :--- | :--- |
+| `--concept "..."` | The high-level prompt | N/A |
+| `--seg N` | Number of segments (shots) | N/A |
+| `--l N.N` | Length per segment (seconds) | N/A |
+| `--vpform FORM` | Genre/Structure (`realize-ad`, `tech-movie`, `fairy-tale-movie`) | N/A |
+| `--vm TIER` | Video Model Tier (`K`=Veo 3, `J`=Veo 3 Fast, `V2`=Veo 2) | K, J, V2 |
+| `--fast` | Shortcut for `--vm J` (Cheaper/Faster) | J |
+| `--vfast` | Shortcut for `--vm V2` (Legacy Veo 2.0 - No Audio) | V2 |
+| `--xb PATH` | **Re-hydrate** from XMVP XML file (Bypass creation) | N/A |
+
+## 9. Deprecated / Merged
 - **`realize.py`**: **DEPRECATED**. Replaced by `movie_producer.py`.
 - **`intake_outgive`**: **MERGED**. Functionality subsumed by `dispatch_director.py` (Context Passing).
 - **`editor_decider`**: **INLINE**. Simple stitching logic currently lives in `movie_producer.py` (Step 6). Future expansion planned for `Indecision` resolution.

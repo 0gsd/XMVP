@@ -36,7 +36,7 @@ def clean_artifacts(out_dir):
                 logging.warning(f"Could not remove {path}: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Movie Producer: The MVP Orchestrator (v0.5)")
+    parser = argparse.ArgumentParser(description="Movie Producer: The MVP Orchestrator (v1.0)")
     parser.add_argument("concept", nargs='?', help="The concept text (quoted string).")
     
     # Producer Args
@@ -72,7 +72,7 @@ def main():
         clean_artifacts(OUT_DIR)
         
     ts = int(time.time())
-    logging.info("🎬 MOVIE PRODUCER v0.5: Spinning up the Modular Vision Pipeline...")
+    logging.info("🎬 MOVIE PRODUCER v1.0: Spinning up the Modular Vision Pipeline...")
 
     # Define paths
     p_bible = os.path.join(OUT_DIR, "bible.json")

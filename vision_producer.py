@@ -41,10 +41,16 @@ VP_FORMS = {
         fps=24,
         mime_type="video/mp4",
         description="A chaotic 'Making Of' mockumentary about a film production."
+    ),
+    "parody-movie": VPForm(
+        name="parody-movie",
+        fps=24,
+        mime_type="video/mp4",
+        description="A direct parody or pastiche spoof of the concept."
     )
 }
 
-def get_default_vision(form_name: str) -> str:
+def get_default_vision(form_name: str, seg_count: int = 0) -> str:
     """Returns the default 'Edict' or 'Vision' for a given form."""
     if form_name == "realize-ad":
         return (
@@ -70,9 +76,29 @@ def get_default_vision(form_name: str) -> str:
         return (
             "STYLE: Behind-The-Scenes Mockumentary / Found Footage. "
             "AESTHETIC: Handheld camera, raw lighting, visible film equipment (boom mics, light stands, craft services). "
-            "CONTENT: Actors out of character, crew members struggling, set disasters. "
             "VIBE: Chaotic, funny, disastrous production."
         )
+    elif form_name == "parody-movie":
+        if seg_count > 4:
+            # Hypercompressed Feature Parody
+            return (
+                "STYLE: ZAZ-style Spoof / Feature-Length Parody (Hypercompressed). "
+                "AESTHETIC: High production value (matching the source material perfectly) but filled with visual non-sequiturs, background gags, and literal interpretations of metaphors. "
+                "PACING: Relentless, joke-a-minute, slapstick mixed with deadpan seriousness. "
+                "INSPIRATION: Airplane!, The Naked Gun, Hot Shots!, Spaceballs. "
+                "AUDIO: Pun-heavy dialogue, serious delivery of absurd lines, surreal sound effects (Firesign Theater influence). "
+                "STRUCTURE: A full three-act movie condensed into a few seconds, following the exact plot beats of the original but making them ridiculous."
+            )
+        else:
+            # Pastiche Segment
+            return (
+                "STYLE: Pastiche Parody Segment / Sketch Spoof. "
+                "AESTHETIC: Exaggerated caricature of the source material. 'Scary Movie' style direct mockery. "
+                "CONTENT: A specific famous scene from the movie turned into a sketch. Characters make bad decisions, break the fourth wall, or are exaggerated stereotypes. "
+                "VIBE: Irreverent, gross-out humor, meta-commentary, pop-culture mashups. "
+                "INSPIRATION: Scary Movie, Don't Be a Menace, Spy Hard. "
+                "GOAL: To relentlessly mock the specific scene or concept provided."
+            )
     else:
         return "Standard Production."
 
@@ -191,6 +217,8 @@ def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: 
         logging.info(f"   Time-based duration: {duration_sec}s @ {fps}fps = {total_frames} frames")
         
     # 4. Construct CSSV
+    seg_count = int(total_frames / (fps * seg_len)) if flength > 0 else int(slength / seg_len)
+    
     cssv = CSSV(
         constraints=Constraints(
             width=768, 
@@ -203,7 +231,7 @@ def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: 
         ),
         scenario=f"A {duration_sec:.1f}-second {form.description}",
         situation=situation_text,
-        vision=get_default_vision(form.name)
+        vision=get_default_vision(form.name, seg_count=seg_count)
     )
 
     # 5. Save

@@ -27,52 +27,86 @@ def synthesize_story(cssv: CSSV) -> Story:
     OUTPUT SCHEMA (JSON Only):
     {{
       "title": "String",
-      "logline": "String",
+      "synopsis": "String",
+      "theme": "String",
+      "characters": [ "Name 1", "Name 2" ],
       "acts": [
         {{ "name": "Act 1", "summary": "..." }}
-      ],
-      "characters": [ ... ]
+      ]
     }}
+    
+    IMPORTANT: Return raw JSON only. Do not wrap in markdown blocks. Do not add comments.
     """
     
     logging.info("🧠 Sends Prompt to Text Engine...")
     engine = get_engine()
-    response_text = engine.generate(prompt, temperature=0.7)
     
-    if not response_text:
-        logging.error("[-] Text Engine returned empty response.")
-        # Return fallback/stub story
-        return Story(
-            title="Generation Failed",
-            synopsis=cssv.situation,
-            characters=["Unknown"],
-            theme="Error"
-        )
+    max_retries = 3
+    for attempt in range(max_retries):
+        if attempt > 0:
+            logging.info(f"   🔄 Retry {attempt+1}/{max_retries}...")
+            
+        response_text = engine.generate(prompt, temperature=0.7, json_schema=True)
         
-    # Clean and Parse JSON
-    try:
-        # Remove markdown fences
-        clean = response_text.replace("```json", "").replace("```", "").strip()
-        data = json.loads(clean)
-        
-        # Handle list wrapping
-        if isinstance(data, list):
-            if len(data) > 0 and isinstance(data[0], dict):
-                data = data[0]
-            else:
-                 pass
-
-        return Story(**data)
-        
-    except Exception as e:
-        logging.error(f"[-] JSON Parse Error from Engine: {e}")
-        logging.error(f"Raw Output: {response_text[:200]}...")
-        return Story(
-            title="Parse Error",
-            synopsis=cssv.situation,
-            characters=["Unknown"],
-            theme="Error"
-        )
+        if not response_text:
+            logging.error("[-] Text Engine returned empty response.")
+            continue
+            
+        # Clean and Parse JSON
+        try:
+            # Robust JSON Extraction (Search and Snatch)
+            # Even with json_schema=True, sometimes models might wrap. 
+            # But usually it is raw. Let's keep the search just in case purely for safety, 
+            # or trust the engine. 
+            # simpler: trust the engine primarily but keep the find for safety if it adds "```json"
+            start_idx = response_text.find('{')
+            end_idx = response_text.rfind('}')
+            
+            if start_idx == -1 or end_idx == -1:
+                 # If we can't find braces, maybe it's just raw text? Retry.
+                 logging.warning("[-] No JSON braces found.")
+                 continue
+                 
+            clean = response_text[start_idx:end_idx+1]
+            
+            # Attempt standard load
+            try:
+                data = json.loads(clean)
+            except json.JSONDecodeError:
+                # Attempt repair (Trailing commas)
+                import re
+                clean_repaired = re.sub(r',(\s*[}\]])', r'\1', clean)
+                try:
+                    data = json.loads(clean_repaired)
+                except json.JSONDecodeError as e:
+                    logging.warning(f"[-] JSON Parse Error on attempt {attempt+1}: {e}")
+                    # If this was the last attempt, we'll fall through to fail handling
+                    if attempt == max_retries - 1: raise e
+                    continue # Try again
+            
+            # Handle list wrapping
+            if isinstance(data, list):
+                if len(data) > 0 and isinstance(data[0], dict):
+                    data = data[0]
+                else:
+                     pass
+    
+            return Story(**data)
+            
+        except Exception as e:
+            if attempt == max_retries - 1:
+                # Last attempt failed
+                print(f"[-] JSON Parse Error from Engine (Final): {e}")
+                print(f"[-] Raw Output Preview: {response_text[:500]}...") 
+                logging.error(f"[-] JSON Parse Error from Engine: {e}")
+                
+    # Fallback after retries
+    return Story(
+        title="Parse Error",
+        synopsis=cssv.situation,
+        characters=["Unknown"],
+        theme="Error"
+    )
 
 def run_stub(bible_path: str, out_path: str = "story.json", request: str = None) -> bool:
     """

@@ -11,6 +11,7 @@ import time
 from mvp_shared import Manifest, load_manifest, save_manifest, load_api_keys
 
 import itertools
+import random
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -95,7 +96,6 @@ class VideoDirectorAdapter:
         self.keys = keys
         self.model_name = model_name
         self.pg_mode = pg_mode
-        import random
         random.shuffle(self.keys) # Shuffle once
         self.key_cycle = itertools.cycle(self.keys)
         
@@ -109,7 +109,8 @@ class VideoDirectorAdapter:
             # User wants strict cycle. But sanitizer might burn a request. 
             # Let's simple use a random choice for sanitizer to avoid advancing the main video cycle "off beat"?
             # Or just advance it. It's fine.
-            sanitizer_key = random.choice(self.keys) 
+            # Use round-robin key for sanitizer too
+            sanitizer_key = next(self.key_cycle) 
             cleaner = sanitizer.Sanitizer(api_key=sanitizer_key)
             
             

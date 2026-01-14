@@ -24,7 +24,13 @@ finalcuts/
 componentparts/
 z_test-outputs/
 z_podcast_triplets/
+setup_rvc_env.sh
+unzip_models.py
+migrate_weights.py
+producerjasonwoliner/
+actionscript/
 # test_gen_capabilities.py
 
 # OS
+v0.5.code-workspace
 .DS_Store

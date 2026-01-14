@@ -330,10 +330,15 @@ def classify_segment(seg, meta):
 def get_image_prompt(seg, host_map):
     host_info = host_map.get(seg.speaker, {})
     
+    # Scrub text for prompt (remove parentheticals and extra whitespace)
+    # This prevents speech bubbles leaking into images
+    prompt_text = re.sub(r'\(.*?\)', '', seg.text).replace("*","").replace("_","").strip()
+    prompt_text = re.sub(r'\s+', ' ', prompt_text)
+    
     if seg.block_type == "movie":
         prompt = (
             f"Cinematic still from a movie. "
-            f"Scene description based on this narration: '{seg.text[:300]}'. "
+            f"Scene description based on this narration: '{prompt_text[:300]}'. "
             f"Atmospheric, detailed, 8k, photorealistic. "
             f"Style: {host_info.get('vibe', 'Cinematic')}."
         )
@@ -348,7 +353,7 @@ def get_image_prompt(seg, host_map):
             f"impersonator from Hollywood vaguely resembling {seg.speaker}. "
             f"They are speaking with expression. "
             f"Lighting: Professional studio lighting. "
-            f"Context: They are saying '{seg.text[:100]}...'"
+            f"Context: They are saying '{prompt_text[:100]}...'"
         )
     return prompt
 
@@ -414,14 +419,23 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
     """Process Pair (Text+JSON) by GENERATING Audio using Local Voice Engine."""
     print(f"[*] Processing PAIR {base} (Generating Audio)...")
     
-    # Imports for Voice Engine
-    try:
-        from voice_engine import VoiceEngine
-    except ImportError:
-        sys.path.append(os.path.dirname(__file__))
-        from voice_engine import VoiceEngine
+    # Remove Local Voice Engine
+    # try:
+    #     from voice_engine import VoiceEngine
+    # except ImportError:
+    #     sys.path.append(os.path.dirname(__file__))
+    #     from voice_engine import VoiceEngine
+    # ve = VoiceEngine()
 
-    ve = VoiceEngine()
+    # Need Access Token for Google Cloud TTS
+    access_token = get_access_token()
+    if not access_token:
+        print("[-] Verification Failed: No GCP Access Token. Run 'gcloud auth print-access-token' to debug.")
+        return
+
+    # Use Project Override if provided
+    gcp_project = project_id_override if project_id_override else get_project_id()
+    print(f"    GCP Project for TTS: {gcp_project}")
 
     # Metadata & Config
     with open(json_path, 'r') as f: meta = json.load(f)
@@ -447,6 +461,11 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
     
     print(f"    Detected Gender Group: {gender}")
     
+    # Assign Base Voice
+    # Journey Voices: en-US-Journey-D (Male), en-US-Journey-F (Female)
+    base_voice_name = "en-US-Journey-D" if gender == "MALE" else "en-US-Journey-F"
+    print(f"    Base Voice Selection: {base_voice_name}")
+    
     # Parse Basic
     segments = parse_transcript_basic(txt_path)
     print(f"    Segments to Synthesize: {len(segments)}")
@@ -467,19 +486,45 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
             # 1. Classify
             seg = classify_segment(seg, meta)
             
+            # Scrub parenthetical stage directions for TTS
             clean_txt = seg.text.replace("*", "").replace("_", "")
+            clean_txt = re.sub(r'\(.*?\)', '', clean_txt).strip()
+            clean_txt = re.sub(r'\s+', ' ', clean_txt) # Collapse spaces
+            
             print(f"    [{i+1}/{len(segments)}] {seg.speaker}: {clean_txt[:30]}...")
             
-            # Determine Voice Model
-            # Infer gender for this specific speaker if possible? 
-            # For now, use the group gender or alternating?
-            # Better: VoiceEngine.assign_voice might look for the name directly.
+            # Skip empty segments (if only contained stage directions)
+            if not clean_txt:
+                print("       [.] Segment was only stage directions. Skipping audio gen (using silence).")
+                # We still need an image though? Or just skip entirely?
+                # Probably safer to just use a short silence and still gen image to keep cadence.
+                # Actually, easier to just generate a tiny silence.
+                clean_txt = " " # TTS might fail on empty. give it a space or handle downstream.
+
             
-            rvc_model = ve.assign_voice(seg.speaker, gender)
-            if rvc_model:
-                print(f"       [+] Assigned RVC Model: {rvc_model}")
+            # Determine Pitch Shift for this Speaker
+            # Robust Matching: Normalize to Upper Case
+            curr_spk_upper = seg.speaker.strip().upper()
+            known_hosts_upper = [h.upper() for h in speaker_names]
+            sorted_hosts = sorted(known_hosts_upper)
+            
+            # Find index
+            try:
+                current_spk_idx = sorted_hosts.index(curr_spk_upper)
+            except ValueError:
+                # Fuzzy match? Or default.
+                current_spk_idx = 0
+            
+            # Speaker 0: +1 semitone
+            
+            # Speaker 0: +1 semitone
+            # Speaker 1: -2 semitones
+            if current_spk_idx == 0:
+                pitch_shift = 1
             else:
-                print(f"       [.] No RVC model found, using Base Mac TTS ({gender})")
+                pitch_shift = -2
+                
+            print(f"       [+] Voice: {base_voice_name} | Shift: {pitch_shift} semitones")
 
             chunks = split_text_into_chunks(clean_txt)
             chunk_files = []
@@ -488,17 +533,19 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
                 base_wav = os.path.join(temp_dir, f"seg_{i:03d}_part_{c_idx:02d}_base.wav")
                 final_chunk_wav = os.path.join(temp_dir, f"seg_{i:03d}_part_{c_idx:02d}.wav")
                 
-                # Generate Base
-                if ve.generate_base_audio(chunk, base_wav, gender):
-                    if rvc_model:
-                        # Apply RVC
-                        if ve.apply_rvc(base_wav, final_chunk_wav, rvc_model):
-                            chunk_files.append(final_chunk_wav)
-                        else:
-                            # Fallback if RVC fails
-                            chunk_files.append(base_wav)
-                    else:
-                        chunk_files.append(base_wav)
+                # Generate Base (Google Cloud TTS)
+                audio_data = synthesize_text_rest(chunk, base_voice_name, access_token, gcp_project)
+                
+                if audio_data:
+                    with open(base_wav, 'wb') as f: f.write(audio_data)
+                    
+                    # Apply Pitch Shift
+                    shifted_file = pitch_shift_file(base_wav, pitch_shift)
+                    
+                    # Rename to final if needed or just use shifted
+                    # pitch_shift_file returns new filename like _p-2.wav
+                    # We want to put it in valid list.
+                    chunk_files.append(shifted_file)
                 else:
                     print(f"       [!] Chunk {c_idx} failed generation.")
 
@@ -532,6 +579,10 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
             
             processed_segs.append(seg)
             
+            # Rate Limit Protection
+            print("       [...] Cooling down (0.2s)...")
+            time.sleep(0.2)
+            
         if not processed_segs:
             print("[-] No content generated. Aborting.")
             return
@@ -544,7 +595,9 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
             for seg in processed_segs:
                 fa.write(f"file '{seg.audio_path}'\n")
                 fv.write(f"file '{seg.image_path}'\n")
-                fv.write(f"duration {seg.duration:.4f}\n")
+                # Subtract small buffer to ensure Video <= Audio for -shortest
+                safe_dur = max(0, seg.duration - 0.05) 
+                fv.write(f"duration {safe_dur:.4f}\n")
         
         full_audio = os.path.join(temp_dir, "full_audio.wav")
         subprocess.run(['ffmpeg', '-f', 'concat', '-safe', '0', '-i', audio_list, '-c', 'copy', full_audio, '-y', '-loglevel', 'error'], check=True)
@@ -632,7 +685,8 @@ def pitch_shift_file(input_file, semitones):
         tempo_corr = 1.0 / ratio
         
         output_file = input_file.replace(".wav", f"_p{semitones}.wav")
-        filter_str = f"asetrate={new_rate},atempo={tempo_corr}"
+        # CRITICAL FIX: Resample back to original rate to avoid concat drift
+        filter_str = f"asetrate={new_rate},atempo={tempo_corr},aresample={sample_rate}"
         
         subprocess.run(['ffmpeg', '-i', input_file, '-af', filter_str, output_file, '-y', '-loglevel', 'error'], check=True)
         return output_file
@@ -654,10 +708,12 @@ def get_audio_duration(file_path):
         print(f"[-] Error parsing audio duration ({file_path}): {e}")
         return 0.0
 
+MODEL_ID = "imagen-4.0-fast-generate-001" # Verified Imagen Fast
+
 def generate_image(prompt, output_path):
-    """Generates an image using Gemini 2.5 Flash via generate_content."""
+    """Generates an image using Imagen 4.0 Fast via generate_images."""
     max_retries = 5
-    base_wait = 5
+    base_wait = 2 # Reduced wait for Imagen Fast
     
     for attempt in range(max_retries):
         client, key_used = get_client() # Rotates key on each attempt
@@ -667,17 +723,26 @@ def generate_image(prompt, output_path):
             print(f"   [>] Getting Image (Key: ...{key_used[-4:]})")
         
         try:
-            final_prompt = f"Generate an image of {prompt} --aspect_ratio 1:1"
-            response = client.models.generate_content(model=MODEL_ID, contents=final_prompt)
+            # Imagen API Call
+            response = client.models.generate_images(
+                model=MODEL_ID,
+                prompt=prompt,
+                config=types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspect_ratio="1:1",
+                    safety_filter_level="BLOCK_LOW_AND_ABOVE",
+                    person_generation="ALLOW_ADULT"
+                )
+            )
             
-            if response.candidates:
-                for part in response.candidates[0].content.parts:
-                    if part.inline_data:
-                        with open(output_path, "wb") as f:
-                            f.write(part.inline_data.data)
-                        return True
+            if response.generated_images:
+                image_bytes = response.generated_images[0].image.image_bytes
+                with open(output_path, "wb") as f:
+                    f.write(image_bytes)
+                return True
+                
             print("   [-] No image data returned.")
-            return False # Non-retryable if no data but 200 OK
+            return False 
             
         except Exception as e:
             err_str = str(e)
@@ -687,7 +752,7 @@ def generate_image(prompt, output_path):
                 time.sleep(wait_time)
             else:
                 print(f"   [-] Generation Failed: {e}")
-                wait_time = 2 * (attempt + 1)
+                wait_time = 1 * (attempt + 1)
                 time.sleep(wait_time)
                 
     print("   [!] Max retries reached. Using Black Frame.")
@@ -759,6 +824,11 @@ def classify_segment(seg, meta):
 def get_image_prompt(seg, host_map):
     host_info = host_map.get(seg.speaker, {})
     
+    # Scrub text for prompt (remove parentheticals and extra whitespace)
+    # This prevents speech bubbles leaking into images
+    prompt_text = re.sub(r'\(.*?\)', '', seg.text).replace("*","").replace("_","").strip()
+    prompt_text = re.sub(r'\s+', ' ', prompt_text)
+    
     # Base prompt with Eisner injection
     base = f"{EISNER_STYLE} "
     
@@ -766,7 +836,7 @@ def get_image_prompt(seg, host_map):
         prompt = (
             f"{base}"
             f"Cinematic panel visualization. "
-            f"Scene description based on this narration: '{seg.text[:300]}'. "
+            f"Scene description based on this narration: '{prompt_text[:300]}'. "
             f"Atmospheric, violent, dynamic angles, 8k, photorealistic ink and color. "
             f"Style: {host_info.get('vibe', 'Cinematic')}."
         )
@@ -778,15 +848,18 @@ def get_image_prompt(seg, host_map):
         
         prompt = (
             f"{base}"
-            f"A cinematic podcast studio shot (comic book style) of a general all-purpose {vibe_short}-type "
-            f"impersonator from Hollywood vaguely resembling {seg.speaker}. "
-            f"They are speaking with expression. "
-            f"Lighting: Professional studio lighting. High contrast. "
-            f"Context: They are saying '{seg.text[:100]}...'\n"
-            f"CRITICAL INSTRUCTION: You are the illustrator and colorist ONLY. Draw a nice frame with a black border. "
-            f"NO SPEECH BUBBLES. NO WORD BALLOONS. NO TEXT. NO LETTERS. NO DIALOGUE ON SCREEN. "
-            f"The image must speak for itself without words."
+            f"A drawing of a {vibe_short}-type impersonator sitting in a featureless room talking about their life and dreams with no word bubbles. "
+            f"Subject vaguely resembles {seg.speaker}. They are speaking with expression. "
+            f"Lighting: Dramatic, high contrast. "
+            f"Context: They are saying '{prompt_text[:100]}...'\n"
+            f"CRITICAL INSTRUCTION: Absolutely no language transcription onto your drawing; strictly artistic representations of non-word things. "
+            f"Paint a picture of theoretical things that come into your mind as you listen to the audio of the podcast you are drawing. "
+            f"NO SPEECH BUBBLES. NO TEXT on the image. NO SIGNATURES."
         )
+        
+    # User Request: Suppress Signatures
+    prompt += " You are an anonymous master artist because that leaves you with more free time and you can charge more money. Do not add a signature or attribution of any artists' names (including your own) to the drawing anywhere on it."
+    
     return prompt
 
 def parse_time(ts):

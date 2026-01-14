@@ -58,7 +58,7 @@ Visualizes audio podcasts (or generates them) into animated video pairs/triplets
 
 **Usage:**
 ```bash
-python3 podcast_animator.py --project theedit-483919
+python3 podcast_animator.py --project [ID]
 ```
 
 **Arguments:**

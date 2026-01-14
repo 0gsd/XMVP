@@ -100,6 +100,41 @@ def detect_gender_rest(speakers, api_key):
         pass
     return "MALE"
 
+EISNER_STYLE = (
+    "You are an Eisner-award winning comic book penciller, inker, and colorer (a triple threat). "
+    "You draw in the style of the greats, like Jack Kirby, Rob Liefeld, Todd MacFarlane, Bill Sienkiwicz, "
+    "and Sergio Aragones, but with a unique style all your own and extremely realistic "
+    "(almost hyperrealistic) caricaturesque portraits of the impersonators hired to play each of our illustrious guests."
+)
+
+def split_text_into_chunks(text, max_chars=4000):
+    """Splits text into chunks respecting sentence boundaries."""
+    if len(text) <= max_chars:
+        return [text]
+    chunks = []
+    current_chunk = []
+    current_len = 0
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    for sentence in sentences:
+        if current_len + len(sentence) + 1 > max_chars:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = [sentence]
+            current_len = len(sentence)
+        else:
+            current_chunk.append(sentence)
+            current_len += len(sentence) + 1
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+    return chunks
+
+def create_silence(duration_sec, output_path):
+    """Creates a silent WAV file using ffmpeg."""
+    subprocess.run([
+        'ffmpeg', '-f', 'lavfi', '-i', f'anullsrc=r=24000:cl=mono:d={duration_sec}',
+        '-c:a', 'pcm_s16le', str(output_path), '-y', '-loglevel', 'error'
+    ], check=True)
+    return output_path
+
 def synthesize_text_rest(text, voice_name, token, project_id):
     """Synthesizes speech using Google Cloud TTS REST API."""
     url = "https://texttospeech.googleapis.com/v1/text:synthesize"
@@ -107,7 +142,10 @@ def synthesize_text_rest(text, voice_name, token, project_id):
     payload = {
         "input": {"text": text},
         "voice": {"languageCode": lang_code, "name": voice_name},
-        "audioConfig": {"audioEncoding": "LINEAR16", "speakingRate": 1.0}
+        "audioConfig": {
+            "audioEncoding": "LINEAR16", 
+            "speakingRate": 0.90 # SLOW DOWN TO 90%
+        }
     }
     headers = {
         "Authorization": f"Bearer {token}",
@@ -383,38 +421,74 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
     processed_segs = []
     
     try:
+        # Create Silence Assets
+        silence_short = os.path.join(temp_dir, "silence_0.5s.wav")
+        silence_long = os.path.join(temp_dir, "silence_1.0s.wav")
+        create_silence(0.5, silence_short)
+        create_silence(1.0, silence_long)
+
         for i, seg in enumerate(segments):
             # 1. Classify
             seg = classify_segment(seg, meta)
             
-            # 2. Audio Gen
+            # 2. Audio Gen (With Chunking)
             v_conf = voice_config.get(seg.speaker, {"name": base_voice, "pitch": 0.0})
             
-            # Chunking handled? For now assume segments are sentences. 
-            # If long, split? Let's assume MVP fit.
-            # Clean text
             clean_txt = seg.text.replace("*", "").replace("_", "")
-            
             print(f"    [{i+1}/{len(segments)}] {seg.speaker}: {clean_txt[:30]}...")
             
-            # Refresh Token (Prevent 401 on long runs)
-            current_token = get_access_token(project_id)
-            if not current_token:
-                print("       [!] Failed to refresh token, skipping.")
-                continue
+            chunks = split_text_into_chunks(clean_txt)
+            if len(chunks) > 1:
+                print(f"       Use Chunking: Split into {len(chunks)} parts.")
+                
+            chunk_files = []
+            
+            for c_idx, chunk in enumerate(chunks):
+                # Refresh Token
+                current_token = get_access_token(project_id)
+                if not current_token: continue # Log?
+                
+                audio_data = synthesize_text_rest(chunk, v_conf['name'], current_token, project_id)
+                if audio_data:
+                    c_path = os.path.join(temp_dir, f"seg_{i:03d}_part_{c_idx:02d}.wav")
+                    with open(c_path, "wb") as f: f.write(audio_data)
+                    chunk_files.append(c_path)
+                else:
+                    print(f"       [!] Chunk {c_idx} failed.")
 
-            audio_data = synthesize_text_rest(clean_txt[:4800], v_conf['name'], current_token, project_id)
-            if not audio_data:
-                print("       [!] Audio failed, skipping.")
+            if not chunk_files:
+                print("       [!] Entire segment failed audio.")
                 continue
                 
-            raw_wav = os.path.join(temp_dir, f"seg_{i:03d}_raw.wav")
-            with open(raw_wav, "wb") as f: f.write(audio_data)
+            # Stitch Chunks + Silence
+            # Determine silence duration
+            # If movie block, maybe longer pause?
+            # Randomize slightly for banter: 0.5s usually, 1.0s occasionally
+            pause_file = silence_long if (i % 5 == 0 or seg.block_type == 'movie') else silence_short
             
-            # FX
-            final_wav = raw_wav
+            # Final Segment List
+            seg_parts = chunk_files + [pause_file]
+            
+            # Concat these parts into one wav for the segment
+            merged_wav = os.path.join(temp_dir, f"seg_{i:03d}_full.wav")
+            
+            # Write list
+            list_path = os.path.join(temp_dir, f"list_{i:03d}.txt")
+            with open(list_path, 'w') as f:
+                for p in seg_parts: f.write(f"file '{p}'\n")
+                
+            subprocess.run(['ffmpeg', '-f', 'concat', '-safe', '0', '-i', list_path, '-c', 'copy', merged_wav, '-y', '-loglevel', 'error'], check=True)
+            
+            # FX (Pitch Shift the FULL merged file including silence? No, silence is silence.)
+            # Wait, pitch shifting silence does nothing bad.
+            # But safer to pitch shift chunks BEFORE merge?
+            # Actually, `pitch_shift_file` changes sample rate sometimes.
+            # Silence generated at 24000. TTS output at 24000? 
+            # If we merge first, then pitch shift, it's fine.
+            
+            final_wav = merged_wav
             if v_conf['pitch'] != 0.0:
-                final_wav = pitch_shift_file(raw_wav, v_conf['pitch'])
+                final_wav = pitch_shift_file(merged_wav, v_conf['pitch'])
                 
             seg.audio_path = final_wav
             seg.duration = get_audio_duration(final_wav)
@@ -422,6 +496,9 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
             # 3. Image Gen
             img_path = os.path.join(temp_dir, f"seg_{i:03d}.png")
             prompt = get_image_prompt(seg, host_map)
+            
+            # Retry logic?
+            # Just one shot for now
             if not generate_image(prompt, img_path):
                 Image.new('RGB', (1024, 1024), color='black').save(img_path)
             seg.image_path = img_path
@@ -639,11 +716,15 @@ def classify_segment(seg, meta):
 def get_image_prompt(seg, host_map):
     host_info = host_map.get(seg.speaker, {})
     
+    # Base prompt with Eisner injection
+    base = f"{EISNER_STYLE} "
+    
     if seg.block_type == "movie":
         prompt = (
-            f"Cinematic still from a movie. "
+            f"{base}"
+            f"Cinematic panel visualization. "
             f"Scene description based on this narration: '{seg.text[:300]}'. "
-            f"Atmospheric, detailed, 8k, photorealistic. "
+            f"Atmospheric, violent, dynamic angles, 8k, photorealistic ink and color. "
             f"Style: {host_info.get('vibe', 'Cinematic')}."
         )
     else:
@@ -653,10 +734,11 @@ def get_image_prompt(seg, host_map):
         if len(vibe_short) > 100: vibe_short = vibe_short[:100]
         
         prompt = (
-            f"A cinematic podcast studio shot of a general all-purpose {vibe_short}-type "
+            f"{base}"
+            f"A cinematic podcast studio shot (comic book style) of a general all-purpose {vibe_short}-type "
             f"impersonator from Hollywood vaguely resembling {seg.speaker}. "
             f"They are speaking with expression. "
-            f"Lighting: Professional studio lighting. "
+            f"Lighting: Professional studio lighting. High contrast. "
             f"Context: They are saying '{seg.text[:100]}...'"
         )
     return prompt

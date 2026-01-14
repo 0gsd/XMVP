@@ -6,9 +6,8 @@ import math
 import sys
 import re
 from pathlib import Path
-from google import genai
-from google.genai import types
-from mvp_shared import CSSV, Story, Portion, load_cssv, load_api_keys
+from text_engine import get_engine
+from mvp_shared import CSSV, Story, Portion, load_cssv
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -16,9 +15,9 @@ def load_story(path: str) -> Story:
     with open(path, 'r') as f:
         return Story.model_validate_json(f.read())
 
-def break_story(story: Story, cssv: CSSV, api_key: str) -> list[Portion]:
+def break_story(story: Story, cssv: CSSV) -> list[Portion]:
     """
-    Splits the story into portions based on constraints.
+    Splits the story into portions based on constraints using Text Engine.
     """
     total_duration = cssv.constraints.max_duration_sec
     seg_length = cssv.constraints.target_segment_length
@@ -27,8 +26,6 @@ def break_story(story: Story, cssv: CSSV, api_key: str) -> list[Portion]:
     num_portions = math.ceil(total_duration / seg_length)
     
     logging.info(f"🧮 Calculation: {total_duration}s total / {seg_length}s seg = {num_portions} portions.")
-    
-    client = genai.Client(api_key=api_key)
     
     prompt = f"""
     CONTEXT: You are a Screenwriter breaking a story into scenes.
@@ -55,17 +52,19 @@ def break_story(story: Story, cssv: CSSV, api_key: str) -> list[Portion]:
     ]
     """
     
+    engine = get_engine()
+    
     for attempt in range(3):
         try:
-            resp = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json")
-            )
-            
-            text = resp.text.strip()
-            if text.startswith("```json"):
-                text = text.split("```json")[1].split("```")[0]
+            response_text = engine.generate(prompt, temperature=0.7)
+            if not response_text:
+                raise ValueError("Empty response from Text Engine")
+
+            # Clean Markdown
+            text = response_text.replace("```json", "").replace("```", "").strip()
+            # Find list start
+            if "[" in text and "]" in text:
+                text = text[text.find("["):text.rfind("]")+1]
             
             data = json.loads(text)
             
@@ -102,15 +101,11 @@ def run_writers(bible_path: str, story_path: str, out_path: str = "portions.json
         logging.error(f"Failed to load inputs: {e}")
         return False
 
-    # 2. Load Keys
-    keys = load_api_keys()
-    if not keys:
-        logging.error("No API keys found")
-        return False
+    # 2. (Keys loaded internally by TextEngine if needed)
         
     # 3. Break Story
     logging.info(f"✍️  Breaking story '{story.title}' into scenes...")
-    portions = break_story(story, cssv, random.choice(keys))
+    portions = break_story(story, cssv)
     
     if not portions:
         logging.error("Failed to generate portions.")

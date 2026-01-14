@@ -170,14 +170,78 @@ def probe_model(keys, model_name):
     print("   NOTE: Cost is usually determined by output duration/pixels. Check Google AI Pricing page.")
 
 
+def pull_model(model_name, dest_dir="/Volumes/ORICO/1_o_gemmas"):
+    """
+    Downloads and converts a HuggingFace model for MLX locally.
+    """
+    print(f"\n📦 MODEL PULL: {model_name}")
+    print(f"   Destination: {dest_dir}")
+    
+    # Check if destination exists
+    if not os.path.exists(dest_dir):
+        print(f"   ⚠️ Directory not found. Creating: {dest_dir}")
+        try:
+            os.makedirs(dest_dir, exist_ok=True)
+        except Exception as e:
+            print(f"   ❌ Failed to create directory: {e}")
+            return
+            
+    # Check for mlx-lm
+    try:
+        from mlx_lm import convert
+    except ImportError:
+        print("   ❌ 'mlx-lm' not installed. Please run: pip install mlx-lm")
+        return
+
+    print("   ⏳ Starting Download & Conversion (this may take a while)...")
+    try:
+        # Check if it's already a path
+        if os.path.exists(model_name):
+            print(f"   ℹ️  '{model_name}' looks like a local path. Converting in-place?")
+            # For now, assume HF ID
+        
+        # We use the CLI capability or library. Library convert is complex.
+        # Easier to shell out to mlx_lm.convert if installed?
+        # Actually, `convert` is importable.
+        # Command: python -m mlx_lm.convert --hf-path <model> -q -d <dest>
+        
+        cmd = [
+            "python3", "-m", "mlx_lm.convert",
+            "--hf-path", model_name,
+            "-q", # Quantize by default? Maybe not. Let's keep it full or 4bit?
+            # User didn't specify. Let's do 4bit for efficiency on Macs.
+            # Actually, let's ask user to be specific in the name if they want variants.
+            # Default to --upload-name or path?
+            # Let's try to just download.
+            # `mlx-lm` doesn't have a simple "download" API that's separate from convert easily exposed?
+            # Actually it does `huggingface-cli download`.
+            # But the user wants "local gemma". 
+            # If we assume they want to RUN it, we need MLX format.
+            # Let's run conversion to 4-bit by default as it's the standard use case.
+            "--q-bits", "4",
+            "--output", os.path.join(dest_dir, model_name.split("/")[-1])
+        ]
+        
+        print(f"   > {' '.join(cmd)}")
+        import subprocess
+        subprocess.run(cmd, check=True)
+        print("\n   ✅ Download/Conversion Complete.")
+        
+    except Exception as e:
+        print(f"   ❌ Error: {e}")
+
 if __name__ == "__main__":
     import argparse
+    import os
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", type=str, help="Model name to probe (e.g., veo-2.0-generate-001)")
+    parser.add_argument("--pull", type=str, help="HuggingFace Model ID to download (e.g., google/gemma-2-9b-it)")
     args = parser.parse_args()
     
     if args.probe:
         keys = get_keys()
         probe_model(keys, args.probe)
+    elif args.pull:
+        pull_model(args.pull)
     else:
         main()

@@ -1,4 +1,14 @@
 # API Keys for the Modular Vision Pipeline
 # Rename this file to 'env_vars.yaml' and fill in your keys.
 
+# --- TEXT ENGINE (New in v1.5) ---
+# Options: "gemini_api" (Default), "local_gemma"
+TEXT_ENGINE: "gemini_api"
+# If local, specify HuggingFace ID or Path (e.g. "google/gemma-2-9b-it")
+# or just the folder name if inside /Volumes/ORICO/1_o_gemmas/
+LOCAL_MODEL_PATH: ""
+
+# --- GEMINI API KEYS ---
+GEMINI_API_KEY: "YOUR_GEMINI_API_KEY_HERE"
+
 ACTION_KEYS_LIST: "AIzaTheFirstKey,AIzaTheSecondKey,AIzaTheBackupKey"

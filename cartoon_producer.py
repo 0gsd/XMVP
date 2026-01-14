@@ -182,17 +182,21 @@ def process_project(project_dir, vf_dir, keys, args, output_root):
     
     # FBF Mode: Exact Match + Expansion
     if args.vpform == "fbf-cartoon":
-        expansion = max(1, args.fps)
+        # BUG FIX: Cast directly to int for expansion, do not mutate args.fps for subsequent loops
+        expansion = max(1, int(args.fps)) 
         total_frames = len(descriptions) * expansion
+        
+        # Local variable for this specific project's Output FPS
+        project_fps = args.fps 
         
         if duration and duration > 0:
             real_fps = total_frames / duration
             logging.info(f"   ⚡ FBF Mode: {len(descriptions)} src rows * {expansion}x expansion = {total_frames} frames.")
             logging.info(f"   ⏱️  matches {duration:.2f}s audio => {real_fps:.2f} Output FPS")
-            args.fps = real_fps # Override FPS for stitching to match audio
+            project_fps = real_fps # Use calculated FPS for stitching, but don't save to args
         else:
             logging.warning("   ⚠️ Duration unknown. Defaulting to 12 FPS.")
-            args.fps = 12
+            project_fps = 12
             
         style_prefix = """
         STYLE: HAND DRAWN ANIMATION.
@@ -230,8 +234,9 @@ def process_project(project_dir, vf_dir, keys, args, output_root):
         # Interpolation Mode (Legacy)
         # 2. Calculate Target Frames
         # Legacy treats args.fps as direct Output FPS
-        target_frames = math.ceil(duration * args.fps) if duration else 120
-        logging.info(f"Legacy Target Frames: {target_frames} (@ {args.fps} FPS)")
+        project_fps = args.fps # Use directly
+        target_frames = math.ceil(duration * project_fps) if duration else 120
+        logging.info(f"Legacy Target Frames: {target_frames} (@ {project_fps} FPS)")
         
         # 3. Expand Descriptions (Style Injection)
         num_desc = len(descriptions)
@@ -315,7 +320,7 @@ def process_project(project_dir, vf_dir, keys, args, output_root):
         # 1. Video Only
         cmd_vid = [
             "ffmpeg", "-y",
-            "-framerate", str(args.fps),
+            "-framerate", str(project_fps),
             "-i", str(frames_pattern),
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",

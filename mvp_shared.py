@@ -144,6 +144,8 @@ def save_xmvp(data_models: Dict[str, Any], path: Union[str, Path]):
             child.text = model.model_dump_json(indent=2)
         elif isinstance(model, dict):
              child.text = json.dumps(model, indent=2)
+        elif isinstance(model, list):
+             child.text = json.dumps(model, indent=2)
         elif isinstance(model, str):
              child.text = model
              

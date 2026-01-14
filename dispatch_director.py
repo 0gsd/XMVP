@@ -87,11 +87,12 @@ class VideoDirectorAdapter:
     """
     Wraps action.VeoDirector for the MVP Dispatcher with Key Rotation.
     """
-    def __init__(self, keys: list, model_name: str):
+    def __init__(self, keys: list, model_name: str, pg_mode: bool = False):
         if not action:
             raise ImportError("action module missing")
         self.keys = keys
         self.model_name = model_name
+        self.pg_mode = pg_mode
         import random
         # Start at a random position to balance load across restarts
         self.current_key_index = random.randint(0, len(self.keys) - 1)
@@ -105,8 +106,9 @@ class VideoDirectorAdapter:
             sanitizer_key = self.keys[self.current_key_index] # Use current rotation key
             cleaner = sanitizer.Sanitizer(api_key=sanitizer_key)
             
-            # This will replace "Nicolas Cage" with "impersonator", etc.
-            prompt = cleaner.soften_prompt(prompt)
+            
+            # This will replace "Nicolas Cage" with "impersonator" (or "Actor N.C." in PG mode), etc.
+            prompt = cleaner.soften_prompt(prompt, pg_mode=self.pg_mode)
             
         except Exception as e:
             logging.warning(f"   ⚠️ Sanitizer unreachable: {e}. Proceeding with raw prompt.")
@@ -203,7 +205,7 @@ class VideoDirectorAdapter:
         logging.error("   ❌ All retries failed.")
         return False
 
-def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J", out_path: str = "manifest_updated.json", staging_dir: str = "componentparts") -> bool:
+def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J", out_path: str = "manifest_updated.json", staging_dir: str = "componentparts", pg_mode: bool = False) -> bool:
     """
     Executes the Dispatch pipeline.
     mode: "image" (Flux) or "video" (Veo)
@@ -240,7 +242,7 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
              model_name = "veo-2.0-generate-001"
              
         # Pass ALL keys to the adapter for rotation
-        director = VideoDirectorAdapter(keys, model_name=model_name)
+        director = VideoDirectorAdapter(keys, model_name=model_name, pg_mode=pg_mode)
     else:
         logging.error(f"Unknown mode: {mode}")
         return False
@@ -349,6 +351,7 @@ def main():
     parser.add_argument("--staging", type=str, default="componentparts", help="Directory to save assets")
     parser.add_argument("--mode", type=str, default="image", choices=["image", "video"], help="Generation Mode")
     parser.add_argument("--vm", type=str, default="J", help="Video Model Tier (if mode=video)")
+    parser.add_argument("--pg", action="store_true", help="Enable PG Mode (Relaxed Celebrity/Strict Child Safety)")
     
     args = parser.parse_args()
     
@@ -357,7 +360,8 @@ def main():
         mode=args.mode,
         model_tier=args.vm,
         out_path=args.out,
-        staging_dir=args.staging
+        staging_dir=args.staging,
+        pg_mode=args.pg
     )
     
     if not success:

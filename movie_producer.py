@@ -46,6 +46,7 @@ def main():
     parser.add_argument("--cs", type=int, default=0, help="Chaos Seeds level")
     parser.add_argument("--cf", type=str, default=None, help="Cameo Feature: Wikipedia URL or Search Query")
     parser.add_argument("--vm", type=str, default="K", help="Video Model Tier (L, J, K)")
+    parser.add_argument("--pg", action="store_true", help="Enable PG Mode (Relaxed Celebrity/Strict Child Safety)")
     
     # Ops Args
     parser.add_argument("--clean", action="store_true", help="Clean intermediate JSONs before running")
@@ -148,7 +149,8 @@ def main():
         mode="video",
         model_tier=args.vm,
         out_path=p_manifest_updated,
-        staging_dir=action.DIR_PARTS 
+        staging_dir=action.DIR_PARTS,
+        pg_mode=args.pg
     )
     if not success: sys.exit(1)
 

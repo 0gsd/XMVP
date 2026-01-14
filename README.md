@@ -1,121 +1,117 @@
-# XMVP
-> A reasoning, bureaucratic chain of simulated movie and video production specialists; your own creative technostructure. Free and open for use by all (you'll need your own API keys) in the interest of creating more coherent, universally interesting, and entertainment-forward audiovisual outputs via the models you trust, in the formats you want, from nothing or anything.
+# XMVP: The Modular Vision Pipeline
 
-**Status**: Beta
-**Date**: Jan 13, 2026
+This folder contains the complete "Value Chain" for AI content production, decomposed into specialized specialist modules.
 
-## Setup & Configuration
-1.  **Install Requirements**: `pip install -r requirements.txt`
-2.  **API Keys**: 
-    - The pipeline shares a centralized configuration with the legacy suite.
-    - Copy `env_vars.example.yaml` to `../../env_vars.yaml` (root of `tools/fmv/`).
-    - Add your Gemini/Veo API keys to `ACTION_KEYS_LIST` in `tools/fmv/env_vars.yaml`.
-    - **Note**: `env_vars.yaml` is gitignored to protect your secrets.
+## 🎬 Core Orchestrators
 
-The Modular Vision Pipeline (MVP) breaks video generation into a 7-stage Value Chain, orchestrated by `movie_producer.py`. Each module isolates a specific creative or technical decision, passing standardized Data Contracts (JSON) to the next stage.
-
-## 1. Orchestration
 ### `movie_producer.py`
-The Master Controller.
-- **Role**: Sequential execution, argument parsing, error handling, and artifact persistence (XMVP).
-- **Inputs**: CLI Arguments (`--concept`, `--seg`, `--vpform`, `--cf`, `--vm`, `--xb`).
-- **Outputs**:
-    - `bible.json`
-    - `story.json`
-    - `portions.json`
-    - `manifest.json`
-    - `finalcuts/*.mp4`
-    - `finalcuts/run_*.xml` (XMVP Archive)
+The "Showrunner" that orchestrates the entire 7-stage pipeline to create video content from a simple prompt.
 
-## 2. Creative Modules (The "Above the Line" Team)
+**Usage:**
+```bash
+python3 movie_producer.py "A sci-fi film about a robot learning to love" [ARGS]
+```
 
-### `vision_producer.py` (The Showrunner)
-- **Role**: Defines the static "Bible" for the production.
-- **Features**:
-    - **Chaos Seeds (`--cs`)**: Injects Wikipedia entropy into the core concept.
-    - **Cameo (`--cf`)**: Injects specific topics/people via Wikipedia lookup logic.
-- **Output**: `bible.json` (CSSV: Constraints, Scenario, Situation, Vision).
+**Arguments:**
+- `concept` (Positional): The core prompt/logline.
+- `--seg [INT]`: Number of segments to generate (default: `3`).
+- `--l [FLOAT]`: Length of each segment in seconds (default: `4.0`).
+- `--vpform [STR]`: The Genre/Form to use. Options: `realize-ad`, `tech-movie` (default: `tech-movie`).
+- `--cs [0-6]`: Chaos Seeds level (Entropy injection). `0`=Off.
+- `--cf [URL/Query]`: Cameo Feature. Injects a specific Wikipedia topic or search result as a "Minor Appearance".
+- `--vm [L/J/K]`: Video Model Tier. `J`=Veo 2, `K`=Veo 3 (default: `K`).
+- `--pg`: **PG Mode**. Enables "Actor N.C." obfuscation for celebrities and strict child safety cleaning.
+- `--clean`: Deletes intermediate JSON artifacts before running.
+- `--xb [PATH]`: Re-hydrates the pipeline from an existing XMVP XML file (skips Vision Producer).
+- `-f`, `--fast`: Shortcut for Tier `J` (Legacy Veo 2).
+- `--vfast`: Shortcut for Tier `V2` (Legacy).
+- `--out [PATH]`: Override output directory.
 
-### `stub_reification.py` (The Writer)
-- **Role**: Synthesizes a concrete narrative arc from the high-level Bible.
-- **Logic**: Uses Gemini to invent Characters, Theme, and Synopsis.
-- **Output**: `story.json`.
-
-### `writers_room.py` (The Screenwriter)
-- **Role**: Breaks the Story into sequential Scenes (Portions).
-- **Output**: `portions.json` (List of narrative blocks with duration).
-
-## 3. Technical Modules (The "Below the Line" Team)
-
-### `portion_control.py` (The Line Producer)
-- **Role**: Converts narrative Portions into executable Specs (Segs).
-- **Logic**: constant frame rate calculation, prompt formatting.
-- **Output**: `manifest.json` (List of `Seg` objects).
-
-### `dispatch_director.py` (The Director)
-- **Role**: Generates actual assets (Video/Image) from the Manifest.
-- **Features**:
-    - **VideoDirectorAdapter**: Wraps `action.py` (Veo).
-    - **Retry Logic**: Handles 'Model Overloaded' (429/503) with exponential backoff.
-    - **Context Passing**: Feeds the last frame of Seg N to Seg N+1.
-- **Output**: `componentparts/*.mp4`, `manifest_updated.json`.
-
-## 4. Safety & Sanitation
-
-### `sanitizer.py`
-- **Role**: Ensures generated content meets safety guidelines without blocking the pipeline.
-- **Method**:
-    - **Softening**: Rewrites prompts to change "children" to "adults", "celebrities" to "impersonators".
-    - **Washing**: Re-generates unsafe reference images using "dazzle camouflage" techniques (describe -> re-render).
-- **Integration**: Called automatically by `action.py` on 400 Policy Errors.
-
-## 5. Persistence
-
-### `mvp_shared.py` (The Library)
-- **Role**: Shared Pydantic models (`CSSV`, `Seg`, etc.) and XMVP Utils.
-- **XMVP**: `<Bible>`, `<Story>`, `<Portions>`, `<Manifest>` wrapped in `<XMVP>` XML tags.
-- **Re-hydration**: Logic to load `bible.json` from `run.xml` via `--xb`.
-
-## 7. Specialized Producers (v1.1)
+---
 
 ### `cartoon_producer.py`
-The Animation Studio.
-- **Role**: Generates Frame-by-Frame (FBF) animation sequences and XMVP Storyboards.
-- **Modes**:
-    - **Flipbook (FBF)** (`--vpform fbf-cartoon`): Generates "Keyframes" from audio transcripts, then "Expands" them into smooth animation sequences using frame interpolation logic.
-    - **Storyboard Export**: Automatically hallucinates a "Movie Bible" (Title/Synopsis/Vibe) from the visual frames and exports a valid XMVP XML file. This allows you to generate a cartoon, and then immediately "remake" it as a live-action movie using `movie_producer.py --xb`.
-- **Key Flags**:
-    - `--fps N`: Controls **Expansion Factor** in FBF mode (e.g., `--fps 4` expands 1 row to 4 frames).
-    - `--vpform`: `fbf-cartoon` (default).
+Specialized pipeline for "Frame-By-Frame" (FBF) animation and legacy interpolation.
 
-### `post_production.py` (Post)
-The VFX Suite.
-- **Role**: Enhances video output via hallucinated tweening and detail injection.
-- **Pipeline**: Extract Frames -> Tween (Gemini) -> Upscale (Obsessive/Lancaster) -> Stitch.
-- **Key Flags**:
-    - `-x N`: Tweening factor (e.g., `-x 2` doubles framerate).
-    - `--scale N`: Upscaling factor (e.g., `--scale 2` doubles resolution).
+**Usage:**
+```bash
+python3 cartoon_producer.py --vpform fbf-cartoon --tf /path/to/transcripts --vf /path/to/videos
+```
+
+**Arguments:**
+- `--vpform [STR]`: Mode. `fbf-cartoon` (Frame-by-Frame) or `legacy` (Interpolation). Default: `fbf-cartoon`.
+- `--tf [PATH]`: Transcript Folder containing sub-project folders.
+- `--vf [PATH]`: Video Folder containing original source videos (for audio muxing).
+- `--fps [INT]`:
+    - In **FBF Mode**: Expansion Factor (1 = 1 frame per line, 2 = 2 frames per line).
+    - In **Legacy Mode**: Output FPS.
+- `--delay [FLOAT]`: Seconds to wait between API requests to avoid rate limits (default: `3.0`).
+- `--limit [INT]`: Test limit (stop after N frames). `0`=No limit.
+- `--project [STR]`: specific project name to process (skips others).
+- `--smin [FLOAT]`: Minimum project duration to process.
+- `--smax [FLOAT]`: Maximum project duration to process.
+- `--shuffle`: Randomize project processing order.
+
+---
+
+### `podcast_animator.py`
+Visualizes audio podcasts (or generates them) into animated video pairs/triplets.
+
+**Usage:**
+```bash
+python3 podcast_animator.py --project theedit-483919
+```
+
+**Arguments:**
+- `--project [ID]`: Google Cloud Project ID to use for TTS (Text-to-Speech) billing. Prevents `403 PERMISSION_DENIED` if the default project lacks TTS enablement.
+
+---
+
+## 🛠️ utility Tools
 
 ### `model_scout.py`
-The Casting Director for Models.
-- **Role**: Audits available Google Cloud models (Gemini/Veo/Imagen).
-- **Features**:
-    - `--probe`: Stress-tests model endpoints to determine empirical rate limits and quota costs.
+Scans available Gemini/Veo models and checks if `definitions.py` is up to date.
 
-## 8. CLI Reference (Movie Producer)
+**Usage:**
+```bash
+python3 model_scout.py [--probe MODEL_NAME]
+```
 
-| Flag | Description | Tier / Model |
-| :--- | :--- | :--- |
-| `--concept "..."` | The high-level prompt | N/A |
-| `--seg N` | Number of segments (shots) | N/A |
-| `--l N.N` | Length per segment (seconds) | N/A |
-| `--vpform FORM` | Genre/Structure (`realize-ad`, `tech-movie`, `fairy-tale-movie`) | N/A |
-| `--vm TIER` | Video Model Tier (`K`=Veo 3, `J`=Veo 3 Fast, `V2`=Veo 2) | K, J, V2 |
-| `--fast` | Shortcut for `--vm J` (Cheaper/Faster) | J |
-| `--vfast` | Shortcut for `--vm V2` (Legacy Veo 2.0 - No Audio) | V2 |
-| `--xb PATH` | **Re-hydrate** from XMVP XML file (Bypass creation) | N/A |
+**Arguments:**
+- `--probe [MODEL_NAME]`: Runs a stress test (5 attempts) against a specific model to check for rate limits/latency.
 
-## 9. Deprecated / Merged
-- **`realize.py`**: **DEPRECATED**. Replaced by `movie_producer.py`.
-- **`intake_outgive`**: **MERGED**. Functionality subsumed by `dispatch_director.py` (Context Passing).
-- **`editor_decider`**: **INLINE**. Simple stitching logic currently lives in `movie_producer.py` (Step 6). Future expansion planned for `Indecision` resolution.
+---
+
+## ⚙️  The Value Chain (Internal Modules)
+*These are typically called by `movie_producer.py`, but can be run individually for debugging.*
+
+### 1. `vision_producer.py` (The Visionary)
+Creates the "Bible" (CSSV) from a prompt.
+- `--vpform`, `--prompt`, `--slength` (Duration Sec), `--flength` (Duration Frames), `--seg_len`, `--cs` (Chaos), `--out`.
+
+### 2. `stub_reification.py` (The Writer)
+Expands the Bible into a "Story" (Narrative Arc).
+- `--bible` (Input CSSV), `--out`, `--req` (Requests), `--xb` (Load from XML).
+
+### 3. `writers_room.py` (The Screenwriter)
+Breaks the Story into temporal "Portions" (Scenes).
+- `--bible`, `--story`, `--out`.
+
+### 4. `portion_control.py` (The Line Producer)
+Calculates exact frame ranges for each Portion.
+- `--bible`, `--portions`, `--out` (Manifest).
+
+### 5. `dispatch_director.py` (The Director)
+Executes the Manifest to generate assets.
+- `--manifest`, `--staging`, `--out` (Updated Manifest).
+- `--mode`: `image` (Flux) or `video` (Veo).
+- `--vm`: Video Model Tier (`J`/`K`).
+- `--pg`: PG Mode flag.
+
+---
+
+## 📁 Environment
+Ensure `tools/fmv/env_vars.yaml` is populated with your keys:
+```yaml
+GEMINI_API_KEY: "..."
+ACTION_KEYS_LIST: "key1,key2,key3" # For rotation
+```

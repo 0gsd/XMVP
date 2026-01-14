@@ -127,19 +127,33 @@ class Sanitizer:
              logging.error(f"   ❌ Failed to save image: {e}")
              return original_path
 
-    def soften_prompt(self, prompt):
+    def soften_prompt(self, prompt, pg_mode=False):
         """Rewrites a prompt to be safe for work while maintaining visual intent."""
-        logging.info(f"   🛡️ Softening Prompt via {self.l_model}...")
+        logging.info(f"   🛡️ Softening Prompt via {self.l_model} (PG Mode: {pg_mode})...")
         try:
-            safety_instruction = (
-                "Rewrite the following video prompt to be compliant with strict safety guidelines. "
-                "Remove any mention of children, public figures, violence, or gore. "
-                "CRITICAL: If a specific celebrity or public figure is named, RETAIN the name but explicitly phrase it as 'an impersonator performing in character as [Name]'. "
-                "Example: 'Tom Cruise jumping' -> 'an impersonator performing in character as Tom Cruise jumping'. "
-                "For non-celebrity people (e.g. 'a boy', 'a girl'), change them to 'an adult man' or 'an adult woman' to avoid child safety triggers. "
-                "Keep the visual style and composition exactly the same. "
-                "Output ONLY the new prompt."
-            )
+            if pg_mode:
+                # RELAXED / PG MODE
+                safety_instruction = (
+                    "Rewrite the following video prompt to be compliant with PG safety guidelines. "
+                    "1. Remove any mention of children. Replace 'boy', 'girl', 'child' with 'adult man' or 'adult woman'. "
+                    "2. Remove violence, gore, or nudity. "
+                    "3. CELEBRITY HANDLING: If a specific celebrity is named, replace their name with their Profession + Initials. "
+                    "   Example: 'Nicolas Cage' -> 'actor N.C.', 'Taylor Swift' -> 'singer T.S.'. "
+                    "   Do NOT use the word 'impersonator'. "
+                    "Keep the visual style and composition exactly the same. "
+                    "Output ONLY the new prompt."
+                )
+            else:
+                # STANDARD / SAFE MODE
+                safety_instruction = (
+                    "Rewrite the following video prompt to be compliant with strict safety guidelines. "
+                    "Remove any mention of children, public figures, violence, or gore. "
+                    "CRITICAL: If a specific celebrity or public figure is named, RETAIN the name but explicitly phrase it as 'an impersonator performing in character as [Name]'. "
+                    "Example: 'Tom Cruise jumping' -> 'an impersonator performing in character as Tom Cruise jumping'. "
+                    "For non-celebrity people (e.g. 'a boy', 'a girl'), change them to 'an adult man' or 'an adult woman' to avoid child safety triggers. "
+                    "Keep the visual style and composition exactly the same. "
+                    "Output ONLY the new prompt."
+                )
             
             response = self.client.models.generate_content(
                 model=self.l_model,

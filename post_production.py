@@ -103,6 +103,7 @@ class FrameUpscaler:
     def upscale(self, image_path, output_path, scale=2.0):
         """
         Resizes using the 'Pass 3' Logic (Lanczos -> Quantize).
+        Supports Hybrid Upscaling for scale > 2.0 (Style x2 -> Nearest Neighbor xRemaining).
         """
         try:
             if not os.path.exists(image_path): return False
@@ -112,16 +113,35 @@ class FrameUpscaler:
             img = self.obsess(img, intensity=0.2)
             
             w, h = img.size
-            target_w, target_h = int(w * scale), int(h * scale)
             
-            # 2. Resize Method (LANCZOS is best for upscaling before quantization)
-            resized = img.resize((target_w, target_h), Image.LANCZOS)
-            
-            # 3. Quantize (The 'Redoer' signature look)
-            # Reduces color banding introduced by smooth resize
-            # We use a high palette count (255) to keep it photoreal but structured
-            final = resized.quantize(colors=255, method=Image.MAXCOVERAGE, dither=Image.FLOYDSTEINBERG)
-            final = final.convert("RGB")
+            # Hybrid Logic for Scale > 2 (e.g. 4x)
+            # User wants "native repainting style" (approx 2x) then "forceful double" (Nearest)
+            if scale > 2.0:
+                # Stage A: Style Upscale (x2)
+                intermediate_scale = 2.0
+                int_w, int_h = int(w * intermediate_scale), int(h * intermediate_scale)
+                
+                # Resize (Lanczos)
+                resized = img.resize((int_w, int_h), Image.LANCZOS)
+                
+                # Quantize (The 'Redoer' signature look)
+                styled = resized.quantize(colors=255, method=Image.MAXCOVERAGE, dither=Image.FLOYDSTEINBERG)
+                styled = styled.convert("RGB")
+                
+                # Stage B: Forceful Resize (Nearest Neighbor) to Final
+                final_w, final_h = int(w * scale), int(h * scale)
+                final = styled.resize((final_w, final_h), Image.NEAREST)
+                
+            else:
+                # Standard Logic (Direct to Scale)
+                target_w, target_h = int(w * scale), int(h * scale)
+                
+                # 2. Resize Method (LANCZOS is best for upscaling before quantization)
+                resized = img.resize((target_w, target_h), Image.LANCZOS)
+                
+                # 3. Quantize
+                final = resized.quantize(colors=255, method=Image.MAXCOVERAGE, dither=Image.FLOYDSTEINBERG)
+                final = final.convert("RGB")
             
             final.save(output_path)
             return True
@@ -223,6 +243,8 @@ def process(args):
     stage_3_upscaled = out_root / "3_upscaled"
     
     # 1. Extract (if video)
+    audio_path = None
+    
     if input_video:
         logging.info(f"🎞️ Extracting frames from {input_video}...")
         stage_1_frames.mkdir(exist_ok=True)
@@ -230,6 +252,14 @@ def process(args):
         cmd = f"ffmpeg -i '{input_video}' -q:v 2 '{stage_1_frames}/frame_%05d.png' -y -loglevel error"
         os.system(cmd)
         work_frames = list(stage_1_frames.glob("*.png"))
+        
+        # Extract Audio
+        audio_candidate = out_root / "source_audio.mp3"
+        # Check if source has audio
+        cmd_audio = f"ffmpeg -i '{input_video}' -vn -acodec libmp3lame -q:a 2 '{audio_candidate}' -y -loglevel error"
+        if os.system(cmd_audio) == 0 and audio_candidate.exists():
+             logging.info("   🔊 Audio extracted.")
+             audio_path = audio_candidate
     else:
         # Just copy extracted frames to separate logic
         logging.info(f"📂 Loading frames from {input_dir}...")
@@ -289,6 +319,11 @@ def process(args):
                 success = interpolator.generate_tween(curr_frame, next_frame, tween_path, i, i+1)
                 
                 if success:
+                    # TODO: If x > 2, we might want to fill more?
+                    # For MVP v0.5, strict flipbook (A, Tween, B) is fine.
+                    # Duplicating Tween for higher X? Or defaulting logic?
+                    # Let's just stick one tween. If x=4, framerate increases, creates simple hold?
+                    # Actually, let's just do 1 tween.
                     final_sequence.append(("generated", tween_path))
                 else:
                     # Fallback? Duplicate current frame to keep sync?
@@ -345,15 +380,33 @@ def process(args):
     # 4. Stitch
     logging.info("🧵 Stitching Video...")
     output_video = out_root / "final_output.mp4"
-    # Framerate? source / expansion? 
-    # If source was 24fps and we did 2x, we probably want 48fps OR slow motion?
-    # Usually frame interpolation is for smoothness (increase fps).
-    # Default to 24fps?
-    fps = 24 * args.x 
-    # Actually, simpler: 12fps is default animation. 24 is cinema.
-    # If standard is 12, and we double, maybe 24.
+    # Framerate Logic:
+    # If source was X fps, and we expanded twice, we have 2X frames.
+    # To keep Duration constant (Audio Sync), we must double FPS.
+    # But usually source FPS isn't known for extracted frames unless probed.
+    # Assuming standard input of 12fps or 24fps?
+    # If args.x is used (Interpolation), we usually WANT to increase fluidity (e.g. 12->24).
+    # So we should multiply base fps (which we'll assume is ~24 or 12?)
     
-    cmd = f"ffmpeg -framerate 24 -i '{final_frames_dir}/frame_%05d.png' -c:v libx264 -pix_fmt yuv420p '{output_video}' -y -loglevel error"
+    # Safe Default: 24fps as base.
+    # If we expanded by args.x... wait.
+    # If we have 1 sec of audio and 12 frames.
+    # If we expand to 24 frames (x=2), and set FPS to 24, duration is 1 sec. Perfect.
+    # So if original was "Animation" (approx 12?), then 12 * x is correct.
+    # Let's assume input matches the expansion intent.
+    
+    target_fps = 12 * args.x 
+    # Or should we just stick to 24?
+    # User usually wants 24fps final.
+    # Let's stick to 24 forced if no better info.
+    target_fps = 24
+    
+    # Check if we have audio
+    audio_cmd = ""
+    if audio_path:
+        audio_cmd = f"-i '{audio_path}' -map 0:v -map 1:a -c:a copy"
+    
+    cmd = f"ffmpeg -framerate {target_fps} -i '{final_frames_dir}/frame_%05d.png' {audio_cmd} -c:v libx264 -pix_fmt yuv420p '{output_video}' -y -loglevel error"
     os.system(cmd)
     
     logging.info(f"🎉 Post Production Complete: {output_video}")

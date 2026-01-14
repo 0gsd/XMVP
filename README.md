@@ -1,6 +1,8 @@
 # XMVP: The Modular Vision Pipeline
 
-This folder contains the complete "Value Chain" for AI content production, decomposed into specialized specialist modules.
+This folder contains the complete "Value Chain" for AI content production, decomposed into specialized specialist modules. 
+
+It can accept, via movie_producer.py or cartoon_producer.py, an XML input in the XMVP format and execute from the XMVP files contents, *or* it can auto-generate a full execution chain and output given a prompt "idea" and a set of "constraints" -- shorthanded via the "Vision Platonic Form" or --vpform paradigm -- and execute either via a production line of modules, having broken it up into the appropriate number of "production chunks" needed to lead to the requested output.
 
 ## 🎬 Core Orchestrators
 
@@ -110,8 +112,14 @@ Executes the Manifest to generate assets.
 ---
 
 ## 📁 Environment
-Ensure `tools/fmv/env_vars.yaml` is populated with the appropriate API keys you need to use any cloud services, in this format: 
+Ensure `env_vars.yaml` is populated with the appropriate API keys you need to use any cloud services, in this format: 
 ```yaml
 ACTION_KEYS_LIST: "key1,key2,key3" # For rotation
 ```
-Cycling keys is recommended to prevent throttling and these tools will use intelligent round-robin logic if more than one of the same type is included sequentially in the ACTION_KEYS_LIST=""; otherwise, you are on your own to handle multi-API and/or offline model request routing and authentication ... and since video generation is expensive, always make sure to check with your API provider(s) about limits and costs.
+Your env_vars.yaml can be in a different location (the code references an off-root directory), but you'll have to figure out how to route the calls there.
+
+Even among two Gemini APIs, using the same key, the way requests have to be constructed and massaged, and you'll always need to be keeping everything up to date. I can't save you from that, though model_scout.py IS included which can refer to definitions.py for your preferred models and probe the various APIs using test_gen_capabilities.py. 
+
+I'll also say that I realize this is a bit of an advertisement for Gemini APIs as written, and that's OK. The core concepts should be able to work with just about any cloud or local setup you want to re-write it to use.
+
+Cycling API keys is recommended to prevent throttling and these tools will use intelligent round-robin logic if more than one of the same type is included sequentially in the ACTION_KEYS_LIST=""; otherwise, you are on your own to handle multi-API and/or offline model request routing and authentication ... and since video generation is expensive, always make sure to check with your API provider(s) about limits and costs.

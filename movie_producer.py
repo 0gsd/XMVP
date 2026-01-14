@@ -20,7 +20,7 @@ def get_output_dir():
     """Returns the default output directory: ../z_test-outputs"""
     # Base it relative to this script location
     base = os.path.dirname(os.path.abspath(__file__))
-    out_dir = os.path.join(base, "..", "z_test-outputs")
+    out_dir = os.path.join(base, "z_test-outputs")
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
     return out_dir

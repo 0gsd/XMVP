@@ -23,6 +23,15 @@ import shutil
 
 import requests
 import base64
+from sanitizer import Sanitizer
+# MVP Imports
+from mvp_shared import save_xmvp, CSSV
+import vision_producer
+from text_engine import TextEngine
+# MVP Imports
+from mvp_shared import save_xmvp, CSSV
+import vision_producer
+from text_engine import TextEngine
 import wave
 import math
 
@@ -38,6 +47,13 @@ except ImportError:
     import mvp_shared
 
 MODEL_ID = "gemini-2.5-flash-image" # Verified L-Tier
+TTS_MODEL_ID = "gemini-2.5-flash-tts"
+
+# Gemini 2.5 TTS Voice Matrix (Fallback to Cloud Journey Voices if 404)
+GEMINI_VOICES = {
+    'MALE': ['en-US-Journey-D', 'en-GB-Journey-D', 'en-US-Neural2-J'],
+    'FEMALE': ['en-US-Journey-F', 'en-US-Journey-O', 'en-GB-Journey-F']
+}
 
 # --- HELPERS (API & TTS) ---
 
@@ -99,12 +115,50 @@ def detect_gender_rest(speakers, api_key):
     try:
         response = requests.post(url, json=payload)
         if response.status_code == 200:
-            txt = response.json()['candidates'][0]['content']['parts'][0]['text'].strip().upper()
-            if "FEMALE" in txt: return "FEMALE"
-            return "MALE"
-    except:
+            text = response.json()['candidates'][0]['content']['parts'][0]['text'].strip().upper()
+            return "FEMALE" if "FEMALE" in text else "MALE"
+    except Exception as e:
+        print(f"[-] Gender Detect Failed: {e}")
         pass
     return "MALE"
+
+def assign_voice_journey_simple(speaker_name, gender_group, host_map):
+    """
+    Simpler, Classic Logic:
+    - Host A (Alphabetically First/Explicit A): +1 Semitone
+    - Host B (Alphabetically Last/Explicit B): -2 Semitones
+    - Gender determines base voice (Journey-D or Journey-F)
+    """
+    
+    # 1. Base Voice by Gender (Journey Fallback)
+    # Default to Neural2-D/F if Journey unavailable, but here hardcoded Journey.
+    base_voice = "en-US-Journey-D" if gender_group == "MALE" else "en-US-Journey-F"
+    
+    # 2. Determine Role (A or B)
+    # Check explicitly first
+    role = 'A' # Default
+    
+    # Sort speakers to determine order if not explicit
+    all_speakers = sorted(list(host_map.keys()))
+    if speaker_name in host_map:
+        # If we have metadata "A" or "B" marker... but host_map structure is just dict of data
+        # We can just infer from sorted position.
+        idx = all_speakers.index(speaker_name)
+        if idx == 0:
+            pitch_shift = 1 # Speaker A: +1 (Higher/Faster)
+        else:
+            pitch_shift = -2 # Speaker B: -2 (Lower/Slower)
+    else:
+        # Fallback for unknown speaker
+        if all_speakers and speaker_name in all_speakers:
+             idx = all_speakers.index(speaker_name)
+             pitch_shift = 1 if idx == 0 else -2
+        else:
+             pitch_shift = 0
+
+    return base_voice, pitch_shift
+    
+
 
 EISNER_STYLE = (
     "You are a world-famous commercial artist and fine art painter and drawer. "
@@ -426,6 +480,9 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
     """Process Pair (Text+JSON) by GENERATING Audio using Local Voice Engine."""
     print(f"[*] Processing PAIR {base} (Generating Audio)...")
     
+    # Initialize Sanitizer
+    sanitizer = Sanitizer()
+    
     # Remove Local Voice Engine
     # try:
     #     from voice_engine import VoiceEngine
@@ -461,21 +518,25 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
     # Since we are local now, we don't strictly need a key unless we want to use Gemini for gender.
     # We'll just define a fallback if no key.
     if KEYS:
-        _, key = get_client()
+        genai_client, key = get_client()
         gender = detect_gender_rest(speaker_names, key)
     else:
-        gender = "MALE" # Default
-    
+        print("[-] Error: No keys available for Gemini.")
+        return
+
     print(f"    Detected Gender Group: {gender}")
     
-    # Assign Base Voice
-    # Journey Voices: en-US-Journey-D (Male), en-US-Journey-F (Female)
-    base_voice_name = "en-US-Journey-D" if gender == "MALE" else "en-US-Journey-F"
-    print(f"    Base Voice Selection: {base_voice_name}")
+    # 1. Assign Voices & Personalities (Deterministic)
+    # No longer defaulting to single base voice.
+    # We will assign per-speaker in the loop.
     
     # Parse Basic
     segments = parse_transcript_basic(txt_path)
     print(f"    Segments to Synthesize: {len(segments)}")
+
+    # 2. Extract Generative Seeds (Narratives/Movies)
+    # ----------------------------------------------------
+    process_narratives(meta, segments, output_mp4, gcp_project)
     
     temp_dir = os.path.join(OUTPUT_DIR, f"temp_gen_{int(time.time())}")
     os.makedirs(temp_dir, exist_ok=True)
@@ -509,29 +570,10 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
                 clean_txt = " " # TTS might fail on empty. give it a space or handle downstream.
 
             
-            # Determine Pitch Shift for this Speaker
-            # Robust Matching: Normalize to Upper Case
-            curr_spk_upper = seg.speaker.strip().upper()
-            known_hosts_upper = [h.upper() for h in speaker_names]
-            sorted_hosts = sorted(known_hosts_upper)
+            # Determine Pitch Shift & Voice for this Speaker (Simple Logic)
+            voice_name, pitch_shift = assign_voice_journey_simple(seg.speaker, gender, host_map)
             
-            # Find index
-            try:
-                current_spk_idx = sorted_hosts.index(curr_spk_upper)
-            except ValueError:
-                # Fuzzy match? Or default.
-                current_spk_idx = 0
-            
-            # Speaker 0: +1 semitone
-            
-            # Speaker 0: +1 semitone
-            # Speaker 1: -2 semitones
-            if current_spk_idx == 0:
-                pitch_shift = 1
-            else:
-                pitch_shift = -2
-                
-            print(f"       [+] Voice: {base_voice_name} | Shift: {pitch_shift} semitones")
+            print(f"       [+] Voice: {voice_name} | Shift: {pitch_shift} semitones")
 
             chunks = split_text_into_chunks(clean_txt)
             chunk_files = []
@@ -540,8 +582,9 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
                 base_wav = os.path.join(temp_dir, f"seg_{i:03d}_part_{c_idx:02d}_base.wav")
                 final_chunk_wav = os.path.join(temp_dir, f"seg_{i:03d}_part_{c_idx:02d}.wav")
                 
-                # Generate Base (Google Cloud TTS)
-                audio_data = synthesize_text_rest(chunk, base_voice_name, access_token, gcp_project)
+                # Generate Base (Cloud TTS - GA Voices)
+                # Fallback to Journey voices via REST API
+                audio_data = synthesize_text_rest(chunk, voice_name, access_token, gcp_project)
                 
                 if audio_data:
                     with open(base_wav, 'wb') as f: f.write(audio_data)
@@ -577,18 +620,21 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
             
             # 3. Image Gen
             img_path = os.path.join(temp_dir, f"seg_{i:03d}.png")
-            prompt = get_image_prompt(seg, host_map)
             
-            # Generate Image (Gemini)
-            if not generate_image(prompt, img_path):
+            # Pass detected gender group to ensure visual consistency
+            prompt = get_image_prompt(seg, host_map, gender_group=gender)
+            
+            # Generate Image (Gemini/Imagen)
+            # Pass sanitizer instance
+            if not generate_image(prompt, img_path, sanitizer):
                 Image.new('RGB', (1024, 1024), color='black').save(img_path)
             seg.image_path = img_path
             
             processed_segs.append(seg)
             
             # Rate Limit Protection
-            print("       [...] Cooling down (0.2s)...")
-            time.sleep(0.2)
+            print("       [...] Cooling down (1s)...")
+            time.sleep(1)
             
         if not processed_segs:
             print("[-] No content generated. Aborting.")
@@ -675,6 +721,63 @@ def synthesize_text_rest(text, voice_name, token, project_id):
         print(f"[-] TTS Request Failed: {e}")
         return None
 
+def synthesize_text_gemini(text, voice_name, client, project_id=None):
+    """
+    Synthesizes speech using Gemini 2.5 Flash TTS via GenAI SDK.
+    Attempting to target Vertex AI endpoint if standard fails (404).
+    """
+    try:
+        # Config for Single Speaker
+        speech_config = types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice_name)
+            )
+        )
+        
+        # Check if client needs to be Vextex-aware
+        # The user code snippet specific: vertexai=True, location='us-central1'
+        # If the passed client is standard, we might need a new one.
+        # But 'client' arg here comes from get_client() which is standard.
+        # Let's create a temporary Vertex client if we have a project ID.
+        
+        tts_client = client
+        if project_id:
+             # Try to instantiate a Vertex client on the fly
+             # We assume credentials/ADC are available or API Key works with Vertex
+             try:
+                 tts_client = genai.Client(
+                     vertexai=True,
+                     project=project_id,
+                     location="us-central1",
+                     api_key=client.api_key 
+                 )
+             except Exception as vx_err:
+                 # Fallback to standard if Vertex client creation fails
+                 print(f"       [!] Vertex Client Init Failed ({vx_err}), using standard...")
+                 tts_client = client
+
+        response = tts_client.models.generate_content(
+            model=TTS_MODEL_ID,
+            contents=text,
+            config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=speech_config
+            )
+        )
+        
+        # Extract Audio Bytes
+        if response.candidates and response.candidates[0].content.parts:
+             for part in response.candidates[0].content.parts:
+                if part.inline_data:
+                    return part.inline_data.data
+        
+        print("[-] Gemini TTS: No inline audio data found.")
+        return None
+
+    except Exception as e:
+        print(f"[-] Gemini TTS Failed: {e}")
+        return None
+
 def pitch_shift_file(input_file, semitones):
     """Shifts pitch using FFmpeg."""
     if semitones == 0: return input_file
@@ -717,12 +820,18 @@ def get_audio_duration(file_path):
         print(f"[-] Error parsing audio duration ({file_path}): {e}")
         return 0.0
 
-MODEL_ID = "imagen-4.0-fast-generate-001" # Verified Imagen Fast
+MODEL_ID = "gemini-2.5-flash-image" # Reverted to Gemini Flash (Cost Efficiency)
 
-def generate_image(prompt, output_path):
-    """Generates an image using Imagen 4.0 Fast via generate_images."""
+def generate_image(prompt, output_path, sanitizer=None):
+    """Generates an image using Gemini 2.5 Flash via generate_content."""
+    
+    # 1. Sanitize Prompt if sanitizer provided
+    if sanitizer:
+        # User requested PG Mode (Strict celebrity handling + Safety)
+        prompt = sanitizer.soften_prompt(prompt, pg_mode=True)
+        
     max_retries = 5
-    base_wait = 2 # Reduced wait for Imagen Fast
+    base_wait = 2 
     
     for attempt in range(max_retries):
         client, key_used = get_client() # Rotates key on each attempt
@@ -732,25 +841,24 @@ def generate_image(prompt, output_path):
             print(f"   [>] Getting Image (Key: ...{key_used[-4:]})")
         
         try:
-            # Imagen API Call
-            response = client.models.generate_images(
-                model=MODEL_ID,
-                prompt=prompt,
-                config=types.GenerateImagesConfig(
-                    number_of_images=1,
-                    aspect_ratio="1:1",
-                    safety_filter_level="BLOCK_LOW_AND_ABOVE",
-                    person_generation="ALLOW_ADULT"
-                )
+            # Gemini Flash Image API Call
+            # Note: Flash Image uses generate_content with aspect_ratio prompt suffix for now, 
+            # or we can try the new config if supported. sticking to proved prompt suffix method.
+            final_prompt = f"Generate an image of {prompt} --aspect_ratio 1:1"
+            
+            response = client.models.generate_content(
+                model=MODEL_ID, 
+                contents=final_prompt
             )
             
-            if response.generated_images:
-                image_bytes = response.generated_images[0].image.image_bytes
-                with open(output_path, "wb") as f:
-                    f.write(image_bytes)
-                return True
-                
-            print("   [-] No image data returned.")
+            if response.candidates:
+                for part in response.candidates[0].content.parts:
+                    if part.inline_data:
+                        with open(output_path, "wb") as f:
+                            f.write(part.inline_data.data)
+                        return True
+                        
+            print(f"   [-] No image data returned. Debug: {response.model_dump_json(indent=None)}")
             return False 
             
         except Exception as e:
@@ -830,7 +938,7 @@ def classify_segment(seg, meta):
     seg.block_type = "movie" if is_movie else "banter"
     return seg
 
-def get_image_prompt(seg, host_map):
+def get_image_prompt(seg, host_map, gender_group="MALE"):
     host_info = host_map.get(seg.speaker, {})
     
     # Scrub text for prompt (remove parentheticals and extra whitespace)
@@ -854,9 +962,12 @@ def get_image_prompt(seg, host_map):
         vibe_short = vibe_desc.split('.')[0]
         if len(vibe_short) > 100: vibe_short = vibe_short[:100]
         
+        # Enforce Gender
+        gender_desc = "an adult man" if gender_group == "MALE" else "an adult woman"
+        
         prompt = (
             f"{base}"
-            f"A masterpiece portrait drawing of a {vibe_short}-type impersonator sitting in a featureless room "
+            f"A masterpiece portrait drawing of {gender_desc}, specifically a {vibe_short}-type impersonator sitting in a featureless room "
             f"talking about their life and dreams with no word bubbles. "
             f"Subject vaguely resembles {seg.speaker}. They are speaking with expression. "
             f"Lighting: Dramatic, high contrast, fine art gallery lighting. "
@@ -1003,6 +1114,233 @@ def process_triplet(base, txt_path, json_path, mp3_path, output_mp4):
         
     finally:
         pass # shutil.rmtree(temp_dir) if desired
+
+def process_narratives(meta, segments, base_output_path, project_id):
+    """
+    Scans for narrative hooks (Dream Movies) or long monologues (>5m)
+    and exports them as XMVP XML inputs for the Movie Producer.
+    """
+    print(f"\n    [+] Scanning for Narrative Seeds...")
+    
+    narratives = []
+    
+    # 1. Metadata Hooks (Explicit)
+    raw_meta = meta.get('transcript_raw', {})
+    if raw_meta.get('movie_a'):
+        narratives.append({
+            'source': 'metadata_hook',
+            'speaker': 'Host A',
+            'text': raw_meta['movie_a'],
+            'type': 'movies-movie'
+        })
+    if raw_meta.get('movie_b'):
+        narratives.append({
+            'source': 'metadata_hook',
+            'speaker': 'Host B',
+            'text': raw_meta['movie_b'],
+            'type': 'movies-movie'
+        })
+        
+    # 2. Heuristic Hooks (Long Monologues)
+    # Group segments by speaker
+    grouped = []
+    if segments:
+        current_group = {'speaker': segments[0].speaker, 'text': [], 'duration': 0.0}
+        for seg in segments:
+            if seg.speaker == current_group['speaker']:
+                current_group['text'].append(seg.text)
+                # Estimate duration (word count / 150wpm) or use seg.duration if avail?
+                # Seg duration isn't computed yet (this runs before TTS). 
+                # Estimate: 1 word ~ 0.4s
+                word_count = len(seg.text.split())
+                current_group['duration'] += (word_count * 0.4)
+            else:
+                grouped.append(current_group)
+                current_group = {'speaker': seg.speaker, 'text': [seg.text], 'duration': len(seg.text.split()) * 0.4}
+        grouped.append(current_group)
+        
+    # Check for long duration (> 300s / 5 mins)
+    for g in grouped:
+        if g['duration'] > 300:
+            full_text = " ".join(g['text'])
+            print(f"       [!] Found Long Narrative ({g['duration']:.0f}s) by {g['speaker']}")
+            narratives.append({
+                'source': 'long_monologue',
+                'speaker': g['speaker'],
+                'text': full_text,
+                'type': 'tech-movie' # Default to general tech/story check?
+            })
+
+    if not narratives:
+        print("       [-] No narratives found.")
+        return
+
+    # Process
+    output_dir = os.path.dirname(base_output_path)
+    base_name = os.path.basename(base_output_path)
+    
+    for idx, narrative in enumerate(narratives):
+        print(f"       [>] Processing Narrative #{idx+1} ({narrative['source']})...")
+        
+        # Summarize to Concept
+        prompt_text = (
+            f"Summarize the following monologue/description into a high-level movie concept string "
+            f"suitable for a vision pipeline. If it's a specific movie pitch, describe the plot efficiently. "
+            f"Text: '{narrative['text'][:4000]}...'"
+        )
+        concept = text_engine.generate_text(prompt_text, temperature=0.7).strip()
+        print(f"           Concept: {concept[:60]}...")
+        
+        # Generate Bible (XMVP)
+        # Using 'movies-movie' for explicit pitches, 'tech-movie' for others as default
+        form = narrative.get('type', 'movies-movie')
+        
+        # Call Vision Producer programmatically
+        # We need to suppress its logging or just let it print? Let it print.
+        cssv = vision_producer.run_producer(
+            vpform_name=form,
+            prompt=concept,
+            out_path="/dev/null" # Don't save the JSON, we want the object
+        )
+        
+        if cssv:
+            # Wrap in XMVP structure
+            xmvp_data = {
+                "Bible": cssv,
+                "Story": { "title": "Pending", "synopsis": concept, "characters": [], "theme": "Podcast Narrative" },
+                "Manifest": { "segs": [], "files": {} } 
+            }
+            
+            safe_speaker = re.sub(r'[^a-zA-Z0-9]', '', narrative['speaker'])
+            filename = f"{base_name}_{safe_speaker}_narrative.xml"
+            save_path = os.path.join(output_dir, filename)
+            
+            save_xmvp(xmvp_data, save_path)
+            print(f"           ✅ Exported XMVP: {filename}")
+
+def process_narratives(meta, segments, base_output_path, project_id):
+    """
+    Scans for narrative hooks (Dream Movies) or long monologues (>5m)
+    and exports them as XMVP XML inputs for the Movie Producer.
+    """
+    print(f"\n    [+] Scanning for Narrative Seeds...")
+    
+    narratives = []
+    
+    # Setup TextEngine (Local Scope)
+    text_engine = TextEngine()
+    
+    # 1. Metadata Hooks (Explicit)
+    raw_meta = meta.get('transcript_raw', {})
+    if raw_meta.get('movie_a'):
+        narratives.append({
+            'source': 'metadata_hook',
+            'speaker': 'Host A',
+            'text': raw_meta['movie_a'],
+            'type': 'movies-movie'
+        })
+    if raw_meta.get('movie_b'):
+        narratives.append({
+            'source': 'metadata_hook',
+            'speaker': 'Host B',
+            'text': raw_meta['movie_b'],
+            'type': 'movies-movie'
+        })
+        
+    # 2. Heuristic Hooks (Long Monologues)
+    # Group segments by speaker
+    grouped = []
+    if segments:
+        current_group = {'speaker': segments[0].speaker, 'text': [], 'duration': 0.0}
+        for seg in segments:
+            # Normalize speaker name (sometimes case varies)
+            spk = seg.speaker.upper().strip()
+            if not grouped:
+                 grouped.append({'speaker': spk, 'text': [seg.text], 'duration': 0})
+                 continue
+                 
+            last_group = grouped[-1]
+            if last_group['speaker'] == spk:
+                last_group['text'].append(seg.text)
+            else:
+                grouped.append({'speaker': spk, 'text': [seg.text], 'duration': 0})
+                
+    # Check for long duration (> 300s / 5 mins)
+    # Estimate: 150 words/min = 2.5 words/sec. 300s = 750 words.
+    for g in grouped:
+        full_text = " ".join(g['text'])
+        word_count = len(full_text.split())
+        if word_count > 750: # Approx 5 mins
+            # Check if this is already covered by metadata to avoid dupe?
+            # Basic check: if text is contained in movie_a/b
+            is_dupe = False
+            for n in narratives:
+                if n['text'] in full_text or full_text in n['text']:
+                    is_dupe = True
+                    break
+            
+            if not is_dupe:
+                print(f"       [!] Found Long Narrative (~{word_count} words) by {g['speaker']}")
+                narratives.append({
+                    'source': 'long_monologue',
+                    'speaker': g['speaker'],
+                    'text': full_text,
+                    'type': 'tech-movie' # Default to general tech/story check
+                })
+
+    if not narratives:
+        print("       [-] No narratives found.")
+        return
+
+    # Process
+    output_dir = os.path.dirname(base_output_path)
+    base_name = os.path.splitext(os.path.basename(base_output_path))[0]
+    
+    for idx, narrative in enumerate(narratives):
+        print(f"       [>] Processing Narrative #{idx+1} ({narrative['source']})...")
+        
+        # Summarize to Concept
+        prompt_text = (
+            f"Summarize the following monologue/description into a high-level movie concept string "
+            f"suitable for a vision pipeline. If it's a specific movie pitch, describe the plot efficiently. "
+            f"Text: '{narrative['text'][:4000]}...'"
+        )
+        try:
+            raw_concept = text_engine.generate(prompt_text, temperature=0.7).strip()
+            # Clean Markdown wrappers if present
+            concept = raw_concept.replace("```json", "").replace("```", "").strip()
+            print(f"           Concept: {concept[:60]}...")
+            
+            # Generate Bible (XMVP)
+            form = narrative.get('type', 'movies-movie')
+            
+            # Call Vision Producer programmatically
+            # We explicitly pass out_path to /dev/null to avoid writing default JSONs
+            # But we get the object back
+            cssv = vision_producer.run_producer(
+                vpform_name=form,
+                prompt=concept,
+                out_path="/dev/null"
+            )
+            
+            if cssv:
+                # Wrap in XMVP structure
+                # We create a dummy Story/Manifest structure as we only have the Seed (Bible)
+                xmvp_data = {
+                    "Bible": cssv,
+                    "Story": { "title": "Pending", "synopsis": concept, "characters": [], "theme": "Podcast Narrative" },
+                    "Manifest": { "segs": [], "files": {} } 
+                }
+                
+                safe_speaker = re.sub(r'[^a-zA-Z0-9]', '', narrative['speaker'])
+                filename = f"{base_name}_{safe_speaker}_narrative.xml"
+                save_path = os.path.join(output_dir, filename)
+                
+                # Check for existing? Overwrite.
+                save_xmvp(xmvp_data, save_path)
+                print(f"           ✅ Exported XMVP: {filename}")
+        except Exception as e:
+            print(f"           [!] Extraction failed: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description="Podcast Animator v1.1")

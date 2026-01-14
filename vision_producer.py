@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import sys
+from typing import Optional
 from pathlib import Path
 from mvp_shared import CSSV, Constraints, VPForm, save_cssv
 
@@ -162,7 +163,7 @@ def get_specific_seed(query: str) -> str:
         
     return query
 
-def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: int = 0, seg_len: float = 4.0, chaos_seed_count: int = 0, cameo: str = None, out_path: str = "bible.json") -> bool:
+def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: int = 0, seg_len: float = 4.0, chaos_seed_count: int = 0, cameo: str = None, out_path: str = "bible.json") -> Optional[CSSV]:
     """
     Executes the Vision Producer pipeline.
     """
@@ -241,7 +242,7 @@ def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: 
     logging.info(f"   Situation: {cssv.situation[:100]}...")
     logging.info(f"   Vision: {cssv.vision[:50]}...")
     
-    return True
+    return cssv
 
 def main():
     parser = argparse.ArgumentParser(description="Vision Producer: The Showrunner")

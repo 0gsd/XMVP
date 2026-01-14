@@ -19,6 +19,7 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 from PIL import Image
+import shutil
 
 import requests
 import base64
@@ -106,10 +107,14 @@ def detect_gender_rest(speakers, api_key):
     return "MALE"
 
 EISNER_STYLE = (
-    "You are an Eisner-award winning comic book penciller, inker, and colorer (a triple threat). "
-    "You draw in the style of the greats, like Jack Kirby, Rob Liefeld, Todd MacFarlane, Bill Sienkiwicz, "
-    "and Sergio Aragones, but with a unique style all your own and extremely realistic "
-    "(almost hyperrealistic) caricaturesque portraits of the impersonators hired to play each of our illustrious guests."
+    "You are a world-famous commercial artist and fine art painter and drawer. "
+    "You have been commissioned to draw masterpiece drawings (and then repaint them to make them perfect) "
+    "to accompany an audio discussion between two very particularly and massively opinionated celebrity movie stars. "
+    "You need to make sure that you capture their essence without resorting to putting literal words or phrases on the painting; "
+    "the artwork needs to be beautiful and speak volumes about what ineffable thoughts reside in the movie stars' souls without saying a word. "
+    "This comes naturally to you, because you paint 100 portraits a day of celebrities to sell to magazines, "
+    "and they reject any paintings you do with words or phrases on them, but you've gotten really good at "
+    "knowing what all the impersonators of famous movie stars look like."
 )
 
 def split_text_into_chunks(text, max_chars=4000):
@@ -413,7 +418,9 @@ def process_triplet(base, txt_path, json_path, mp3_path, output_mp4):
         print(f"[+] Created {output_mp4}")
         
     finally:
-        pass # shutil.rmtree(temp_dir) if desired
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+            print(f"    [x] Cleaned up temp dir: {temp_dir}")
 
 def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None):
     """Process Pair (Text+JSON) by GENERATING Audio using Local Voice Engine."""
@@ -612,7 +619,9 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
         print(f"[+] Created {output_mp4}")
         
     finally:
-        pass
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+            print(f"    [x] Cleaned up temp dir: {temp_dir}")
 
 def get_project_id():
     """Retrieves the current Google Cloud Project ID."""
@@ -829,15 +838,14 @@ def get_image_prompt(seg, host_map):
     prompt_text = re.sub(r'\(.*?\)', '', seg.text).replace("*","").replace("_","").strip()
     prompt_text = re.sub(r'\s+', ' ', prompt_text)
     
-    # Base prompt with Eisner injection
+    # Base prompt with Fine Art injection
     base = f"{EISNER_STYLE} "
     
     if seg.block_type == "movie":
         prompt = (
             f"{base}"
-            f"Cinematic panel visualization. "
-            f"Scene description based on this narration: '{prompt_text[:300]}'. "
-            f"Atmospheric, violent, dynamic angles, 8k, photorealistic ink and color. "
+            f"A masterpiece visualization of a scene description based on this narration: '{prompt_text[:300]}'. "
+            f"Atmospheric, detailed, 8k, photorealistic fine art. "
             f"Style: {host_info.get('vibe', 'Cinematic')}."
         )
     else:
@@ -848,18 +856,16 @@ def get_image_prompt(seg, host_map):
         
         prompt = (
             f"{base}"
-            f"A drawing of a {vibe_short}-type impersonator sitting in a featureless room talking about their life and dreams with no word bubbles. "
+            f"A masterpiece portrait drawing of a {vibe_short}-type impersonator sitting in a featureless room "
+            f"talking about their life and dreams with no word bubbles. "
             f"Subject vaguely resembles {seg.speaker}. They are speaking with expression. "
-            f"Lighting: Dramatic, high contrast. "
+            f"Lighting: Dramatic, high contrast, fine art gallery lighting. "
             f"Context: They are saying '{prompt_text[:100]}...'\n"
             f"CRITICAL INSTRUCTION: Absolutely no language transcription onto your drawing; strictly artistic representations of non-word things. "
             f"Paint a picture of theoretical things that come into your mind as you listen to the audio of the podcast you are drawing. "
             f"NO SPEECH BUBBLES. NO TEXT on the image. NO SIGNATURES."
         )
         
-    # User Request: Suppress Signatures
-    prompt += " You are an anonymous master artist because that leaves you with more free time and you can charge more money. Do not add a signature or attribution of any artists' names (including your own) to the drawing anywhere on it."
-    
     return prompt
 
 def parse_time(ts):

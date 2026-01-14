@@ -10,6 +10,8 @@ from diffusers import FluxPipeline
 import time
 from mvp_shared import Manifest, load_manifest, save_manifest, load_api_keys
 
+import itertools
+
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -94,16 +96,20 @@ class VideoDirectorAdapter:
         self.model_name = model_name
         self.pg_mode = pg_mode
         import random
-        # Start at a random position to balance load across restarts
-        self.current_key_index = random.randint(0, len(self.keys) - 1)
+        random.shuffle(self.keys) # Shuffle once
+        self.key_cycle = itertools.cycle(self.keys)
         
     def generate(self, prompt: str, output_path: str, context_uri: str = None) -> bool:
         logging.info(f"   🎥 Rolling Video: {prompt[:50]}...")
         
         # 0. Pre-emptive Sanitization (Proactive Safety)
         try:
-            # We use a random key for the sanitizer to spread load, though it's L-tier (Flash)
-            sanitizer_key = self.keys[self.current_key_index] # Use current rotation key
+            # Pick a key for sanitizer (peek at next without consuming, or just consume)
+            # Sanitizer is cheap (Flash), let's just use one from the cycle or a random one?
+            # User wants strict cycle. But sanitizer might burn a request. 
+            # Let's simple use a random choice for sanitizer to avoid advancing the main video cycle "off beat"?
+            # Or just advance it. It's fine.
+            sanitizer_key = random.choice(self.keys) 
             cleaner = sanitizer.Sanitizer(api_key=sanitizer_key)
             
             
@@ -117,17 +123,10 @@ class VideoDirectorAdapter:
         backoff = 10 
         
         for attempt in range(max_retries):
-            # ROTATION: Round-Robin
-            # We always move to the next key, ensuring we don't retry a failed key immediately
-            # and we cycle through the whole ring over time.
-            current_key = self.keys[self.current_key_index]
-            key_id = self.current_key_index + 1
-            logging.info(f"   🔑 [Key {key_id}/{len(self.keys)}] Action!")
+            # ROTATION: Round-Robin (Itertools)
+            current_key = next(self.key_cycle)
+            logging.info(f"   🔑 [Key Rotation] Action!")
             
-            # Increment for next time (or next retry)
-            self.current_key_index = (self.current_key_index + 1) % len(self.keys)
-            
-            # Instantiate Director on the fly (lightweight) to swap key            
             # Instantiate Director on the fly (lightweight) to swap key
             director = action.VeoDirector(api_key=current_key, model_name=self.model_name)
             

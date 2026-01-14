@@ -4,9 +4,9 @@
 # K = Killer (Cinematic 4K)
 
 VIDEO_MODELS = {
-    "L": "gemini-flash-lite-latest",
-    "J": "veo-3.1-fast-generate-preview",
-    "K": "veo-3.1-generate-preview",
+    "L": "veo-3.1-fast-generate-preview", # Metadata/Analysis (Still useful for text/multimodal)
+    "J": "veo-3.1-fast-generate-preview", # High Speed Gen
+    "K": "veo-3.1-generate-preview", # Killer (Cinematic 4K)
     "V2": "veo-2.0-generate-001" # Vintage
 }
 

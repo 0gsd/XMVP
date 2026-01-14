@@ -7,6 +7,8 @@ import logging
 import random
 from pathlib import Path
 
+import itertools
+
 # Try to import Gemini SDK (Standard)
 try:
     from google import genai
@@ -90,6 +92,13 @@ class TextEngine:
             except Exception as e:
                 logging.error(f"[-] TextEngine Config Load Error: {e}")
         
+        # Initialize Rotation
+        if self.api_keys:
+            random.shuffle(self.api_keys) # Shuffle once to avoid sync patterns
+            self.key_cycle = itertools.cycle(self.api_keys)
+        else:
+            self.key_cycle = None
+
         logging.info(f"🧠 TextEngine initialized. Backend: {self.backend.upper()}")
         if self.backend == "local_gemma":
             self._init_local_model()
@@ -116,10 +125,10 @@ class TextEngine:
             self.backend = "gemini_api"
 
     def get_gemini_client(self):
-        if not self.api_keys:
+        if not self.api_keys or not self.key_cycle:
             logging.error("[-] TextEngine: No Gemini API keys found.")
             return None
-        key = random.choice(self.api_keys)
+        key = next(self.key_cycle)
         return genai.Client(api_key=key)
 
     def generate(self, prompt, temperature=0.7, json_schema=None):

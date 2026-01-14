@@ -8,6 +8,7 @@ import argparse
 import subprocess
 import random
 import yaml
+import itertools
 from pathlib import Path
 from google import genai
 from google.genai import types
@@ -61,9 +62,9 @@ def find_original_video(video_id_stem, search_dirs):
         
     return None
 
-def generate_frame_gemini(index, prompt, output_dir, client, width=768, height=768, aspect_ratio="1:1", model=IMAGE_MODEL):
+def generate_frame_gemini(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=IMAGE_MODEL):
     """
-    Worker function using Gemini Image API (Polyglot: Imagen vs Gemini).
+    Worker function using Gemini Image API (Polyglot: Imagen vs Gemini) with Round-Robin Rotation.
     """
     target_path = output_dir / f"frame_{index:04d}.png"
     if target_path.exists():
@@ -72,8 +73,14 @@ def generate_frame_gemini(index, prompt, output_dir, client, width=768, height=7
     # Retry Loop
     max_retries = 3
     for attempt in range(max_retries):
+        # ROTATION: Get next key from cycle
+        current_key = next(key_cycle)
+        logging.info(f"🎨 Rendering Frame {index} (Attempt {attempt+1}/{max_retries}) [Key Rotation]...")
+        
+        # Instantiate fresh client with rotated key
+        client = genai.Client(api_key=current_key)
+        
         try:
-            logging.info(f"🎨 Rendering Frame {index} (Attempt {attempt+1}/{max_retries}) via {model}...")
             
             # MODE SWITCH
             if "imagen" in model.lower():
@@ -147,7 +154,7 @@ def scan_projects(tf_dir):
     projects.sort(key=lambda x: x.name) # Alphabetical/Predictable order
     return projects
 
-def process_project(project_dir, vf_dir, keys, args, output_root):
+def process_project(project_dir, vf_dir, key_cycle, args, output_root):
     """
     Runs the pipeline for a single project.
     """
@@ -279,23 +286,12 @@ def process_project(project_dir, vf_dir, keys, args, output_root):
     for i, p in enumerate(prompts):
         index = i + 1
         
-        # ROTATION: Pick a fresh key
-        current_key = get_random_key(keys)
-        # Find index for logging
-        try:
-            key_id = keys.index(current_key) + 1
-        except:
-            key_id = "?"
-            
-        logging.info(f"   🔑 [Key {key_id}/{len(keys)}] Frame {index}...")
-        client = genai.Client(api_key=current_key)
-        
         # Pass model from args
         model_to_use = getattr(args, 'model', IMAGE_MODEL)
 
         # Simple Aspect Ratio logic? Assuming Square for now as per ppfad defaults (768x768)
         # Gemini often prefers '1:1', '3:4', '4:3', '16:9'
-        if generate_frame_gemini(index, p, frames_dir, client, aspect_ratio="1:1", model=model_to_use):
+        if generate_frame_gemini(index, p, frames_dir, key_cycle, aspect_ratio="1:1", model=model_to_use):
              print(".", end="", flush=True)
              success_count += 1
              
@@ -567,7 +563,12 @@ def main():
             # Pass model explicitly? Or set global/arg?
             # Let's pass args and handle logic inside process_project
             args.model = model 
-            process_project(proj, args.vf, keys, args, output_root)
+            
+            # Init Cycle
+            random.shuffle(keys)
+            key_cycle = itertools.cycle(keys)
+            
+            process_project(proj, args.vf, key_cycle, args, output_root)
             processed_count += 1
         except Exception as e:
             logging.error(f"Failed to process {proj.name}: {e}")

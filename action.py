@@ -416,6 +416,14 @@ class VeoDirector:
 
     def wait_for_lro(self, op_name):
         """Polls for completion."""
+        # Handle IMMEDIATE (Gemini Key-Based)
+        if op_name and op_name.startswith("IMMEDIATE:"):
+            uri = op_name.replace("IMMEDIATE:", "")
+            logging.info("   > Cut! (Immediate Success)")
+            return {
+                'videos': [{'uri': uri}]
+            }
+
         url = f"https://generativelanguage.googleapis.com/v1beta/{op_name}?key={self.api_key}"
         logging.info(f"   > Action! Polling {op_name}...")
         

@@ -40,15 +40,20 @@ MODEL_ID = "gemini-2.5-flash-image" # Verified L-Tier
 
 # --- HELPERS (API & TTS) ---
 
+import itertools
+
 KEYS = mvp_shared.load_api_keys() # Automatically finds env_vars.yaml
 if not KEYS:
     print(f"[-] CRITICAL: No keys found. Check env_vars.yaml in tools/fmv/")
     # Don't exit immediately if only TTS is needed, but we need keys for Images anyway.
     sys.exit(1)
 
+random.shuffle(KEYS) # Shuffle once at start to avoid sync patterns with other scripts
+KEY_CYCLE = itertools.cycle(KEYS)
+
 def get_client():
     """Returns a client with a random key rotation."""
-    key = random.choice(KEYS)
+    key = next(KEY_CYCLE)
     return genai.Client(api_key=key), key
 
 def get_access_token(project_id=None):
@@ -651,24 +656,42 @@ def get_audio_duration(file_path):
 
 def generate_image(prompt, output_path):
     """Generates an image using Gemini 2.5 Flash via generate_content."""
-    client, key_used = get_client()
-    print(f"   [>] Getting Image (Key: ...{key_used[-4:]})")
+    max_retries = 5
+    base_wait = 5
     
-    try:
-        final_prompt = f"Generate an image of {prompt} --aspect_ratio 1:1"
-        response = client.models.generate_content(model=MODEL_ID, contents=final_prompt)
+    for attempt in range(max_retries):
+        client, key_used = get_client() # Rotates key on each attempt
+        if attempt > 0:
+            print(f"   [>] Retry {attempt}/{max_retries} for Image (Key: ...{key_used[-4:]})")
+        else:
+            print(f"   [>] Getting Image (Key: ...{key_used[-4:]})")
         
-        if response.candidates:
-            for part in response.candidates[0].content.parts:
-                if part.inline_data:
-                    with open(output_path, "wb") as f:
-                        f.write(part.inline_data.data)
-                    return True
-        print("   [-] No image data returned.")
-        return False
-    except Exception as e:
-        print(f"   [-] Generation Failed: {e}")
-        return False
+        try:
+            final_prompt = f"Generate an image of {prompt} --aspect_ratio 1:1"
+            response = client.models.generate_content(model=MODEL_ID, contents=final_prompt)
+            
+            if response.candidates:
+                for part in response.candidates[0].content.parts:
+                    if part.inline_data:
+                        with open(output_path, "wb") as f:
+                            f.write(part.inline_data.data)
+                        return True
+            print("   [-] No image data returned.")
+            return False # Non-retryable if no data but 200 OK
+            
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                wait_time = base_wait * (2 ** attempt) + random.uniform(0, 1)
+                print(f"   [-] 429 RESOURCE_EXHAUSTED. Sleeping {wait_time:.1f}s...")
+                time.sleep(wait_time)
+            else:
+                print(f"   [-] Generation Failed: {e}")
+                wait_time = 2 * (attempt + 1)
+                time.sleep(wait_time)
+                
+    print("   [!] Max retries reached. Using Black Frame.")
+    return False
 
 # --- PARSING AND PROCESSING ---
 

@@ -697,7 +697,7 @@ def detect_gender_rest(speakers, api_key):
     return "MALE"
 
 def synthesize_text_rest(text, voice_name, token, project_id):
-    """Synthesizes speech using Google Cloud TTS REST API."""
+    """Synthesizes speech using Google Cloud TTS REST API (with 401 Refresh)."""
     url = "https://texttospeech.googleapis.com/v1/text:synthesize"
     lang_code = "-".join(voice_name.split("-")[:2])
     payload = {
@@ -705,21 +705,39 @@ def synthesize_text_rest(text, voice_name, token, project_id):
         "voice": {"languageCode": lang_code, "name": voice_name},
         "audioConfig": {"audioEncoding": "LINEAR16", "speakingRate": 1.0}
     }
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json; charset=utf-8",
-        "X-Goog-User-Project": project_id
-    }
-    try:
-        response = requests.post(url, json=payload, headers=headers)
-        if response.status_code == 200:
-            return base64.b64decode(response.json()['audioContent'])
-        else:
-            print(f"[-] TTS Error: {response.text}")
+    
+    # Retry Loop (Try Current Token -> Refresh -> Fail)
+    for attempt in range(2):
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json; charset=utf-8",
+            "X-Goog-User-Project": project_id
+        }
+        try:
+            response = requests.post(url, json=payload, headers=headers)
+            
+            if response.status_code == 200:
+                return base64.b64decode(response.json()['audioContent'])
+            
+            elif response.status_code == 401:
+                # Token Expired? Refresh and Retry
+                if attempt == 0:
+                    print(f"       [!] Token expired (401). Refreshing...")
+                    new_token = get_access_token()
+                    if new_token:
+                        token = new_token # Update for next loop iteration
+                        continue
+                print(f"[-] TTS Error (401) after refresh: {response.text}")
+                return None
+                
+            else:
+                print(f"[-] TTS Error: {response.text}")
+                return None
+                
+        except Exception as e:
+            print(f"[-] TTS Request Failed: {e}")
             return None
-    except Exception as e:
-        print(f"[-] TTS Request Failed: {e}")
-        return None
+    return None
 
 def synthesize_text_gemini(text, voice_name, client, project_id=None):
     """

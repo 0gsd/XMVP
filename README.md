@@ -2,7 +2,7 @@
 
 This folder contains the complete "Value Chain" for AI content production, decomposed into specialized specialist modules. 
 
-It can accept, via movie_producer.py or cartoon_producer.py, an XML input in the XMVP format and execute from the XMVP files contents, *or* it can auto-generate a full execution chain and output given a prompt "idea" and a set of "constraints" -- shorthanded via the "Vision Platonic Form" or --vpform paradigm -- and execute either via a production line of modules, having broken it up into the appropriate number of "production chunks" needed to lead to the requested output.
+It can accept, via movie_producer.py or cartoon_producer.py, an XML "input vision" in the XMVP format and execute based on the XMVP file's contents, *or* it can auto-generate a full vision along with its execution chain and the inputs needed for its output, given only a prompt "idea" and a set of "constraints" -- shorthanded via the "Vision Platonic Form" or --vpform paradigm.
 
 ## 🎬 Core Orchestrators
 

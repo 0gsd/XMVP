@@ -110,8 +110,8 @@ Executes the Manifest to generate assets.
 ---
 
 ## 📁 Environment
-Ensure `tools/fmv/env_vars.yaml` is populated with your keys:
+Ensure `tools/fmv/env_vars.yaml` is populated with the appropriate API keys you need to use any cloud services, in this format: 
 ```yaml
-GEMINI_API_KEY: "..."
 ACTION_KEYS_LIST: "key1,key2,key3" # For rotation
 ```
+Cycling keys is recommended to prevent throttling and these tools will use intelligent round-robin logic if more than one of the same typeis included sequentially in the ACTION_KEYS_LIST, otherwise you are on your own to handle multi-API or multi-model/weights request routing and authentication ... and since video generation is expensive, always make sure to check with your API provider(s) about limits and costs.

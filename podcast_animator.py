@@ -23,7 +23,7 @@ import shutil
 
 import requests
 import base64
-from sanitizer import Sanitizer
+from truth_safety import TruthSafety
 # MVP Imports
 from mvp_shared import save_xmvp, CSSV
 import vision_producer
@@ -451,7 +451,19 @@ def process_triplet(base, txt_path, json_path, mp3_path, output_mp4):
             
             if not os.path.exists(img_path):
                 if not generate_image(prompt, img_path):
-                    Image.new('RGB', (1024, 1024), color='black').save(img_path)
+                    # Stutter Step Fallback
+                    cloned = False
+                    if valid_segments and valid_segments[-1].image_path and os.path.exists(valid_segments[-1].image_path):
+                        try:
+                            shutil.copy(valid_segments[-1].image_path, img_path)
+                            print(f"       [!] Stuttered: Copied previous frame to {img_filename}")
+                            cloned = True
+                        except Exception as e:
+                            print(f"       [-] Clone failed: {e}")
+                    
+                    if not cloned:
+                         Image.new('RGB', (1024, 1024), color='black').save(img_path)
+                         print(f"       [!] Black Frame created for {img_filename}")
             
             seg.image_path = img_path
             valid_segments.append(seg)
@@ -481,7 +493,7 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
     print(f"[*] Processing PAIR {base} (Generating Audio)...")
     
     # Initialize Sanitizer
-    sanitizer = Sanitizer()
+    ts = TruthSafety()
     
     # Remove Local Voice Engine
     # try:
@@ -625,8 +637,8 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
             prompt = get_image_prompt(seg, host_map, gender_group=gender)
             
             # Generate Image (Gemini/Imagen)
-            # Pass sanitizer instance
-            if not generate_image(prompt, img_path, sanitizer):
+            # Pass ts instance
+            if not generate_image(prompt, img_path, ts):
                 Image.new('RGB', (1024, 1024), color='black').save(img_path)
             seg.image_path = img_path
             
@@ -840,13 +852,13 @@ def get_audio_duration(file_path):
 
 MODEL_ID = "gemini-2.5-flash-image" # Reverted to Gemini Flash (Cost Efficiency)
 
-def generate_image(prompt, output_path, sanitizer=None):
-    """Generates an image using Gemini 2.5 Flash via generate_content."""
+def generate_image(prompt, output_path, ts=None):
+    """Generates image using Gemini 2.5 Flash Image."""
     
-    # 1. Sanitize Prompt if sanitizer provided
-    if sanitizer:
+    # 1. Sanitize Prompt if TruthSafety provided
+    if ts:
         # User requested PG Mode (Strict celebrity handling + Safety)
-        prompt = sanitizer.soften_prompt(prompt, pg_mode=True)
+        prompt = ts.refine_prompt(prompt, pg_mode=True)
         
     max_retries = 5
     base_wait = 2 
@@ -1107,6 +1119,10 @@ def process_triplet(base, txt_path, json_path, mp3_path, output_mp4):
             img_path = os.path.join(temp_dir, img_filename)
             
             prompt = get_image_prompt(seg, host_map)
+            
+            # Truth & Safety Check
+            ts = TruthSafety()
+            prompt = ts.refine_prompt(prompt, context_dict={"Speaker": seg.speaker}, pg_mode=False)
             
             if not os.path.exists(img_path):
                 if not generate_image(prompt, img_path):

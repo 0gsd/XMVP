@@ -3,7 +3,7 @@ import logging
 import json
 import sys
 from pathlib import Path
-from mvp_shared import CSSV, Seg, Indecision, Manifest, load_cssv, load_api_keys
+from mvp_shared import CSSV, Seg, Indecision, Manifest, load_cssv, load_api_keys, load_xmvp
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -72,13 +72,31 @@ def run_portion(bible_path: str, portions_path: str, out_path: str = "manifest.j
 
 def main():
     parser = argparse.ArgumentParser(description="Portion Control: The Line Producer")
-    parser.add_argument("--bible", type=str, required=True, help="Path to input CSSV JSON (for FPS/Constraints)")
-    parser.add_argument("--portions", type=str, required=True, help="Path to input Portions JSON")
+    parser.add_argument("--bible", type=str, default="bible.json", help="Path to input CSSV JSON")
+    parser.add_argument("--portions", type=str, default="portions.json", help="Path to input Portions JSON")
     parser.add_argument("--out", type=str, default="manifest.json", help="Output path for Manifest JSON")
+    parser.add_argument("--xb", type=str, help="Path to XMVP XML file (Overrides inputs)")
     
     args = parser.parse_args()
     
-    success = run_portion(args.bible, args.portions, args.out)
+    bible_in = args.bible
+    portions_in = args.portions
+    
+    if args.xb:
+        logging.info(f"📚 Loading Context from XMVP: {args.xb}")
+        b_raw = load_xmvp(args.xb, "Bible")
+        p_raw = load_xmvp(args.xb, "Portions")
+        
+        if b_raw and p_raw:
+             with open("bible.json", "w") as f: f.write(b_raw)
+             with open("portions.json", "w") as f: f.write(p_raw)
+             bible_in = "bible.json"
+             portions_in = "portions.json"
+        else:
+             logging.error("Failed to extract Bible/Portions from XMVP.")
+             sys.exit(1)
+    
+    success = run_portion(bible_in, portions_in, args.out)
     if not success:
         sys.exit(1)
 

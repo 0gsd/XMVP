@@ -12,3 +12,4 @@ LOCAL_MODEL_PATH: ""
 GEMINI_API_KEY: "YOUR_GEMINI_API_KEY_HERE"
 
 ACTION_KEYS_LIST: "AIzaTheFirstKey,AIzaTheSecondKey,AIzaTheBackupKey"
+TEXT_KEYS_LIST: "AIzaTheTextKey1,AIzaTheTextKey2" # For Text Quota Fallback

@@ -37,7 +37,7 @@ SYSTEM_FILTER = (
     "You are specialized in creative screenwriting, formatting, and structural logic."
 )
 
-from mvp_shared import load_api_keys
+from mvp_shared import load_api_keys, load_text_keys
 
 class TextEngine:
     def __init__(self, config_path=None):
@@ -49,6 +49,8 @@ class TextEngine:
         
         # Load API Keys via Shared Logic (Robust)
         self.api_keys = load_api_keys()
+        self.fallback_keys = load_text_keys()
+        self.using_fallback = False
         
         # Load Config for Engine Settings (Optional)
         if not config_path:
@@ -95,9 +97,19 @@ class TextEngine:
         # Initialize Rotation
         if self.api_keys:
             random.shuffle(self.api_keys) # Shuffle once to avoid sync patterns
+        # Initialize Rotation
+        if self.api_keys:
+            random.shuffle(self.api_keys) # Shuffle once to avoid sync patterns
             self.key_cycle = itertools.cycle(self.api_keys)
         else:
             self.key_cycle = None
+            
+        # Fallback Rotation
+        if self.fallback_keys:
+            random.shuffle(self.fallback_keys)
+            self.fallback_cycle = itertools.cycle(self.fallback_keys)
+        else:
+            self.fallback_cycle = None
 
         logging.info(f"🧠 TextEngine initialized. Backend: {self.backend.upper()}")
         if self.backend == "local_gemma":
@@ -129,6 +141,20 @@ class TextEngine:
             logging.error("[-] TextEngine: No Gemini API keys found.")
             return None
         key = next(self.key_cycle)
+    def get_gemini_client(self):
+        # Choose cycle based on state
+        cycle = self.fallback_cycle if (self.using_fallback and self.fallback_cycle) else self.key_cycle
+        
+        if not cycle:
+             # Try failover if primary empty but fallback exists (edge case)
+             if not self.using_fallback and self.fallback_cycle:
+                 self.using_fallback = True
+                 cycle = self.fallback_cycle
+             else:
+                 logging.error("[-] TextEngine: No Gemini API keys found.")
+                 return None
+
+        key = next(cycle)
         return genai.Client(api_key=key)
 
     def generate(self, prompt, temperature=0.7, json_schema=None):
@@ -195,7 +221,39 @@ class TextEngine:
             return ""
         except Exception as e:
             logging.error(f"[-] Gemini Gen Error: {e}")
-            return ""
+        # Retry Loop for 429
+        max_retries = 3
+        for attempt in range(max_retries):
+            client = self.get_gemini_client()
+            if not client: return ""
+            
+            try:
+                # Logging key source? No, secure.
+                
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash", # Fast, smart
+                    contents=prompt,
+                    config=types.GenerateContentConfig(**config_args)
+                )
+                if response.text:
+                    return response.text
+                return ""
+            except Exception as e:
+                if "429" in str(e) or "ResourceExhausted" in str(e):
+                    logging.warning(f"   ⚠️ Quota Hit (Attempt {attempt+1}).")
+                    if not self.using_fallback and self.fallback_cycle:
+                        logging.warning("   🔄 Switching to TEXT_KEYS_LIST fallback pool.")
+                        self.using_fallback = True
+                        # Retry immediately with new pool
+                        continue
+                    else:
+                        # Backoff
+                        import time
+                        time.sleep(2 * (attempt + 1))
+                else:
+                    logging.error(f"[-] Gemini Gen Error: {e}")
+                    return ""
+        return ""
 
 # Singleton instance helper
 _ENGINE = None

@@ -23,7 +23,7 @@ except ImportError:
     logging.warning("⚠️ action.py not found. Video generation will be disabled.")
     action = None
 
-import sanitizer
+from truth_safety import TruthSafety
 
 # --- MPS Memory Optimization (Crucial for M-Series) ---
 os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
@@ -109,13 +109,14 @@ class VideoDirectorAdapter:
             # User wants strict cycle. But sanitizer might burn a request. 
             # Let's simple use a random choice for sanitizer to avoid advancing the main video cycle "off beat"?
             # Or just advance it. It's fine.
-            # Use round-robin key for sanitizer too
+            # Use round-robin key for TruthSafety too
             sanitizer_key = next(self.key_cycle) 
-            cleaner = sanitizer.Sanitizer(api_key=sanitizer_key)
+            cleaner = TruthSafety(api_key=sanitizer_key)
             
             
-            # This will replace "Nicolas Cage" with "impersonator" (or "Actor N.C." in PG mode), etc.
-            prompt = cleaner.soften_prompt(prompt, pg_mode=self.pg_mode)
+            # This will replace "Nicolas Cage" with "impersonator", etc.
+            # TruthSafety Refine
+            prompt = cleaner.refine_prompt(prompt, context_dict={"Task": f"Video", "Model": self.model_name}, pg_mode=self.pg_mode)
             
         except Exception as e:
             logging.warning(f"   ⚠️ Sanitizer unreachable: {e}. Proceeding with raw prompt.")
@@ -191,6 +192,12 @@ class VideoDirectorAdapter:
                     
                 if not video_uri:
                     logging.error("   ❌ URI not found in response.")
+                    logging.error(f"   🔍 Debug Payload: {json.dumps(result, indent=2)}")
+                    
+                    # Check for safety
+                    if 'error' in str(result):
+                        logging.warning("   ⚠️ Possible Safety/API Error detected in payload.")
+                        
                     continue # Retry on weird response?
                     
                 # 4. Download
@@ -205,7 +212,7 @@ class VideoDirectorAdapter:
         logging.error("   ❌ All retries failed.")
         return False
 
-def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J", out_path: str = "manifest_updated.json", staging_dir: str = "componentparts", pg_mode: bool = False) -> bool:
+def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J", out_path: str = "manifest_updated.json", staging_dir: str = "componentparts", pg_mode: bool = False, **kwargs) -> bool:
     """
     Executes the Dispatch pipeline.
     mode: "image" (Flux) or "video" (Veo)
@@ -216,6 +223,9 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
     except Exception as e:
         logging.error(f"Failed to load manifest: {manifest_path} -> {e}")
         return False
+        
+    width = kwargs.get('width', 768)
+    height = kwargs.get('height', 768)
         
     # 2. Setup Staging
     staging_path = Path(staging_dir)
@@ -284,8 +294,8 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
              seed = 42 + seg.id
              success = director.generate(
                 prompt=seg.prompt,
-                width=768, # Fixed for MVP
-                height=768,
+                width=width,
+                height=height,
                 output_path=filepath,
                 seed=seed
             )
@@ -352,6 +362,8 @@ def main():
     parser.add_argument("--mode", type=str, default="image", choices=["image", "video"], help="Generation Mode")
     parser.add_argument("--vm", type=str, default="J", help="Video Model Tier (if mode=video)")
     parser.add_argument("--pg", action="store_true", help="Enable PG Mode (Relaxed Celebrity/Strict Child Safety)")
+    parser.add_argument("--width", type=int, default=768, help="Output width (Image Mode)")
+    parser.add_argument("--height", type=int, default=768, help="Output height (Image Mode)")
     
     args = parser.parse_args()
     
@@ -361,7 +373,9 @@ def main():
         model_tier=args.vm,
         out_path=args.out,
         staging_dir=args.staging,
-        pg_mode=args.pg
+        pg_mode=args.pg,
+        width=args.width,
+        height=args.height
     )
     
     if not success:

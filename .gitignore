@@ -3,6 +3,11 @@ env_vars.yaml
 secrets.yaml
 .env
 
+# Shells on the Batch
+run_improv.sh
+run_improv_batch.sh
+run_animator.sh
+
 # Python
 __pycache__/
 *.py[cod]
@@ -23,14 +28,15 @@ manifest_updated.json
 finalcuts/
 componentparts/
 z_test-outputs/
-z_podcast_triplets/
+z_improv_outputs/
 setup_rvc_env.sh
 unzip_models.py
 migrate_weights.py
 producerjasonwoliner/
 actionscript/
-# test_gen_capabilities.py
+_deprecated/
 
 # OS
 v0.5.code-workspace
+mvp_temper.md
 .DS_Store

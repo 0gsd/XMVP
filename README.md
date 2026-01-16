@@ -1,86 +1,75 @@
 # XMVP: The Modular Vision Pipeline
 
-This folder contains the complete "Value Chain" for AI content production, decomposed into specialized specialist modules. 
+This folder contains a complete "Value Chain" for audiovisual motion content production, decomposed into specialist modules which can be used in isolation or in combination. 
 
 It can accept, via movie_producer.py or cartoon_producer.py, an XML "input vision" in the XMVP format and execute based on the XMVP file's contents, *or* it can auto-generate a full vision along with its execution chain and the inputs needed for its output, given only a prompt "idea" and a set of "constraints" -- shorthanded via the "Vision Platonic Form" or --vpform paradigm.
 
-## 🎬 Core Orchestrators
+## 🚀 Creative Engines (Start Process Modules)
+
+These modules are the "Big Red Buttons" that kick off the entire generation process.
 
 ### `movie_producer.py`
-The "Showrunner" that orchestrates the entire 7-stage pipeline to create video content from a simple prompt.
-
+The "Showrunner" that orchestrates the entire 7-stage pipeline to create structured video content (Ads, Movie Trailers) from a simple prompt.
 **Usage:**
 ```bash
 python3 movie_producer.py "A sci-fi film about a robot learning to love" [ARGS]
 ```
+See arguments below for details.
 
-**Arguments:**
-- `concept` (Positional): The core prompt/logline.
-- `--seg [INT]`: Number of segments to generate (default: `3`).
-- `--l [FLOAT]`: Length of each segment in seconds (default: `4.0`).
-- `--vpform [STR]`: The Genre/Form to use. Options: `realize-ad`, `tech-movie` (default: `tech-movie`).
-- `--cs [0-6]`: Chaos Seeds level (Entropy injection). `0`=Off.
-- `--cf [URL/Query]`: Cameo Feature. Injects a specific Wikipedia topic or search result as a "Minor Appearance".
-- `--vm [L/J/K]`: Video Model Tier. `J`=Veo 2, `K`=Veo 3 (default: `K`).
-- `--pg`: **PG Mode**. Enables "Actor N.C." obfuscation for celebrities and strict child safety cleaning.
-- `--clean`: Deletes intermediate JSON artifacts before running.
-- `--xb [PATH]`: Re-hydrates the pipeline from an existing XMVP XML file (skips Vision Producer).
-- `-f`, `--fast`: Shortcut for Tier `J` (Legacy Veo 2).
-- `--vfast`: Shortcut for Tier `V2` (Legacy).
-- `--out [PATH]`: Override output directory.
-
----
-
-### `cartoon_producer.py`
-Specialized pipeline for "Frame-By-Frame" (FBF) animation and legacy interpolation.
-
+### `cartoon_producer.py` (Creative Agency)
+Specialized pipeline for "Frame-By-Frame" animation, Music Video syncing, and Creative Agency work.
 **Usage:**
 ```bash
-python3 cartoon_producer.py --vpform fbf-cartoon --tf /path/to/transcripts --vf /path/to/videos
+# Creative Agency Mode (Prompt -> Story -> Animation)
+./cartoon_producer.py --prompt "A sad toaster finds love"
+
+# Music Video Mode (Syncs animation length to song)
+./cartoon_producer.py --prompt "Rave" --mu song.mp3
+
+# Re-Render Mode (Ingest XMVP Manifest)
+./cartoon_producer.py --xb manifest.xml
 ```
 
 **Arguments:**
-- `--vpform [STR]`: Mode. `fbf-cartoon` (Frame-by-Frame) or `legacy` (Interpolation). Default: `fbf-cartoon`.
-- `--tf [PATH]`: Transcript Folder containing sub-project folders.
-- `--vf [PATH]`: Video Folder containing original source videos (for audio muxing).
-- `--fps [INT]`:
-    - In **FBF Mode**: Expansion Factor (1 = 1 frame per line, 2 = 2 frames per line).
-    - In **Legacy Mode**: Output FPS.
-- `--delay [FLOAT]`: Seconds to wait between API requests to avoid rate limits (default: `3.0`).
-- `--limit [INT]`: Test limit (stop after N frames). `0`=No limit.
-- `--project [STR]`: specific project name to process (skips others).
-- `--smin [FLOAT]`: Minimum project duration to process.
-- `--smax [FLOAT]`: Maximum project duration to process.
-- `--shuffle`: Randomize project processing order.
+- `--vpform [STR]`: Mode. `creative-agency` (Default), `fbf-cartoon` (Legacy), `music-visualizer` (Audio-reactive abstract animation), `music-agency` (Audio-reactive narrative story).
+- `--prompt [STR]`: The creative concept for the agency to visualize.
+- `--mu [PATH]`: Path to an audio file (MP3/WAV/AIFF). Locks video duration to track length and muxes audio.
+- `--xb [PATH]`: Path to an existing XMVP XML Manifest to ingest and re-render.
+- `--style [STR]`: Aesthetic style description (e.g., "Pixel Art", "Oil Painting"). Default: "Indie Graphic Novel".
+- `--slength [FLOAT]`: Target duration in seconds (if no music or XML provided). Default: 60s.
+- `--fps [INT]`: Output FPS. Default: `4`.
+- `--tf`, `--vf`: Arguments for Transcript/Video folder paths.
 
----
+### `improv_animator.py`
+The "Improv Troupe". Generates endless, streaming improv comedy specials with dynamic casts and reliable XMVP exports.
+**Usage:**
+```bash
+./improv_animator.py --vpform 10-cartoon
+```
+**Arguments:**
+- `--vpform`: `10-cartoon` (10-min Dynamic Cast), `24-cartoon` (24-min Fixed Cast).
+- `--slength`: Override duration in seconds (e.g. `60` for testing).
+- `--project [STR]`: Google Cloud Project ID for billing overrides.
 
-### `podcast_animator.py`
+### `podcast_animator.py` (The VJ)
 Visualizes audio podcasts (or generates them) into animated video pairs/triplets.
-
 **Usage:**
 ```bash
 python3 podcast_animator.py --project [ID]
 ```
 
-**Arguments:**
-- `--project [ID]`: Google Cloud Project ID to use for TTS (Text-to-Speech) billing. Prevents `403 PERMISSION_DENIED` if the default project lacks TTS enablement.
 
----
-
-## 🛠️ utility Tools
-
-### `model_scout.py`
-Scans available Gemini/Veo models and checks if `definitions.py` is up to date.
-
+### `action.py` (The Video Director)
+The "Action!" module. A dedicated Veo/Gemini Video orchestration tool that generates scripts via a "Writers Room" simulation and executes them using Veo (Tier J/K) or Gemini (Tier L) models. It integrates `truth_safety.py` to ensure prompts are coherent and safe before generation.
 **Usage:**
 ```bash
-python3 model_scout.py [--probe MODEL_NAME]
+python3 action.py --cut --genre movies --seg 4 --vm J
 ```
-
 **Arguments:**
-- `--probe [MODEL_NAME]`: Runs a stress test (5 attempts) against a specific model to check for rate limits/latency.
-
+- `--cut`: Execute the video generation (without this, it only generates the script).
+- `--genre`: `movies` (Remake), `studio` (Mockumentary), `tech` (Sci-Fi).
+- `--seg`: Number of segments/shots to generate.
+- `--vm`: Video Model Tier (`L`: Light/Gemini, `J`: Just/Veo-2, `K`: Killer/Veo-3).
 ---
 
 ## ⚙️  The Value Chain (Internal Modules)
@@ -109,17 +98,56 @@ Executes the Manifest to generate assets.
 - `--vm`: Video Model Tier (`J`/`K`).
 - `--pg`: PG Mode flag.
 
+### 6. `truth_safety.py` (The Guardian)
+*Replaces legacy `sanitizer.py`.*
+The central "Truth & Safety" engine.
+- **Truth**: Enforces physical coherence, logic, and style consistency using `refine_prompt`.
+- **Safety**: Applies PG or Safe-Mode constraints to protect against policy violations.
+- **Efficiency**: Uses dedicated `TEXT_KEYS_LIST` (High Quota) to avoid burning expensive Action keys on prompt checks.
+
+---
+
+## 🛠️ Utility Tools
+
+### `model_scout.py`
+Scans available Gemini/Veo models and checks if `definitions.py` is up to date.
+**Usage:**
+```bash
+python3 model_scout.py [--probe MODEL_NAME]
+```
+
+
+### `post_production.py` (The Redoer)
+The "Svelte 2x-ing Machine". Handles visual upscaling, obsessive repainting (detail injection), and frame interpolation (tweening).
+**Usage:**
+```bash
+python3 post_production.py input.mp4 --output /path/to/out -x 2 --scale 2.0
+```
+**Arguments:**
+- `input`: Video file or directory of frames.
+- `--output`: Output directory.
+- `-x [INT]`: Frame Expansion/Tweening factor (e.g., `2` generates 1 tween per frame).
+- `--scale [FLOAT]`: Spatial upscaling factor (e.g., `2.0`).
+- `--restyle [STR]`: Apply intermediate style processing. Options: `ascii` (Overlays ASCII art at 33% opacity).
+
+**Narrative Aware Frame Interpolation (NAFI):**
+If a matching XML file exists for the input (e.g., `input.xml` next to `input.mp4`), the script automatically loads it. It extracts the CSSV (Vision, Scenario) and Story (Characters) to inject "Project Context" into the tweening prompt, dramatically improving visual coherence during frame interpolation.
+### `run_improv_batch.sh`
+Orchestrates sequential runs of `improv_animator.py` with cooldowns to respect API quotas.
+**Usage:**
+```bash
+./run_improv_batch.sh [COUNT] [VPFORM]
+```
+Example: `./run_improv_batch.sh 5 10-cartoon` (Runs 5 episodes of 10-cartoon).
+
 ---
 
 ## 📁 Environment
 Ensure `env_vars.yaml` is populated with the appropriate API keys you need to use any cloud services, in this format: 
 ```yaml
-ACTION_KEYS_LIST: "key1,key2,key3" # For rotation
+ACTION_KEYS_LIST: "key1,key2,key3" # For high-cost video generation (Veo)
+TEXT_KEYS_LIST: "key4,key5,key6"   # For high-volume text/safety checks (Flash)
 ```
 Your env_vars.yaml can be in a different location (the code references an off-root directory), but you'll have to figure out how to route the calls there.
 
 Even among two Gemini APIs, using the same key, the way requests have to be constructed and massaged, and you'll always need to be keeping everything up to date. I can't save you from that, though model_scout.py IS included which can refer to definitions.py for your preferred models and probe the various APIs using test_gen_capabilities.py. 
-
-I'll also say that I realize this is a bit of an advertisement for Gemini APIs as written, and that's OK. The core concepts should be able to work with just about any cloud or local setup you want to re-write it to use.
-
-Cycling API keys is recommended to prevent throttling and these tools will use intelligent round-robin logic if more than one of the same type is included sequentially in the ACTION_KEYS_LIST=""; otherwise, you are on your own to handle multi-API and/or offline model request routing and authentication ... and since video generation is expensive, always make sure to check with your API provider(s) about limits and costs.

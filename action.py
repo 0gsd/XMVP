@@ -10,7 +10,7 @@ import requests
 from pathlib import Path
 import google.generativeai as genai
 import definitions
-import sanitizer
+from truth_safety import TruthSafety
 
 import base64
 
@@ -388,8 +388,8 @@ class VeoDirector:
                 if retry_safe:
                     logging.info("   🛡️ Initiating Safety Protocol: Softening Prompt...")
                     try:
-                        cleaner = sanitizer.Sanitizer(api_key=self.api_key)
-                        safe_prompt = cleaner.soften_prompt(prompt)
+                        cleaner = TruthSafety(api_key=self.api_key)
+                        safe_prompt = cleaner.refine_prompt(prompt, pg_mode=False)
                         
                         if safe_prompt != prompt:
                             logging.info("   🔄 Retrying with Softened Prompt...")
@@ -672,7 +672,7 @@ def main():
                             # --- SANITIZATION STEP ---
                             try:
                                 api_key = keys[success_key_index]
-                                cleaner = sanitizer.Sanitizer(api_key=api_key)
+                                cleaner = TruthSafety(api_key=api_key)
                                 last_frame = cleaner.wash_image(last_frame)
                             except Exception as e:
                                 logging.warning(f"   ⚠️ Sanitization Skipped: {e}")

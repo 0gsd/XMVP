@@ -5,6 +5,16 @@ import sys
 from typing import Optional
 from pathlib import Path
 from mvp_shared import CSSV, Constraints, VPForm, save_cssv
+import librosa
+import numpy as np
+# Monkeypatch for Scipy 1.13+ vs Librosa < 0.10 compatibility
+try:
+    import scipy.signal
+    if not hasattr(scipy.signal, "hann"):
+        if hasattr(scipy.signal.windows, "hann"):
+             scipy.signal.hann = scipy.signal.windows.hann
+except ImportError:
+    pass
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -48,6 +58,12 @@ VP_FORMS = {
         fps=24,
         mime_type="video/mp4",
         description="A direct parody or pastiche spoof of the concept."
+    ),
+    "music-video": VPForm(
+        name="music-video",
+        fps=24,
+        mime_type="video/mp4",
+        description="A music video synchronized to an audio track."
     )
 }
 
@@ -100,6 +116,13 @@ def get_default_vision(form_name: str, seg_count: int = 0) -> str:
                 "INSPIRATION: Scary Movie, Don't Be a Menace, Spy Hard. "
                 "GOAL: To relentlessly mock the specific scene or concept provided."
             )
+    elif form_name == "music-video":
+        return (
+            "STYLE: Cinematic Music Video. "
+            "AESTHETIC: High contrast, atmospheric, visually striking, abstract or narrative-driven. "
+            "PACING: Rhythmic, aligned with music beats. "
+            "CONTENT: Visual metaphors, performance shots (if band mentioned), or pure narrative storytelling."
+        )
     else:
         return "Standard Production."
 
@@ -163,7 +186,22 @@ def get_specific_seed(query: str) -> str:
         
     return query
 
-def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: int = 0, seg_len: float = 4.0, chaos_seed_count: int = 0, cameo: str = None, out_path: str = "bible.json") -> Optional[CSSV]:
+def analyze_audio(audio_path):
+    """
+    Analyzes audio for Duration.
+    Returns (duration, bpm)
+    """
+    try:
+        y, sr = librosa.load(audio_path, sr=None)
+        duration = librosa.get_duration(y=y, sr=sr)
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        bpm = float(tempo[0] if isinstance(tempo, (list, np.ndarray)) else tempo)
+        return duration, bpm
+    except Exception as e:
+        logging.error(f"Audio analysis failed: {e}")
+        return 60.0, 120.0
+
+def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: int = 0, seg_len: float = 4.0, chaos_seed_count: int = 0, cameo: str = None, out_path: str = "bible.json", audio_path: str = None) -> Optional[CSSV]:
     """
     Executes the Vision Producer pipeline.
     """
@@ -208,6 +246,14 @@ def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: 
     fps = form.fps
     
     # Duration Logic
+    # OVERRIDE: Music Video Duration
+    if vpform_name == "music-video" and audio_path and Path(audio_path).exists():
+        logging.info(f"   🎵 Analyzing Audio: {audio_path}")
+        duration_sec, bpm = analyze_audio(audio_path)
+        slength = duration_sec # Override the argument
+        logging.info(f"   🎵 Music Detected: {duration_sec:.1f}s @ {bpm:.1f} BPM")
+        situation_text += f"\n   MUSIC CONTEXT: {bpm} BPM. Track Duration: {duration_sec:.1f}s."
+    
     if flength > 0:
         total_frames = flength
         duration_sec = total_frames / fps
@@ -250,7 +296,7 @@ def main():
     parser.add_argument("--prompt", type=str, required=True, help="The core request/concept (The 'Situation')")
     parser.add_argument("--slength", type=float, default=60.0, help="Total Duration in Seconds")
     parser.add_argument("--flength", type=int, default=0, help="Total Duration in Frames (Overrides slength if set)")
-    parser.add_argument("--seg_len", type=float, default=4.0, help="Target Segment Length in Seconds")
+    parser.add_argument("--seg_len", type=float, default=8.0, help="Target Segment Length in Seconds")
     parser.add_argument("--cs", type=int, default=0, choices=[0, 2, 3, 4, 5, 6], help="Chaos Seeds: 0=Off. 2-6=Wikipedia Injection.")
     parser.add_argument("--out", type=str, default="bible.json", help="Output path for the CSSV Bible")
     

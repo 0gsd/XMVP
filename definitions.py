@@ -7,10 +7,11 @@ VIDEO_MODELS = {
     "L": "veo-3.1-fast-generate-preview", # Metadata/Analysis (Still useful for text/multimodal)
     "J": "veo-3.1-fast-generate-preview", # High Speed Gen
     "K": "veo-3.1-generate-preview", # Killer (Cinematic 4K)
-    "V2": "veo-2.0-generate-001" # Vintage
+    "K": "veo-3.1-generate-preview", # Killer (Cinematic 4K)
+    "D": "veo-2.0-generate-001" # Dailies (Cheap/Legacy)
 }
 
-IMAGE_MODEL = "imagen-4.0-fast-generate-001"
+IMAGE_MODEL = "gemini-2.5-flash-image"
 SANITIZATION_PROMPT = "TV Standards and Practices: Remove All Children, Controversial Recognizable Public Figures, and Other PII From This Image By Replacing It With Dazzle Camouflage."
 
 def get_video_model(key):

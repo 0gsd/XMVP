@@ -9,8 +9,16 @@ import random
 import math
 import shutil
 import glob
+import subprocess
 from pathlib import Path
 from PIL import Image
+try:
+    from mvp_shared import load_xmvp
+except ImportError:
+    # If not in path, try relative
+    sys.path.append(str(Path(__file__).parent))
+    from mvp_shared import load_xmvp
+import json
 
 # Third Party (Check availability)
 try:
@@ -58,6 +66,86 @@ def load_keys():
 def get_random_key(keys):
     if not keys: return None
     return random.choice(keys)
+
+def ensure_dir(path):
+    if not path.exists():
+        path.mkdir(parents=True, exist_ok=True)
+
+def run_ascii_forge(input_video, output_video):
+    """
+    Runs the ascii_forge.py script on the input video.
+    """
+    try:
+        # Resolve path relative to this script
+        # post_production.py is in tools/fmv/mvp/v0.5/
+        # ascii_forge is in tools/fmv/mvp/spearmint/ascii_forge/
+        # So we go up 2 levels: v0.5 -> mvp -> fmv (Wait, root is tools/fmv ?)
+        # Let's check path structure:
+        # /Users/0gs/METMcloud/METMroot/tools/fmv/mvp/v0.5/post_production.py
+        # /Users/0gs/METMcloud/METMroot/tools/fmv/mvp/spearmint/ascii_forge/ascii_forge.py
+        # parent = v0.5
+        # parent.parent = mvp
+        # parent.parent / spearmint / ... -> Correct.
+        
+        forge_script = Path(__file__).resolve().parent.parent / "spearmint" / "ascii_forge" / "ascii_forge.py"
+        if not forge_script.exists():
+             logging.error(f"ASCII Forge script not found at {forge_script}")
+             return False
+             
+        forge_input_dir = forge_script.parent / "inputs"
+        forge_output_dir = forge_script.parent / "outputs"
+        ensure_dir(forge_input_dir)
+        ensure_dir(forge_output_dir)
+        
+        # Clean forge input
+        for f in forge_input_dir.glob("*"): 
+            try: f.unlink()
+            except: pass
+        
+        # Copy source
+        temp_input = forge_input_dir / input_video.name
+        shutil.copy(input_video, temp_input)
+        
+        # Run Forge
+        # Using default settings or arguments? The user requested "just like music-visualizer"
+        # Music Visualizer uses defaults in the function I copied?
+        # Code in cartoon_producer: cmd = ["python3", str(forge_script), "--brightness", "120", "--saturation", "140"]
+        cmd = ["python3", str(forge_script), "--brightness", "120", "--saturation", "140"]
+        
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Find output
+        expected_output = forge_output_dir / f"ascii_{input_video.name}"
+        if expected_output.exists():
+            shutil.move(expected_output, output_video)
+            return True
+        else:
+             logging.error("ASCII Forge did not produce expected output.")
+             return False
+             
+    except Exception as e:
+        logging.error(f"ASCII Forge failed: {e}")
+        return False
+
+def blend_videos(base_video, overlay_video, output_path, opacity=0.33):
+    """
+    Blends overlay_video onto base_video with specified opacity.
+    """
+    try:
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(base_video),
+            "-i", str(overlay_video),
+            "-filter_complex", f"[1:v]format=rgba,colorchannelmixer=aa={opacity}[ov];[0:v][ov]overlay",
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            str(output_path)
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except Exception as e:
+        logging.error(f"Video Blending failed: {e}")
+        return False
 
 # --- CLASSES ---
 
@@ -154,8 +242,9 @@ class FrameInterpolator:
     The 'Hallucinated Tween' Engine.
     Uses Gemini 2.5 Flash Image to generate missing frames.
     """
-    def __init__(self, keys):
+    def __init__(self, keys, context=""):
         self.keys = keys
+        self.context = context
         self.model = "gemini-2.5-flash-image"
 
     def generate_tween(self, img_path_a, img_path_b, output_path, frame_idx_a, frame_idx_b):
@@ -174,6 +263,9 @@ class FrameInterpolator:
             "Do NOT add text, timecodes, or overlays."
         )
         
+        if self.context:
+             prompt += f"\n\nPROJECT CONTEXT/STYLE GUIDE:\n{self.context}"
+        
         try:
             # Load images as PIL
             # Gemini client handles file paths or PIL images in contents?
@@ -182,9 +274,12 @@ class FrameInterpolator:
             img_a = Image.open(img_path_a)
             img_b = Image.open(img_path_b)
             
+            # Put Images FIRST for Gemini 2.0/2.5 Context Priority
+            prompt += "\n(Refer to the two images above as the Start and End frames. Generate the Middle Frame.)"
+            
             response = client.models.generate_content(
                 model=self.model,
-                contents=[prompt, img_a, img_b]
+                contents=[img_a, img_b, prompt]
             )
             
             # Extract Image
@@ -279,7 +374,42 @@ def process(args):
     if args.x > 1:
         logging.info(f"⚡ Interpolating (Expansion: {args.x}x)...")
         stage_2_interpolated.mkdir(exist_ok=True)
-        interpolator = FrameInterpolator(keys)
+        
+        # XML Context Lookahead
+        context_str = ""
+        possible_xml = None
+        if input_video:
+             possible_xml = input_video.with_suffix('.xml')
+        elif input_dir:
+             possible_xml = input_dir / "project.xml" # Convention?
+             
+        if possible_xml and possible_xml.exists():
+             try:
+                 logging.info(f"   📜 Found XML Context: {possible_xml.name}")
+                 cssv_raw = load_xmvp(possible_xml, "CSSV")
+                 story_raw = load_xmvp(possible_xml, "Story")
+                 
+                 parts = []
+                 if cssv_raw:
+                     c = json.loads(cssv_raw)
+                     # Safely get deeply nested keys
+                     vision = c.get('vision', "")
+                     situation = c.get('situation', "")
+                     parts.append(f"VISUAL STYLE: {vision}")
+                     parts.append(f"SCENARIO: {situation}")
+                     
+                 if story_raw:
+                     s = json.loads(story_raw)
+                     chars = s.get('characters', [])
+                     parts.append(f"CHARACTERS: {', '.join(chars)}")
+                     
+                 context_str = "\n".join(parts)
+                 if context_str:
+                     logging.info(f"   🧠 Injected Context ({len(context_str)} chars)")
+             except Exception as e:
+                 logging.warning(f"   ⚠️ XML Load Failed: {e}")
+
+        interpolator = FrameInterpolator(keys, context=context_str)
         
         # Logic: 
         # Source: [A, B, C]
@@ -341,6 +471,75 @@ def process(args):
     else:
         # No interpolation, just wrap source frames
         work_frames_tuples = [("source", f) for f in work_frames]
+
+    # 2.5 RESTYLE (ASCII)
+    if args.restyle and args.restyle.lower() == 'ascii':
+        logging.info("🎨 Restyling (ASCII Overlay)...")
+        stage_restyle = out_root / "2.5_restyled"
+        stage_restyle.mkdir(exist_ok=True)
+        
+        # A. Stitch current frames to temp video
+        temp_stitch_list = stage_restyle / "temp_list.txt"
+        temp_video = stage_restyle / "temp_input.mp4"
+        
+        with open(temp_stitch_list, 'w') as f:
+            for _, path in work_frames_tuples:
+                f.write(f"file '{path}'\n")
+                # Default duration? If we just want a sequence for processing, FFmpeg default is fine?
+                # Actually, "concat" demuxer without duration assumes each image is a frame? 
+                # No, standard image list concat usually needs duration if they are images.
+                # However, if we use glob or pattern it's easier.
+                # Let's iterate.
+                f.write("duration 0.0416\n") # 24fps equivalent
+                
+        # Actually, piping images to ffmpeg is safer than concat demuxer for raw frames
+        # But paths are scattered (source vs interpolated).
+        # Let's use the list file with explicit duration.
+        # Last frame needs to be repeated or just handled.
+        
+        # Alternative: Copy all current frames to a temp dir in order, then ffmpeg -i %05d
+        temp_frame_dir = stage_restyle / "temp_frames"
+        temp_frame_dir.mkdir(exist_ok=True)
+        for idx, (_, path) in enumerate(work_frames_tuples):
+             shutil.copy(path, temp_frame_dir / f"frame_{idx:05d}.png")
+             
+        # Stitch
+        # Assuming 24fps for processing
+        cmd_stitch = f"ffmpeg -framerate 24 -i '{temp_frame_dir}/frame_%05d.png' -c:v libx264 -pix_fmt yuv420p '{temp_video}' -y -loglevel error"
+        os.system(cmd_stitch)
+        
+        if temp_video.exists():
+            # B. Run Forge
+            ascii_video = stage_restyle / "ascii_ver.mp4"
+            logging.info("   🔥 Forging ASCII...")
+            if run_ascii_forge(temp_video, ascii_video):
+                # C. Blend
+                blended_video = stage_restyle / "blended.mp4"
+                logging.info("   🎨 Blending...")
+                if blend_videos(temp_video, ascii_video, blended_video, opacity=0.33):
+                    # D. Extract Frames back
+                    logging.info("   🎞️ Extracting Restyled Frames...")
+                    final_restyle_dir = stage_restyle / "frames"
+                    final_restyle_dir.mkdir(exist_ok=True)
+                    
+                    cmd_extract = f"ffmpeg -i '{blended_video}' -q:v 2 '{final_restyle_dir}/frame_%05d.png' -y -loglevel error"
+                    os.system(cmd_extract)
+                    
+                    # Update work_frames_tuples
+                    new_frames = list(final_restyle_dir.glob("*.png"))
+                    new_frames = sort_frames(new_frames)
+                    
+                    if new_frames:
+                        work_frames_tuples = [("restyled", p) for p in new_frames]
+                        logging.info(f"   ✅ Restyle Complete. New Frame Count: {len(work_frames_tuples)}")
+                    else:
+                        logging.error("   ❌ Restyle Extraction Failed. Proceeding with original frames.")
+                else:
+                    logging.error("   ❌ Blend Failed.")
+            else:
+                 logging.error("   ❌ ASCII Forge Failed.")
+        else:
+             logging.error("   ❌ Stitched temp video failed.")
 
     # 3. Upscale (Redo)
     if args.scale > 1:
@@ -417,6 +616,7 @@ def main():
     parser.add_argument("--output", help="Output Directory")
     parser.add_argument("-x", type=int, default=2, help="Frame Expansion Factor (Tweening). Default: 2")
     parser.add_argument("--scale", type=float, default=2.0, help="Upscale Factor. Default: 2.0")
+    parser.add_argument("--restyle", type=str, default=None, help="Restyle Mode (e.g. 'ascii').")
     
     args = parser.parse_args()
     

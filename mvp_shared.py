@@ -25,7 +25,7 @@ class Constraints(BaseModel):
     height: int = 768
     fps: int = 24
     max_duration_sec: float = 60.0
-    target_segment_length: float = 4.0
+    target_segment_length: float = 8.0
     black_and_white: bool = False
     silent: bool = False
     style_bans: List[str] = Field(default_factory=list, description="List of banned style tokens")
@@ -128,6 +128,28 @@ def load_api_keys(env_path: Union[str, Path] = "env_vars.yaml") -> List[str]:
     except Exception:
         return []
 
+def load_text_keys(env_path: Union[str, Path] = "env_vars.yaml") -> List[str]:
+    """
+    Loads TEXT_KEYS_LIST for fallback.
+    """
+    path = Path(env_path)
+    if not path.exists():
+        path = Path(__file__).parent / "env_vars.yaml"
+        if not path.exists():
+             central_path = Path(__file__).resolve().parent.parent.parent / "env_vars.yaml"
+             if central_path.exists():
+                 path = central_path
+             else:
+                 return []
+            
+    try:
+        with open(path, 'r') as f:
+            data = yaml.safe_load(f)
+            keys_str = data.get("TEXT_KEYS_LIST", "")
+            return [k.strip() for k in keys_str.split(',') if k.strip()]
+    except Exception:
+        return []
+
 # --- XMVP Persistence ---
 import xml.etree.ElementTree as ET
 
@@ -168,4 +190,42 @@ def load_xmvp(path: Union[str, Path], key: str) -> Optional[str]:
     except Exception as e:
         print(f"Error loading XMVP: {e}")
     return None
+
+# --- Shared Helpers ---
+
+def get_project_id():
+    """Returns GCP Project ID."""
+    return os.environ.get("GOOGLE_CLOUD_PROJECT", "theedit-483919")
+
+def setup_logging(name="mvp"):
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    return logging.getLogger(name)
+
+import itertools
+
+_KEY_CYCLE = None
+
+def get_client():
+    """
+    Returns (genai.Client, key_used).
+    Rotates through keys in env_vars.yaml.
+    """
+    global _KEY_CYCLE
+    import google.genai as genai
+    
+    if _KEY_CYCLE is None:
+        keys = load_api_keys()
+        if not keys:
+            raise ValueError("No keys found in provided env_vars.yaml or default locations.")
+        random.shuffle(keys)
+        _KEY_CYCLE = itertools.cycle(keys)
+        
+    key = next(_KEY_CYCLE)
+    client = genai.Client(api_key=key)
+    return client, key
 

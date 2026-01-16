@@ -7,7 +7,7 @@ import sys
 import re
 from pathlib import Path
 from text_engine import get_engine
-from mvp_shared import CSSV, Story, Portion, load_cssv
+from mvp_shared import CSSV, Story, Portion, load_cssv, load_xmvp
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -122,13 +122,33 @@ def run_writers(bible_path: str, story_path: str, out_path: str = "portions.json
 
 def main():
     parser = argparse.ArgumentParser(description="Writers Room: The Screenwriter")
-    parser.add_argument("--bible", type=str, required=True, help="Path to input CSSV JSON")
-    parser.add_argument("--story", type=str, required=True, help="Path to input Story JSON")
+    parser.add_argument("--bible", type=str, default="bible.json", help="Path to input CSSV JSON")
+    parser.add_argument("--story", type=str, default="story.json", help="Path to input Story JSON")
     parser.add_argument("--out", type=str, default="portions.json", help="Output path for Portions JSON")
+    parser.add_argument("--xb", type=str, help="Path to XMVP XML file (Overrides inputs)")
     
     args = parser.parse_args()
     
-    success = run_writers(args.bible, args.story, args.out)
+    bible_in = args.bible
+    story_in = args.story
+    
+    if args.xb:
+        logging.info(f"📚 Loading Context from XMVP: {args.xb}")
+        b_raw = load_xmvp(args.xb, "Bible")
+        s_raw = load_xmvp(args.xb, "Story")
+        
+        if b_raw and s_raw:
+             # Create temp files or just overwrite args?
+             # Let's overwrite specific inputs if they are default
+             with open("bible.json", "w") as f: f.write(b_raw)
+             with open("story.json", "w") as f: f.write(s_raw)
+             bible_in = "bible.json"
+             story_in = "story.json"
+        else:
+             logging.error("Failed to extract Bible/Story from XMVP.")
+             sys.exit(1)
+    
+    success = run_writers(bible_in, story_in, args.out)
     if not success:
         sys.exit(1)
 

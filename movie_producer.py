@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import logging
 import sys
@@ -41,10 +42,12 @@ def main():
     
     # Producer Args
     parser.add_argument("--seg", type=int, default=3, help="Number of segments to generate")
-    parser.add_argument("--l", type=float, default=4.0, help="Length of each segment in seconds")
+    parser.add_argument("--l", type=float, default=8.0, help="Length of each segment in seconds")
     parser.add_argument("--vpform", type=str, default="tech-movie", help="Form/Genre (realize-ad, tech-movie)")
     parser.add_argument("--cs", type=int, default=0, help="Chaos Seeds level")
+
     parser.add_argument("--cf", type=str, default=None, help="Cameo Feature: Wikipedia URL or Search Query")
+    parser.add_argument("--mu", type=str, default=None, help="Music Track (for music-video vpform)")
     parser.add_argument("--vm", type=str, default="K", help="Video Model Tier (L, J, K)")
     parser.add_argument("--pg", action="store_true", help="Enable PG Mode (Relaxed Celebrity/Strict Child Safety)")
     
@@ -115,8 +118,10 @@ def main():
             slength=total_length,
             seg_len=args.l,
             chaos_seed_count=args.cs,
+
             cameo=args.cf,
-            out_path=p_bible
+            out_path=p_bible,
+            audio_path=args.mu
         )
         if not success: sys.exit(1)
 
@@ -170,7 +175,30 @@ def main():
     if stitch_list:
         final_filename = os.path.join(action.DIR_FINAL, f"MVP_MOVIE_{ts}.mp4")
         logging.info(f"🧵 Stitching {len(stitch_list)} clips to {final_filename}...")
+        logging.info(f"🧵 Stitching {len(stitch_list)} clips to {final_filename}...")
         action.stitch_videos(stitch_list, final_filename)
+        
+        # 6.5 Music Muxing
+        if args.mu and os.path.exists(args.mu) and os.path.exists(final_filename):
+            logging.info(f"🎵 Muxing Audio Track: {args.mu}")
+            musical_filename = os.path.join(action.DIR_FINAL, f"MVP_MOVIE_MUSIC_{ts}.mp4")
+            try:
+                import subprocess
+                cmd_mix = [
+                    "ffmpeg", "-y",
+                    "-i", final_filename,
+                    "-i", args.mu,
+                    "-map", "0:v",
+                    "-map", "1:a",
+                    "-c:v", "copy",
+                    "-shortest", # Align to shortest (usually video if audio is longer, or vice versa)
+                    musical_filename
+                ]
+                subprocess.run(cmd_mix, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                logging.info(f"✅ FINAL MUSICAL CUT: {musical_filename}")
+            except Exception as e:
+                logging.error(f"Failed to mux audio: {e}")
+                
     else:
         logging.error("❌ No clips to stitch.")
 

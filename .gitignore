@@ -3,10 +3,18 @@ env_vars.yaml
 secrets.yaml
 .env
 
+# Setups
+frozen_requirements.txt
+clean_requirements.txt
+brew_packages.txt
+setup_studio.sh
+
 # Shells on the Batch
 run_improv.sh
 run_improv_batch.sh
 run_animator.sh
+run_comfy.sh
+setup_comfy_infrastructure.py
 
 # Python
 __pycache__/

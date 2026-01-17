@@ -610,9 +610,52 @@ def process(args):
     
     logging.info(f"🎉 Post Production Complete: {output_video}")
 
+
+def stitch_videos(log, output_filename):
+    """Stitches mp4s using FFmpeg concat."""
+    # Create unique list file in componentparts to avoid collisions
+    # We assume DIR_PARTS or similar exists, or we use the dir of the first file
+    
+    # Heuristic: Find a directory to write the list file to
+    work_dir = Path("componentparts")
+    if log and isinstance(log, list) and len(log) > 0 and 'local_file' in log[0]:
+         work_dir = Path(log[0]['local_file']).parent
+
+    work_dir.mkdir(parents=True, exist_ok=True)
+    
+    ts = int(time.time())
+    list_file = work_dir / f"stitch_list_{ts}.txt"
+    valid_files = []
+    
+    with open(list_file, 'w') as f:
+        for entry in log:
+            if 'local_file' in entry and os.path.exists(entry['local_file']):
+                abs_path = os.path.abspath(entry['local_file'])
+                f.write(f"file '{abs_path}'\n")
+                valid_files.append(abs_path)
+    
+    if not valid_files:
+        logging.warning("   ❌ No videos to stitch.")
+        return
+
+    logging.info(f"   🧵 Combining {len(valid_files)} clips...")
+    # ffmpeg concat
+    # -safe 0 to allow relative paths
+    cmd = f"ffmpeg -f concat -safe 0 -i {list_file} -c copy {output_filename} -y"
+    
+    ret = os.system(cmd)
+    if ret == 0:
+        logging.info(f"   ✅ stitched: {output_filename}")
+        try:
+            os.remove(list_file)
+        except:
+             pass
+    else:
+        logging.error("   ❌ FFmpeg failed.")
+
 def main():
     parser = argparse.ArgumentParser(description="Post Production: The Svelte 2x Machine")
-    parser.add_argument("input", help="Input Video file or Directory of frames")
+    parser.add_argument("input", nargs='?', help="Input Video file or Directory of frames")
     parser.add_argument("--output", help="Output Directory")
     parser.add_argument("-x", type=int, default=2, help="Frame Expansion Factor (Tweening). Default: 2")
     parser.add_argument("--scale", type=float, default=2.0, help="Upscale Factor. Default: 2.0")
@@ -620,7 +663,11 @@ def main():
     
     args = parser.parse_args()
     
-    process(args)
+    if args.input:
+        process(args)
+    else:
+        parser.print_help()
 
 if __name__ == "__main__":
     main()
+

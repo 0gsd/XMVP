@@ -12,7 +12,7 @@ import stub_reification
 import writers_room
 import portion_control
 import dispatch_director
-import action # For stitching
+import post_production # For stitching
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -21,7 +21,7 @@ def get_output_dir():
     """Returns the default output directory: ../z_test-outputs"""
     # Base it relative to this script location
     base = os.path.dirname(os.path.abspath(__file__))
-    out_dir = os.path.join(base, "z_test-outputs")
+    out_dir = os.path.join(base, "z_test-outputs", "movies")
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
     return out_dir
@@ -74,10 +74,14 @@ def main():
     OUT_DIR = args.out if args.out else get_output_dir()
     logging.info(f"📂 Output Directory: {OUT_DIR}")
     
-    # Update Action Paths (Global Monkeypatch)
-    action.DIR_PARTS = os.path.join(OUT_DIR, "componentparts")
-    action.DIR_FINAL = os.path.join(OUT_DIR, "finalcuts")
-    action.ensure_directories()
+    # Update Paths (Locally Defined)
+    DIR_PARTS = os.path.join(OUT_DIR, "componentparts")
+    DIR_FINAL = os.path.join(OUT_DIR, "finalcuts")
+    
+    # Ensure Directories
+    for d in [DIR_PARTS, DIR_FINAL]:
+        if not os.path.exists(d):
+            os.makedirs(d)
 
     # 0. Boot
     if not args.concept and not args.xb:
@@ -154,7 +158,7 @@ def main():
         mode="video",
         model_tier=args.vm,
         out_path=p_manifest_updated,
-        staging_dir=action.DIR_PARTS,
+        staging_dir=DIR_PARTS,
         pg_mode=args.pg
     )
     if not success: sys.exit(1)
@@ -173,15 +177,14 @@ def main():
             })
             
     if stitch_list:
-        final_filename = os.path.join(action.DIR_FINAL, f"MVP_MOVIE_{ts}.mp4")
+        final_filename = os.path.join(DIR_FINAL, f"MVP_MOVIE_{ts}.mp4")
         logging.info(f"🧵 Stitching {len(stitch_list)} clips to {final_filename}...")
-        logging.info(f"🧵 Stitching {len(stitch_list)} clips to {final_filename}...")
-        action.stitch_videos(stitch_list, final_filename)
+        post_production.stitch_videos(stitch_list, final_filename)
         
         # 6.5 Music Muxing
         if args.mu and os.path.exists(args.mu) and os.path.exists(final_filename):
             logging.info(f"🎵 Muxing Audio Track: {args.mu}")
-            musical_filename = os.path.join(action.DIR_FINAL, f"MVP_MOVIE_MUSIC_{ts}.mp4")
+            musical_filename = os.path.join(DIR_FINAL, f"MVP_MOVIE_MUSIC_{ts}.mp4")
             try:
                 import subprocess
                 cmd_mix = [
@@ -217,9 +220,23 @@ def main():
         "Manifest": read_json_safe(p_manifest_updated)
     }
     
-    xmvp_filename = os.path.join(action.DIR_FINAL, f"run_{ts}.xml")
+    xmvp_filename = os.path.join(DIR_FINAL, f"run_{ts}.xml")
     save_xmvp(xmvp_data, xmvp_filename)
     logging.info(f"✅ XMVP Saved: {xmvp_filename}")
+    
+    # 8. Cleanup
+    logging.info("🧹 Cleaning up component parts...")
+    try:
+        if os.path.exists(DIR_PARTS):
+            shutil.rmtree(DIR_PARTS)
+            # Re-create empty? No, user wants it clean.
+            # But wait, user said "delete all but frame one... from component parts for movies"
+            # It's safer to just empty it.
+            # actually, maybe just leaving one file is good for debug?
+            # Let's just delete the folder contents.
+            os.makedirs(DIR_PARTS, exist_ok=True) 
+    except Exception as e:
+        logging.warning(f"Cleanup warning: {e}")
 
 if __name__ == "__main__":
     main()

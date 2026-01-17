@@ -9,13 +9,10 @@ from pathlib import Path
 
 import itertools
 
-# Try to import Gemini SDK (Standard)
-try:
-    from google import genai
-    from google.genai import types
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
+# Strict Import (No more legacy fallback)
+from google import genai
+from google.genai import types
+GEMINI_AVAILABLE = True
 
 # Lazy import for MLX (Apple Silicon)
 # We don't import at top level to avoid crashing on non-Macs or if missing
@@ -95,20 +92,25 @@ class TextEngine:
                 logging.error(f"[-] TextEngine Config Load Error: {e}")
         
         # Initialize Rotation
-        if self.api_keys:
-            random.shuffle(self.api_keys) # Shuffle once to avoid sync patterns
-        # Initialize Rotation
-        if self.api_keys:
-            random.shuffle(self.api_keys) # Shuffle once to avoid sync patterns
-            self.key_cycle = itertools.cycle(self.api_keys)
+        all_keys = self.api_keys[:]
+        
+        # User requested aggressive pooling of ALL keys for high-throughput modes?
+        # If we want to support "round robin through all available ACTION_KEYS_LIST -and- TEXT_KEYS_LIST"
+        # We can implement a flag or just do it by default if fallback keys exist?
+        # User said: "we might as well round robin through all available... with intelligent backoff"
+        # Let's pool them if we can.
+        if self.fallback_keys:
+             # Dedup
+             extras = [k for k in self.fallback_keys if k not in all_keys]
+             all_keys.extend(extras)
+             logging.info(f"   🔑 TextEngine: Pooled {len(all_keys)} Total Keys (Action + Text) for Rotation.")
+        
+        if all_keys:
+            random.shuffle(all_keys) 
+            self.key_cycle = itertools.cycle(all_keys)
+            self.fallback_cycle = itertools.cycle(all_keys) # Same pool for fallback
         else:
             self.key_cycle = None
-            
-        # Fallback Rotation
-        if self.fallback_keys:
-            random.shuffle(self.fallback_keys)
-            self.fallback_cycle = itertools.cycle(self.fallback_keys)
-        else:
             self.fallback_cycle = None
 
         logging.info(f"🧠 TextEngine initialized. Backend: {self.backend.upper()}")
@@ -156,6 +158,36 @@ class TextEngine:
 
         key = next(cycle)
         return genai.Client(api_key=key)
+
+    def get_model_instance(self):
+        """
+        Returns a configured genai.GenerativeModel object (V1 SDK).
+        Useful for passing to legacy scripts like frame_canvas.py
+        that expect a model object, not just a client.
+        """
+        # Retrieve key logic duplicated from get_gemini_client
+        cycle = self.fallback_cycle if (self.using_fallback and self.fallback_cycle) else self.key_cycle
+        
+        if not cycle:
+             # Try failover
+             if not self.using_fallback and self.fallback_cycle:
+                 self.using_fallback = True
+                 cycle = self.fallback_cycle
+             else:
+                 logging.error("[-] TextEngine: No Gemini API keys found.")
+                 return None
+
+        key = next(cycle)
+
+        # Quick Fix (MVP): Re-import V1 here and return V1 model object using the key.
+        try:
+             import google.generativeai as genai_v1
+             genai_v1.configure(api_key=key)
+             # Safety: Set API version if needed, but default is usually fine
+             return genai_v1.GenerativeModel("gemini-2.0-flash")
+        except Exception as e:
+             logging.error(f"[-] Failed to bridge V1 model: {e}")
+             return None
 
     def generate(self, prompt, temperature=0.7, json_schema=None):
         """

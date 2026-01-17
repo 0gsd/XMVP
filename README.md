@@ -14,7 +14,21 @@ The "Showrunner" that orchestrates the entire 7-stage pipeline to create structu
 ```bash
 python3 movie_producer.py "A sci-fi film about a robot learning to love" [ARGS]
 ```
-See arguments below for details.
+**Arguments:**
+- `concept`: The concept text (quoted string). Required unless `--xb` is provided.
+- `--seg [INT]`: Number of segments to generate. Default: `3`.
+- `--l [FLOAT]`: Length of each segment in seconds. Default: `8.0`.
+- `--vpform [STR]`: Form/Genre (e.g., `realize-ad`, `tech-movie`). Default: `tech-movie`.
+- `--cs [INT]`: Chaos Seeds level (dynamic concept generation). Default: `0`.
+- `--cf [STR]`: Cameo Feature (Wikipedia URL or Search Query for character injection).
+- `--mu [PATH]`: Music Track path (for music-video vpform).
+- `--vm [STR]`: Video Model Tier (`L`: Light/Gemini, `J`: Just/Veo-2, `K`: Killer/Veo-3). Default: `K`.
+- `--pg`: Enable PG Mode (Relaxed Celebrity/Strict Child Safety).
+- `--clean`: Clean intermediate JSON files before running.
+- `--xb [PATH]`: XMVP Re-hydration path. Re-loads the pipeline from an existing XML manifest, bypassing the Vision Producer.
+- `--fast`: Fast Mode shortcut (switches to Tier J).
+- `--vfast`: V-Fast Mode shortcut (switches to legacy Veo 2.0).
+- `--out [PATH]`: Override output directory.
 
 ### `cartoon_producer.py` (Creative Agency)
 Specialized pipeline for "Frame-By-Frame" animation, Music Video syncing, and Creative Agency work.
@@ -44,7 +58,7 @@ Specialized pipeline for "Frame-By-Frame" animation, Music Video syncing, and Cr
 The "Improv Troupe". Generates endless, streaming improv comedy specials with dynamic casts and reliable XMVP exports.
 **Usage:**
 ```bash
-./improv_animator.py --vpform 10-cartoon
+./improv_animator.py --vpform 10-cartoon --project [ID]
 ```
 **Arguments:**
 - `--vpform`: `10-cartoon` (10-min Dynamic Cast), `24-cartoon` (24-min Fixed Cast).
@@ -54,22 +68,21 @@ The "Improv Troupe". Generates endless, streaming improv comedy specials with dy
 ### `podcast_animator.py` (The VJ)
 Visualizes audio podcasts (or generates them) into animated video pairs/triplets.
 **Usage:**
-```bash
-python3 podcast_animator.py --project [ID]
-```
+# GAHD Mode (The "Golden Age of Hollywood Dreams" Engine) - DEFAULT
+# Generates full episodes from scratch (Casting -> Script -> Audio -> Video)
+python3 podcast_animator.py --slength [SEC]
 
-
-### `action.py` (The Video Director)
-The "Action!" module. A dedicated Veo/Gemini Video orchestration tool that generates scripts via a "Writers Room" simulation and executes them using Veo (Tier J/K) or Gemini (Tier L) models. It integrates `truth_safety.py` to ensure prompts are coherent and safe before generation.
-**Usage:**
-```bash
-python3 action.py --cut --genre movies --seg 4 --vm J
+# Standard Mode (Triplet Visualization) - LEGACY
+python3 podcast_animator.py --vpform triplets-podcast --ifp [INPUT_DIR] --ofp [OUTPUT_DIR]
 ```
 **Arguments:**
-- `--cut`: Execute the video generation (without this, it only generates the script).
-- `--genre`: `movies` (Remake), `studio` (Mockumentary), `tech` (Sci-Fi).
-- `--seg`: Number of segments/shots to generate.
-- `--vm`: Video Model Tier (`L`: Light/Gemini, `J`: Just/Veo-2, `K`: Killer/Veo-3).
+- `--vpform`: `gahd-podcast` (Default) or `triplets-podcast`.
+- `--slength`: Override duration in seconds (Default: 2000s for GAHD).
+- `--ifp`: Input Folder Path (for triplets).
+- `--ofp`: Output Folder Path.
+- `--project`: GCP Project ID for Cloud TTS.
+
+
 ---
 
 ## ⚙️  The Value Chain (Internal Modules)
@@ -140,6 +153,30 @@ Orchestrates sequential runs of `improv_animator.py` with cooldowns to respect A
 ```
 Example: `./run_improv_batch.sh 5 10-cartoon` (Runs 5 episodes of 10-cartoon).
 
+### `music_video.py` (The Rescuer)
+dedicated utility to sync visuals to audio. "The Rescuer" for failed runs or manual stitching.
+**Usage:**
+```bash
+# Mode 1: Frames Stitching (Calculates perfect FPS)
+python3 music_video.py --mu song.mp3 --ff ./frames_folder --out video.mp4
+
+# Mode 2: Video Retiming (Stretches/Squeezes video to match song)
+# Warns if drift > 30s.
+python3 music_video.py --mu song.mp3 --vf input.mp4 --out video.mp4
+```
+**Arguments:**
+- `--mu`: Input Audio (Required).
+- `--ff`: Input Frames Folder.
+- `--vf`: Input Video File.
+- `--out`: Output Filename.
+
+### `foley_talk.py` (Universal Audio Stage)
+Centralized audio engine handling both Cloud TTS (Gemini/Journey) and Local TTS (Comfy/Hunyuan/RVC).
+**Usage:**
+```bash
+python3 foley_talk.py --text "Hello World" --out test.wav --mode [cloud|comfy]
+```
+
 ---
 
 ## 📁 Environment
@@ -150,4 +187,4 @@ TEXT_KEYS_LIST: "key4,key5,key6"   # For high-volume text/safety checks (Flash)
 ```
 Your env_vars.yaml can be in a different location (the code references an off-root directory), but you'll have to figure out how to route the calls there.
 
-Even among two Gemini APIs, using the same key, the way requests have to be constructed and massaged, and you'll always need to be keeping everything up to date. I can't save you from that, though model_scout.py IS included which can refer to definitions.py for your preferred models and probe the various APIs using test_gen_capabilities.py. 
+Even among two Gemini APIs, using the same key, the way requests have to be constructed and massaged is wildly different, and it's not like we're "through the rough patch" in that regard ... you'll always need to be keeping everything up to date. I can't save you from that, though model_scout.py is included, which can refer to definitions.py for your preferred models and probe the various APIs using test_gen_capabilities.py. 

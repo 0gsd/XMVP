@@ -1,247 +1,165 @@
 from google import genai
-import action
 import definitions
+from mvp_shared import load_api_keys
+from definitions import Modality, BackendType, MODAL_REGISTRY, get_active_model, set_active_model
+import argparse
+import os
+import sys
 
 def get_keys():
-    keys = action.load_action_keys()
+    keys = load_api_keys()
     if not keys:
         print("❌ No keys found in env_vars.yaml")
-        exit(1)
+        sys.exit(1)
     return keys
 
-def main():
+def print_status():
+    print("\n📊 MODAL REGISTRY STATUS")
+    print(f"{'MODALITY':<15} {'ACTIVE MODEL':<25} {'BACKEND':<10} {'DETAILS':<30}")
+    print("-" * 80)
+    
+    for mod in Modality:
+        try:
+            config = get_active_model(mod)
+            details = config.endpoint if config.backend == BackendType.CLOUD else config.path
+            # Truncate details if too long
+            if details and len(str(details)) > 28:
+                details = "..." + str(details)[-25:]
+            elif not details:
+                details = "-"
+                
+            print(f"{mod.value:<15} {config.name:<25} {config.backend.value:<10} {details:<30}")
+        except Exception as e:
+            print(f"{mod.value:<15} {'ERROR':<25} {'-':<10} {str(e):<30}")
+    print("-" * 80)
+    print(f"Active Profile: {definitions.ACTIVE_PROFILE_PATH.resolve()}")
+
+def list_models(modality_str=None):
+    mods_to_list = [Modality(modality_str)] if modality_str else Modality
+    
+    for mod in mods_to_list:
+        print(f"\n📂 {mod.value.upper()} Models:")
+        if mod not in MODAL_REGISTRY:
+            print("   (No models registered)")
+            continue
+            
+        for mid, config in MODAL_REGISTRY[mod].items():
+            active_marker = "*" if mid == definitions.ACTIVE_PROFILE.get(mod) else " "
+            print(f" {active_marker} [{mid}] ({config.backend.value})")
+            if config.path: print(f"      Path: {config.path}")
+            if config.endpoint: print(f"      Endpoint: {config.endpoint}")
+
+def switch_model(modality_str, model_id):
+    try:
+        mod = Modality(modality_str)
+        set_active_model(mod, model_id)
+        print(f"✅ Switched {mod.value} to '{model_id}'")
+        print_status()
+    except ValueError as e:
+        print(f"❌ Error: {e}")
+        print("Use --list to see valid options.")
+
+def run_scan():
     keys = get_keys()
     client = genai.Client(api_key=keys[0])
     
-    print("\n🔍 MODEL SCOUT: Scanning for L/J/K Candidates...\n")
-    
-    # Fetch models
+    print("\n🔍 CLOUD SCAN: Listing available Gemini models...\n")
     try:
         models = list(client.models.list())
+        for m in models:
+            print(f" - {m.name}")
     except Exception as e:
         print(f"❌ API Error: {e}")
-        return
 
-    # Categories
-    gemini_flash_candidates = []
-    veo_candidates = []
-    others = []
-
-    for m in models:
-        # m is a Model object, name e.g. "models/gemini-..."
-        name = m.name
-        if "gemini" in name and "flash" in name:
-            gemini_flash_candidates.append(name)
-        elif "veo" in name:
-            veo_candidates.append(name)
-        else:
-            others.append(name)
-            
-    # Sort for readability
-    gemini_flash_candidates.sort(reverse=True) # Newest first (roughly)
-    veo_candidates.sort(reverse=True)
-    
-    print(f"⚡ CANDIDATES FOR 'L' (Lite / Metadata / Fast Gen):")
-    for name in gemini_flash_candidates[:5]: # Top 5
-        print(f"   - {name}")
-        
-    print(f"\n🎥 CANDIDATES FOR 'J/K' (Veo Video Gen):")
-    for name in veo_candidates:
-        print(f"   - {name}")
-        
-    print("\n---------------------------------------------------")
-    print("📋 CURRENT DEFINITIONS (definitions.py):")
-    print(f"   L (Light) : {definitions.VIDEO_MODELS.get('L')}")
-    print(f"   J (Just)  : {definitions.VIDEO_MODELS.get('J')}")
-    print(f"   K (Killer): {definitions.VIDEO_MODELS.get('K')}")
-    print("---------------------------------------------------\n")
-
-    # Recommendation Logic
-    rec_l = gemini_flash_candidates[0] if gemini_flash_candidates else "None"
-    
-    # Find best Veo 3.1
-    veo_fast = next((m for m in veo_candidates if "veo-3.1" in m and "fast" in m), None)
-    veo_full = next((m for m in veo_candidates if "veo-3.1" in m and "fast" not in m), None)
-    
-    # Fallback to Veo 3.0
-    if not veo_fast: veo_fast = next((m for m in veo_candidates if "veo-3" in m and "fast" in m), "None")
-    if not veo_full: veo_full = next((m for m in veo_candidates if "veo-3" in m and "fast" not in m), "None")
-
-    print(f"   Suggested K: {veo_full}")
-    
-    # Check alignment
-    current_l = definitions.VIDEO_MODELS.get('L', '')
-    current_j = definitions.VIDEO_MODELS.get('J', '')
-    current_k = definitions.VIDEO_MODELS.get('K', '')
-    
-    if current_l == rec_l and current_j == veo_fast and current_k == veo_full:
-        print("\n✅ STATUS: GREEN. Definitions are optimized.")
-    else:
-        print("\n⚠️ STATUS: YELLOW. Updates available.")
-        if current_l != rec_l: print(f"   - Update L: {current_l} -> {rec_l}")
-        if current_j != veo_fast: print(f"   - Update J: {current_j} -> {veo_fast}")
-        if current_k != veo_full: print(f"   - Update K: {current_k} -> {veo_full}")
-
+# --- Legacy Probe/Pull ---
 def probe_model(keys, model_name):
-    """
-    Stress tests a model to find empirical rate limits.
-    """
+    """Stress tests a model."""
     print(f"\n🧪 PROBING MODEL: {model_name}")
-    print("   Starting stress test (5 attempts, 1s delay)...")
-    
     import requests
-    import json
     import time
+    
+    api_key = keys[0]
+    base_url = "https://generativelanguage.googleapis.com/v1beta/models"
+    clean_name = model_name.replace("models/", "")
+    is_veo = "veo" in clean_name.lower()
     
     success_count = 0
     fail_count = 0
-    timings = []
-    
-    # We use the first key for probing to test SINGLE KEY limits
-    api_key = keys[0]
-    
-    base_url = "https://generativelanguage.googleapis.com/v1beta/models"
-    
-    # Clean model name
-    clean_name = model_name.replace("models/", "")
-    
-    # Determine endpoint type
-    is_veo = "veo" in clean_name.lower()
     
     for i in range(1, 6):
         print(f"   👉 Attempt {i}/5...", end="", flush=True)
-        start_t = time.time()
-        
         try:
             if is_veo:
-                # Veo Probe
                 url = f"{base_url}/{clean_name}:predictLongRunning?key={api_key}"
-                payload = {"instances": [{"prompt": f"A probing test video of a spinning wireframe cube. Test ID {i}."}]}
-                headers = {"Content-Type": "application/json"}
-                
-                res = requests.post(url, json=payload, headers=headers)
-                
-                if res.status_code == 200:
-                    print(" ✅ 200 OK (Started)")
-                    success_count += 1
-                elif res.status_code == 429:
-                    print(" ⛔ 429 RATE LIMIT")
-                    fail_count += 1
-                else:
-                    print(f" ❌ {res.status_code} {res.reason}")
-                    fail_count += 1
-                    
+                payload = {"instances": [{"prompt": f"Probe test {i}"}]}
+                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"})
             else:
-                # Gemini Probe
                 url = f"{base_url}/{clean_name}:generateContent?key={api_key}"
-                payload = {"contents": [{"parts": [{"text": f"Just say 'Test {i}'"}]}]}
-                headers = {"Content-Type": "application/json"}
-                
-                res = requests.post(url, json=payload, headers=headers)
-                
-                if res.status_code == 200:
-                    print(" ✅ 200 OK")
-                    success_count += 1
-                elif res.status_code == 429:
-                    print(" ⛔ 429 RATE LIMIT")
-                    fail_count += 1
-                else:
-                    print(f" ❌ {res.status_code} Error")
-                    fail_count += 1
-
-        except Exception as e:
-            print(f" 💥 Exception: {e}")
-            fail_count += 1
+                payload = {"contents": [{"parts": [{"text": "Test"}]}]}
+                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"})
             
-        elapsed = time.time() - start_t
-        timings.append(elapsed)
-        time.sleep(1) # Mild aggression
-        
-    print("\n📊 PROBE RESULTS:")
-    print(f"   Success: {success_count}/5")
-    print(f"   Failures: {fail_count}/5")
-    print(f"   Avg Response Time: {sum(timings)/len(timings):.2f}s")
-    
-    if fail_count > 0:
-        print("   ⚠️ RATE LIMIT HIT. This model has strict quotas.")
-    else:
-        print("   ✅ STABLE. No rate limits active in this short burst.")
-        
-    print("   NOTE: Cost is usually determined by output duration/pixels. Check Google AI Pricing page.")
-
+            if res.status_code == 200:
+                print(" ✅ 200 OK")
+                success_count += 1
+            elif res.status_code == 429:
+                print(" ⛔ 429 RATE LIMIT")
+                fail_count += 1
+            else:
+                print(f" ❌ {res.status_code}")
+                fail_count += 1
+        except Exception as e:
+            print(f" 💥 {e}")
+            fail_count += 1
+        time.sleep(1)
 
 def pull_model(model_name, dest_dir="/Volumes/ORICO/1_o_gemmas"):
-    """
-    Downloads and converts a HuggingFace model for MLX locally.
-    """
-    print(f"\n📦 MODEL PULL: {model_name}")
-    print(f"   Destination: {dest_dir}")
-    
-    # Check if destination exists
+    """Downloads/Converts HF model via mlx-lm."""
+    print(f"\n📦 MODEL PULL: {model_name} -> {dest_dir}")
     if not os.path.exists(dest_dir):
-        print(f"   ⚠️ Directory not found. Creating: {dest_dir}")
-        try:
-            os.makedirs(dest_dir, exist_ok=True)
-        except Exception as e:
-            print(f"   ❌ Failed to create directory: {e}")
-            return
-            
-    # Check for mlx-lm
+        os.makedirs(dest_dir, exist_ok=True)
+    
+    cmd = [
+        "python3", "-m", "mlx_lm.convert",
+        "--hf-path", model_name,
+        "--q-bits", "4",
+        "--output", os.path.join(dest_dir, model_name.split("/")[-1])
+    ]
+    print(f"   > {' '.join(cmd)}")
+    import subprocess
     try:
-        from mlx_lm import convert
-    except ImportError:
-        print("   ❌ 'mlx-lm' not installed. Please run: pip install mlx-lm")
-        return
-
-    print("   ⏳ Starting Download & Conversion (this may take a while)...")
-    try:
-        # Check if it's already a path
-        if os.path.exists(model_name):
-            print(f"   ℹ️  '{model_name}' looks like a local path. Converting in-place?")
-            # For now, assume HF ID
-        
-        # We use the CLI capability or library. Library convert is complex.
-        # Easier to shell out to mlx_lm.convert if installed?
-        # Actually, `convert` is importable.
-        # Command: python -m mlx_lm.convert --hf-path <model> -q -d <dest>
-        
-        cmd = [
-            "python3", "-m", "mlx_lm.convert",
-            "--hf-path", model_name,
-            "-q", # Quantize by default? Maybe not. Let's keep it full or 4bit?
-            # User didn't specify. Let's do 4bit for efficiency on Macs.
-            # Actually, let's ask user to be specific in the name if they want variants.
-            # Default to --upload-name or path?
-            # Let's try to just download.
-            # `mlx-lm` doesn't have a simple "download" API that's separate from convert easily exposed?
-            # Actually it does `huggingface-cli download`.
-            # But the user wants "local gemma". 
-            # If we assume they want to RUN it, we need MLX format.
-            # Let's run conversion to 4-bit by default as it's the standard use case.
-            "--q-bits", "4",
-            "--output", os.path.join(dest_dir, model_name.split("/")[-1])
-        ]
-        
-        print(f"   > {' '.join(cmd)}")
-        import subprocess
         subprocess.run(cmd, check=True)
-        print("\n   ✅ Download/Conversion Complete.")
-        
+        print("✅ Done.")
     except Exception as e:
-        print(f"   ❌ Error: {e}")
+        print(f"❌ Failed: {e}")
 
 if __name__ == "__main__":
-    import argparse
-    import os
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--probe", type=str, help="Model name to probe (e.g., veo-2.0-generate-001)")
-    parser.add_argument("--pull", type=str, help="HuggingFace Model ID to download (e.g., google/gemma-2-9b-it)")
+    parser = argparse.ArgumentParser(description="XMVP Model Scout & Registry Manager")
+    
+    # Registry Commands
+    parser.add_argument("--status", action="store_true", help="Show current active models")
+    parser.add_argument("--list", type=str, nargs="?", const="ALL", help="List models for modality (or ALL)")
+    parser.add_argument("--switch", nargs=2, metavar=('MODALITY', 'MODEL_ID'), help="Switch active model")
+    
+    # Cloud/Ops Commands
+    parser.add_argument("--scan", action="store_true", help="Scan cloud for available models")
+    parser.add_argument("--probe", type=str, help="Probe a specific model for rate limits")
+    parser.add_argument("--pull", type=str, help="Download HF model via MLX")
+    
     args = parser.parse_args()
     
-    if args.probe:
-        keys = get_keys()
-        probe_model(keys, args.probe)
+    if args.status:
+        print_status()
+    elif args.list:
+        mod = None if args.list == "ALL" else args.list
+        list_models(mod)
+    elif args.switch:
+        switch_model(args.switch[0], args.switch[1])
+    elif args.scan:
+        run_scan()
+    elif args.probe:
+        probe_model(get_keys(), args.probe)
     elif args.pull:
         pull_model(args.pull)
     else:
-        main()
+        # Default to status
+        print_status()

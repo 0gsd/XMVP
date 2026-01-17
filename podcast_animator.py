@@ -32,6 +32,7 @@ from text_engine import TextEngine
 from mvp_shared import save_xmvp, CSSV
 import vision_producer
 from text_engine import TextEngine
+from foley_talk import generate_audio_asset # Integration
 import wave
 import math
 
@@ -199,60 +200,10 @@ def create_silence(duration_sec, output_path):
     ], check=True)
     return output_path
 
-def synthesize_text_rest(text, voice_name, token, project_id):
-    """Synthesizes speech using Google Cloud TTS REST API."""
-    url = "https://texttospeech.googleapis.com/v1/text:synthesize"
-    lang_code = "-".join(voice_name.split("-")[:2])
-    payload = {
-        "input": {"text": text},
-        "voice": {"languageCode": lang_code, "name": voice_name},
-        "audioConfig": {
-            "audioEncoding": "LINEAR16", 
-            "speakingRate": 0.90 # SLOW DOWN TO 90%
-        }
-    }
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json; charset=utf-8",
-        "X-Goog-User-Project": project_id
-    }
-    try:
-        response = requests.post(url, json=payload, headers=headers)
-        if response.status_code == 200:
-            return base64.b64decode(response.json()['audioContent'])
-        else:
-            print(f"[-] TTS Error: {response.text}")
-            return None
-    except Exception as e:
-        print(f"[-] TTS Request Failed: {e}")
-        return None
+# synthesize_text_rest REMOVED (Migrated to foley_talk)
 
-def pitch_shift_file(input_file, semitones):
-    """Shifts pitch using FFmpeg."""
-    if semitones == 0: return input_file
-    try:
-        # Assumes 24kHz usually for Journey voices, but let's be robust
-        # We need sample rate. 
-        # Actually, simpler: just asetrate.
-        # But we need to know the input rate to set the new rate.
-        # Let's assume 24000 for Journey, or probe it.
-        # probing...
-        probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'stream=sample_rate', '-of', 'default=noprint_wrappers=1:nokey=1', input_file]
-        sr_str = subprocess.check_output(probe_cmd).strip()
-        sample_rate = int(sr_str)
-        
-        ratio = math.pow(2, semitones / 12.0)
-        new_rate = int(sample_rate * ratio)
-        tempo_corr = 1.0 / ratio
-        
-        output_file = input_file.replace(".wav", f"_p{semitones}.wav")
-        filter_str = f"asetrate={new_rate},atempo={tempo_corr}"
-        
-        subprocess.run(['ffmpeg', '-i', input_file, '-af', filter_str, output_file, '-y', '-loglevel', 'error'], check=True)
-        return output_file
-    except Exception as e:
-        print(f"[-] Pitch shift error: {e}")
-        return input_file
+# pitch_shift_file REMOVED (Migrated to foley_talk)
+
 
 def get_audio_duration(file_path):
     """Get precise duration of audio using ffprobe."""
@@ -596,18 +547,21 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id_override=None
                 
                 # Generate Base (Cloud TTS - GA Voices)
                 # Fallback to Journey voices via REST API
-                audio_data = synthesize_text_rest(chunk, voice_name, access_token, gcp_project)
+                # NEW: Foley Talk
+                generated_path = generate_audio_asset(
+                    chunk,
+                    final_chunk_wav, # Target
+                    voice_name=voice_name,
+                    pitch=pitch_shift,
+                    mode="cloud",
+                    project_id=gcp_project
+                )
                 
-                if audio_data:
-                    with open(base_wav, 'wb') as f: f.write(audio_data)
-                    
-                    # Apply Pitch Shift
-                    shifted_file = pitch_shift_file(base_wav, pitch_shift)
-                    
+                if generated_path:
                     # Rename to final if needed or just use shifted
-                    # pitch_shift_file returns new filename like _p-2.wav
+                    # generate_audio_asset might return _pX.wav
                     # We want to put it in valid list.
-                    chunk_files.append(shifted_file)
+                    chunk_files.append(generated_path)
                 else:
                     print(f"       [!] Chunk {c_idx} failed generation.")
 
@@ -708,48 +662,7 @@ def detect_gender_rest(speakers, api_key):
         pass
     return "MALE"
 
-def synthesize_text_rest(text, voice_name, token, project_id):
-    """Synthesizes speech using Google Cloud TTS REST API (with 401 Refresh)."""
-    url = "https://texttospeech.googleapis.com/v1/text:synthesize"
-    lang_code = "-".join(voice_name.split("-")[:2])
-    payload = {
-        "input": {"text": text},
-        "voice": {"languageCode": lang_code, "name": voice_name},
-        "audioConfig": {"audioEncoding": "LINEAR16", "speakingRate": 1.0}
-    }
-    
-    # Retry Loop (Try Current Token -> Refresh -> Fail)
-    for attempt in range(2):
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json; charset=utf-8",
-            "X-Goog-User-Project": project_id
-        }
-        try:
-            response = requests.post(url, json=payload, headers=headers)
-            
-            if response.status_code == 200:
-                return base64.b64decode(response.json()['audioContent'])
-            
-            elif response.status_code == 401:
-                # Token Expired? Refresh and Retry
-                if attempt == 0:
-                    print(f"       [!] Token expired (401). Refreshing...")
-                    new_token = get_access_token()
-                    if new_token:
-                        token = new_token # Update for next loop iteration
-                        continue
-                print(f"[-] TTS Error (401) after refresh: {response.text}")
-                return None
-                
-            else:
-                print(f"[-] TTS Error: {response.text}")
-                return None
-                
-        except Exception as e:
-            print(f"[-] TTS Request Failed: {e}")
-            return None
-    return None
+# synthesize_text_rest DEFINITION REMOVED (Duplicate)
 
 def synthesize_text_gemini(text, voice_name, client, project_id=None):
     """
@@ -808,33 +721,7 @@ def synthesize_text_gemini(text, voice_name, client, project_id=None):
         print(f"[-] Gemini TTS Failed: {e}")
         return None
 
-def pitch_shift_file(input_file, semitones):
-    """Shifts pitch using FFmpeg."""
-    if semitones == 0: return input_file
-    try:
-        # Assumes 24kHz usually for Journey voices, but let's be robust
-        # We need sample rate. 
-        # Actually, simpler: just asetrate.
-        # But we need to know the input rate to set the new rate.
-        # Let's assume 24000 for Journey, or probe it.
-        # probing...
-        probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'stream=sample_rate', '-of', 'default=noprint_wrappers=1:nokey=1', input_file]
-        sr_str = subprocess.check_output(probe_cmd).strip()
-        sample_rate = int(sr_str)
-        
-        ratio = math.pow(2, semitones / 12.0)
-        new_rate = int(sample_rate * ratio)
-        tempo_corr = 1.0 / ratio
-        
-        output_file = input_file.replace(".wav", f"_p{semitones}.wav")
-        # CRITICAL FIX: Resample back to original rate to avoid concat drift
-        filter_str = f"asetrate={new_rate},atempo={tempo_corr},aresample={sample_rate}"
-        
-        subprocess.run(['ffmpeg', '-i', input_file, '-af', filter_str, output_file, '-y', '-loglevel', 'error'], check=True)
-        return output_file
-    except Exception as e:
-        print(f"[-] Pitch shift error: {e}")
-        return input_file
+# pitch_shift_file DEFINITION REMOVED (Duplicate)
 
 def get_audio_duration(file_path):
     """Get precise duration of audio using ffprobe."""
@@ -1376,25 +1263,29 @@ def process_narratives(meta, segments, base_output_path, project_id):
         except Exception as e:
             print(f"           [!] Extraction failed: {e}")
 
-def main():
-    parser = argparse.ArgumentParser(description="Podcast Animator v1.1")
-    parser.add_argument("--project", help="Google Cloud Project ID for TTS API", default=None)
-    args = parser.parse_args()
-    if not os.path.exists(OUTPUT_DIR): os.makedirs(OUTPUT_DIR)
-    print("🎙️  Podcast Animator v1.1 (AudioGen Enabled)")
+def run_classic_workflow(args):
+    # Determine Paths
+    triplets_dir = args.ifp if args.ifp else TRIPLETS_DIR
+    output_dir = args.ofp if args.ofp else OUTPUT_DIR
+    
+    if not os.path.exists(output_dir): os.makedirs(output_dir)
+    print(f"[*] Mode: Triplets Podcast (Classic)")
+    print(f"    Input: {triplets_dir}")
+    print(f"    Output: {output_dir}")
+    
     if args.project:
         print(f"[*] Using Project Override: {args.project}")
     
-    json_files = glob.glob(os.path.join(TRIPLETS_DIR, "*.json"))
+    json_files = glob.glob(os.path.join(triplets_dir, "*.json"))
     
     for j_path in json_files:
         base = os.path.splitext(os.path.basename(j_path))[0]
-        txt_path = os.path.join(TRIPLETS_DIR, base + ".txt")
-        mp3_path = os.path.join(TRIPLETS_DIR, base + ".mp3")
+        txt_path = os.path.join(triplets_dir, base + ".txt")
+        mp3_path = os.path.join(triplets_dir, base + ".mp3")
         
         if not os.path.exists(txt_path): continue
         
-        final_mp4 = os.path.join(OUTPUT_DIR, base + ".mp4")
+        final_mp4 = os.path.join(output_dir, base + ".mp4")
         if os.path.exists(final_mp4):
             print(f"[-] Skipping {base}, output exists.")
             continue
@@ -1403,6 +1294,442 @@ def main():
             process_triplet(base, txt_path, j_path, mp3_path, final_mp4)
         else:
             process_pair(base, txt_path, j_path, final_mp4, project_id_override=args.project)
+
+# Legacy entry point replaced by bottom-of-file main()
+
+# --- GAHD PODCAST PRODUCER (Season 2) ---
+
+class GAHDProducer:
+    def __init__(self, output_dir=None, text_engine=None, fc_mode=False):
+        self.output_dir = output_dir if output_dir else os.path.join(OUTPUT_DIR, "gahd-scripts-vids")
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.text_engine = text_engine if text_engine else TextEngine()
+        self.fc_mode = fc_mode
+        self.memory = self.load_memory()
+        
+    def load_memory(self):
+        """Scans output dir for past episodes to build exclusion lists."""
+        print("[Memory] Scanning Archive for Past Bits...")
+        memory = {
+            "used_jokes": [],
+            "past_pitches": [],
+            "actor_history": [],
+            "chaos_seeds_used": []
+        }
+        
+        # Scan JSONs
+        files = glob.glob(os.path.join(self.output_dir, "*.json"))
+        for fpath in files:
+            try:
+                with open(fpath, 'r') as f:
+                    data = json.load(f)
+                    
+                # Extract meta
+                if "meta" in data:
+                    meta = data["meta"]
+                    if "seeds" in meta: memory["chaos_seeds_used"].extend(meta["seeds"])
+                    
+                # Extract jokes/pitches (Naive extract from text if structured, otherwise just store summary)
+                # Ideally we ask Gemini to summarize them, but for now we just log file existence
+                # Real implementation: Read "meta" fields if we save them there.
+                
+            except Exception as e:
+                print(f"[-] Memory Load Error ({fpath}): {e}")
+                
+        print(f"   [+] Loaded {len(files)} past episodes.")
+        return memory
+
+    def cast_actors(self):
+        """Generates 4-person cast (2M, 2F) using Gemini."""
+        print("[Casting] Summoning Ensemble...")
+        
+        prompt = (
+            "Generate a cast of 4 distinct 'Character Actors' (2 Male, 2 Female) active 1975-2005.\n"
+            "CRITERIA: Recognizable but not A-List. Distinct voices/types.\n"
+            "OUTPUT JSON: "
+            "[{ 'name': 'Name', 'gender': 'Male/Female', 'persona': 'Vocal/Personality description', 'known_for': 'Role' }, ...]"
+        )
+        
+        try:
+            raw = self.text_engine.generate(prompt, json_schema=True)
+            # Json cleanup
+            if "```json" in raw: raw = raw.split("```json")[1].split("```")[0]
+            cast_list = json.loads(raw)
+            
+            # Assign voices
+            final_cast = {}
+            # Voice Slots
+            slots = [
+                {'gender': 'Male', 'voice': 'en-US-Journey-D', 'pitch': 1},
+                {'gender': 'Female', 'voice': 'en-US-Journey-F', 'pitch': -2},
+                {'gender': 'Male', 'voice': 'en-US-Journey-D', 'pitch': -2},
+                {'gender': 'Female', 'voice': 'en-US-Journey-F', 'pitch': 1}
+            ]
+            
+            # Naive match
+            males = [c for c in cast_list if c['gender'] == 'Male'][:2]
+            females = [c for c in cast_list if c['gender'] == 'Female'][:2]
+            
+            # combine
+            ensemble = males + females
+            random.shuffle(ensemble)
+            
+            for i, actor in enumerate(ensemble):
+                # Find matching slot
+                slot = next((s for s in slots if s['gender'] == actor['gender']), None)
+                if not slot: slot = slots[0] # Fallback
+                slots.remove(slot)
+                
+                final_cast[actor['name']] = {
+                    "name": actor['name'],
+                    "persona": actor['persona'],
+                    "voice": slot['voice'],
+                    "pitch": slot['pitch'],
+                    "gender": actor['gender']
+                }
+                print(f"   + {actor['name']} ({actor['gender']}) as {slot['voice']} (p{slot['pitch']})")
+                
+            return final_cast
+            
+        except Exception as e:
+            print(f"[-] Casting Failed: {e}")
+            return None
+
+    def produce_show(self, duration_override=None, episode_number=None):
+        """Runs the 4-Phase Show."""
+        
+        # 1. Cast
+        cast = self.cast_actors()
+        if not cast: return
+        
+        cast_desc = "\n".join([f"{n}: {d['persona']}" for n, d in cast.items()])
+        
+        # 2. Seeds
+        from vision_producer import get_chaos_seed
+        seeds = [get_chaos_seed(), get_chaos_seed()]
+        print(f"[Seeds] {seeds}")
+        
+        # 3. Setup Session
+        timestamp = int(time.time())
+        episode_dir = os.path.join(self.output_dir, f"ep_{timestamp}")
+        os.makedirs(episode_dir, exist_ok=True)
+        
+        # 4. State Machine Loop
+        # Phase 1: Anecdotes (0-16m)
+        # Phase 2: Seeds Reveal (16-24m)
+        # Phase 3: Pitch (24-54m)
+        # Phase 4: Summary (54-End)
+        
+        print(f"[Action] Starting GAHD Recording... (FC Mode: {self.fc_mode})")
+        
+        # Initialize History
+        history = [] # List of {speaker, text}
+        segments = [] # List of Segment objects
+        
+        # System Prompt
+        sys_prompt = (
+            f"You are the Showrunner of 'Golden Age of Hollywood Dreams' (GAHD).\n"
+            f"CAST:\n{cast_desc}\n\n"
+            f"STYLE: Witty, insider-y, cynical but loving. No cliches.\n"
+        )
+        
+        if self.fc_mode:
+            sys_prompt += (
+                f"Output JSON: {{ 'speaker': 'Name', 'text': 'Dialogue', \n"
+                f"'visual_plan': {{ 'prev': 'Describe previous frame (or None)', 'curr': 'Describe THIS frame visual', 'next': 'Describe NEXT frame visual' }} }}\n"
+                f"NOTE: For the 'visual_plan', think of the sequence. Create continuity."
+            )
+        else:
+            sys_prompt += f"Output JSON: {{ 'speaker': 'Name', 'text': 'Dialogue', 'visual_prompt': 'Image description' }}"
+        
+        # SIMULATION LOOP (Simplified for MVP Integration)
+        # We need to generate LINES -> AUDIO -> IMAGE immediately to manage context?
+        # Or batch? The user asked for "line by line... stitching at end".
+        
+        if duration_override:
+            # Approx 10s per turn (Dialogue + Pause)
+            target_lines = max(2, int(duration_override / 10))
+            print(f"[*] Duration Override: {duration_override}s -> ~{target_lines} lines.")
+        else:
+            target_lines = 300 # Approx 50 mins? 
+        
+        current_phase = "Anecdotes"
+        
+        for i in range(target_lines):
+            # Determine Phase
+            # For MVP, just do a short sequence
+            if i < 4: current_phase = "Anecdotes"
+            elif i == 4: current_phase = "Seeds Reveal"
+            else: current_phase = "The Pitch"
+            
+            prompt = (
+                f"Phase: {current_phase}.\n"
+                f"Seeds: {seeds}\n"
+                f"History: {history[-10:]}\n"
+                f"Generate next turn."
+            )
+            
+            # Generate Text
+            try:
+                raw = self.text_engine.generate(f"{sys_prompt}\n\n{prompt}", json_schema=True)
+                if "```json" in raw: raw = raw.split("```json")[1].split("```")[0]
+                turn_data = json.loads(raw)
+                
+                # Handle List vs Dict
+                if isinstance(turn_data, list):
+                    if not turn_data: raise ValueError("Empty list returned")
+                    turn = turn_data[0] # Take first turn
+                else:
+                    turn = turn_data
+                
+                speaker = turn.get('speaker', 'Unknown')
+                text = turn.get('text', '')
+                
+                # Visual Handling
+                vis_prompt = ""
+                vis_context = None
+                
+                if self.fc_mode:
+                    v_plan = turn.get('visual_plan', {})
+                    # For Code Painter, we use the 'curr' as prompt, and pass full plan as context
+                    vis_prompt = v_plan.get('curr', 'A cinematic shot')
+                    vis_context = v_plan # Pass the whole dict (prev, curr, next)
+                else:
+                    vis_prompt = turn.get('visual_prompt', '') # Legacy single prompt
+                
+                # Validation
+                if speaker not in cast: speaker = random.choice(list(cast.keys()))
+                
+                print(f"   [{i}] {speaker}: {text[:50]}...")
+                
+                # Create Segment
+                seg = Segment(speaker, text)
+                
+                # Audio
+                c_data = cast[speaker]
+                wav_path = os.path.join(episode_dir, f"line_{i:04d}.wav")
+                
+                gen_path = generate_audio_asset(
+                    text, wav_path, 
+                    voice_name=c_data['voice'], 
+                    pitch=c_data['pitch'],
+                    mode="cloud",
+                    project_id=get_project_id()
+                )
+                
+                if gen_path:
+                    seg.audio_path = gen_path
+                    seg.duration = get_audio_duration(gen_path)
+                else:
+                    # Fallback silence
+                    create_silence(2.0, wav_path)
+                    seg.audio_path = wav_path
+                    seg.duration = 2.0
+                    
+                # Image
+                img_path = os.path.join(episode_dir, f"line_{i:04d}.png")
+                
+                # Construct Stylized Prompt
+                # Inject "Commercial Art" + "Celebrity Impersonator"
+                style_prefix = "High quality commercial art style. Hand drawn animation frame. "
+                subject_desc = f"A celebrity impersonator portraying {speaker}" 
+                
+                # Final Prompt: Style + Subject + Visual Description from LLM
+                final_img_prompt = f"{style_prefix} {subject_desc}. Scene: {vis_prompt} --aspect_ratio 1:1"
+                
+                print(f"       [?] Image Prompt: {final_img_prompt[:60]}...")
+                
+                if self.fc_mode:
+                    # CODE PAINTER EXECUTION
+                    # We utilize the shared text_engine model if possible, or create new?
+                    # text_engine has a model instance? Let's assume we pass the model from TextEngine wrapper if available
+                    # Actually, TextEngine wraps the API key, let's grab it.
+                    import frame_canvas
+                    # Hack: grabbing model from text_engine private var or re-init?
+                    # Safer to re-init for now or modify TextEngine to expose.
+                    # TextEngine.model is the generative model object.
+                    
+                    print(f"       [FC] generating via code...")
+                    pil_img = frame_canvas.generate_via_code(
+                        final_img_prompt, 
+                        width=1024, height=1024, 
+                        context=vis_context, 
+                        model=self.text_engine.get_model_instance()
+                    )
+                    if pil_img:
+                        pil_img.save(img_path)
+                        seg.image_path = img_path
+                    else:
+                        print("       [!] FC Gen Failed. Fallback?")
+                else:
+                    generate_image(final_img_prompt, img_path) 
+                    seg.image_path = img_path
+                
+                segments.append(seg)
+                history.append({'speaker': speaker, 'text': text})
+                
+            except Exception as e:
+                print(f"   [-] Turn Failed: {e}")
+                time.sleep(1)
+        
+        # Stitch
+        print("[Post] Stitching Episode...")
+        
+        # Define Filenames
+        base_name = f"gahd_episode_{timestamp}"
+        if episode_number:
+            base_name = f"gahd_episode_{episode_number}_{timestamp}"
+            
+        mp4_filename = f"{base_name}.mp4"
+        json_filename = f"{base_name}.json"
+        txt_filename = f"{base_name}.txt"
+        xml_filename = f"{base_name}.xml" # Matched to MP4 filename
+        
+        # 1. Export JSON
+        episode_data = {
+            "meta": {
+                "timestamp": timestamp,
+                "cast": cast,
+                "seeds": seeds,
+                "system_prompt": sys_prompt
+            },
+            "history": history,
+            "segments_metadata": [
+                {
+                    "speaker": s.speaker, 
+                    "text": s.text, 
+                    "image": os.path.basename(s.image_path) if s.image_path else None, 
+                    "audio": os.path.basename(s.audio_path) if s.audio_path else None,
+                    "duration": s.duration
+                } for s in segments
+            ]
+        }
+        
+        with open(os.path.join(self.output_dir, json_filename), 'w') as f:
+            json.dump(episode_data, f, indent=2)
+        print(f"   [+] Exported JSON: {json_filename}")
+
+        # 2. Export TXT (Script)
+        with open(os.path.join(self.output_dir, txt_filename), 'w') as f:
+            f.write(f"GAHD EPISODE {timestamp}\n")
+            f.write("========================\n\n")
+            f.write(f"CAST:\n{cast_desc}\n\n")
+            f.write(f"SEEDS: {', '.join(seeds)}\n\n")
+            f.write("------------------------\n\n")
+            for h in history:
+                f.write(f"{h['speaker'].upper()}:\n{h['text']}\n\n")
+        print(f"   [+] Exported TXT: {txt_filename}")
+        
+        # 3. Export XML (XMVP Manifest)
+        # Create a faux 'Bible' and 'Story' for context
+        xmvp_data = {
+            "Bible": {
+                "cssv": {
+                    "Constraint": {"format": "gahd-podcast", "target_duration": duration_override},
+                    "Scenario": {"premise": "Golden Age of Hollywood Dreams Podcast"},
+                    "Situation": {"seeds": seeds},
+                    "Vision": {"style": "Commercial Art / Hand Drawn"}
+                }
+            },
+            "Story": { 
+                "title": f"GAHD Episode {timestamp}", 
+                "synopsis": f"A podcast episode featuring {', '.join(cast.keys())}", 
+                "characters": list(cast.keys()), 
+                "theme": "Hollywood Satire" 
+            },
+            "Manifest": { 
+                "segs": [
+                    {
+                        "id": f"seg_{i:04d}",
+                        "text": s.text,
+                        "speaker": s.speaker,
+                        "dur": s.duration,
+                        "files": {
+                            "audio": os.path.basename(s.audio_path) if s.audio_path else "",
+                            "image": os.path.basename(s.image_path) if s.image_path else "" 
+                        }
+                    } for i, s in enumerate(segments)
+                ]
+            } 
+        }
+        
+        xml_path = os.path.join(self.output_dir, xml_filename)
+        save_xmvp(xmvp_data, xml_path)
+        print(f"   [+] Exported XML: {xml_filename}")
+        
+        # 4. Export MP4 (Stitch)
+        self.stitch_segments(segments, episode_dir, mp4_filename)
+
+    def stitch_segments(self, segments, temp_dir, output_filename):
+        # Implementation of stitching logic
+        audio_list = os.path.join(temp_dir, "audio_list.txt")
+        video_list = os.path.join(temp_dir, "video_list.txt")
+        output_mp4 = os.path.join(self.output_dir, output_filename)
+        
+        with open(audio_list, 'w') as fa, open(video_list, 'w') as fv:
+            for seg in segments:
+                if seg.audio_path and seg.image_path:
+                    fa.write(f"file '{seg.audio_path}'\n")
+                    fv.write(f"file '{seg.image_path}'\n")
+                    fv.write(f"duration {seg.duration:.4f}\n")
+
+        full_audio = os.path.join(temp_dir, "full_audio.wav")
+        subprocess.run(['ffmpeg', '-f', 'concat', '-safe', '0', '-i', audio_list, '-c', 'copy', full_audio, '-y', '-loglevel', 'error'], check=True)
+        
+        subprocess.run([
+            'ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', video_list,
+            '-i', full_audio,
+            '-vf', 'format=yuv420p', '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+            '-c:a', 'aac', '-b:a', '192k', '-shortest', output_mp4
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        print(f"[+] Produced: {output_mp4}")
+
+def main():
+    parser = argparse.ArgumentParser(description="Podcast Animator v1.1")
+    parser.add_argument("--project", help="Google Cloud Project ID for TTS API", default=None)
+    parser.add_argument("--vpform", help="Workflow Mode (gahd-podcast [default] | triplets-podcast)", default="gahd-podcast")
+    parser.add_argument("--slength", type=float, default=2000.0, help="Override duration in seconds (Default 2000s for GAHD)")
+    parser.add_argument("--ifp", help="Input Folder Path (For Triplets Mode)", default=None)
+    parser.add_argument("--ofp", help="Output Folder Path", default=None)
+    parser.add_argument("--ep", help="Episode Number (Optional, adds to filename)", default=None)
+    parser.add_argument("--fc", action="store_true", help="Enable Frame & Canvas (Code Painter) Mode")
+    
+    args = parser.parse_args()
+    
+    # Global Default Output
+    out_dir = args.ofp if args.ofp else OUTPUT_DIR
+    if not os.path.exists(out_dir): os.makedirs(out_dir)
+    
+    print("🎙️  Podcast Animator v1.1 (AudioGen Enabled)")
+    
+    if args.vpform == "triplets-podcast":
+        run_classic_workflow(args)
+        return
+        
+    elif args.vpform == "gahd-podcast":
+        print("🌟 Starting GAHD Podcast Producer (Season 2)...")
+        # Subfolder for GAHD unless overridden
+        if args.ofp:
+             gahd_out = args.ofp
+        else:
+             gahd_out = os.path.join(out_dir, "gahd-scripts-vids")
+             
+             gahd_out = os.path.join(out_dir, "gahd-scripts-vids")
+             
+        producer = GAHDProducer(output_dir=gahd_out, fc_mode=args.fc)
+        producer.produce_show(
+            duration_override=args.slength if args.slength > 0 else 2000.0,
+            episode_number=args.ep
+        )
+        return
+    
+    else:
+        # Fallback to GAHD default if unknown, or error? 
+        # User said "gahd-podcast to the default".
+        print(f"[*] Defaulting to GAHD Podcast Mode...")
+        gahd_out = os.path.join(out_dir, "gahd-scripts-vids")
+        producer = GAHDProducer(output_dir=gahd_out)
+        producer.produce_show(duration_override=args.slength)
 
 if __name__ == "__main__":
     main()

@@ -44,13 +44,15 @@ try:
     from truth_safety import TruthSafety
     import google.genai as genai
     from google.genai import types
+    from foley_talk import generate_audio_asset # Integration!
+    import frame_canvas # Support FC Mode
 except ImportError as e:
     print(f"[-] Critical Import Error: {e}")
     sys.exit(1)
 
 # --- CONFIGURATION ---
 
-OUTPUT_DIR = "z_improv_outputs"
+OUTPUT_DIR = os.path.join("z_test-outputs", "improvs")
 TARGET_DURATION_SEC = 24 * 60  # 24 Minutes
 TTS_MODEL_ID = "gemini-2.5-flash-tts" # Not used (Rest API preference)
 IMAGE_MODEL_ID = "gemini-2.5-flash-image"
@@ -166,89 +168,23 @@ def generate_dynamic_cast(text_engine, seeds):
 # --- HELPERS ---
 
 def get_access_token():
-    """Gets GCP Access Token via gcloud."""
+    """Fetches GCP Access Token via CLI."""
     try:
         result = subprocess.run(
-            ['gcloud', 'auth', 'print-access-token'],
+            ["gcloud", "auth", "print-access-token"],
             capture_output=True,
             text=True,
             check=True
         )
         return result.stdout.strip()
     except Exception as e:
-        print(f"[-] Failed to get GCP Access Token: {e}")
+        logging.error(f"[-] Failed to get access token: {e}")
         return None
 
-def synthesize_text_rest(text, voice_name, token, project_id):
-    """Synthesizes speech using Google Cloud TTS REST API (with 401 Refresh)."""
-    url = "https://texttospeech.googleapis.com/v1/text:synthesize"
-    lang_code = "-".join(voice_name.split("-")[:2])
-    payload = {
-        "input": {"text": text},
-        "voice": {"languageCode": lang_code, "name": voice_name},
-        "audioConfig": {"audioEncoding": "LINEAR16", "speakingRate": 1.0}
-    }
-    
-    # Retry Loop (Try Current Token -> Refresh -> Fail)
-    for attempt in range(2):
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json; charset=utf-8",
-            "X-Goog-User-Project": project_id
-        }
-        try:
-            response = requests.post(url, json=payload, headers=headers)
-            
-            if response.status_code == 200:
-                # Returns raw audio bytes (LINEAR16 headered wav typically)
-                return base64.b64decode(response.json()['audioContent']), token
-            
-            elif response.status_code == 401:
-                # Token Expired? Refresh and Retry
-                if attempt == 0:
-                    print(f"       [!] Token expired (401). Refreshing...")
-                    new_token = get_access_token()
-                    if new_token:
-                        token = new_token # Update for next loop iteration
-                        continue
-                print(f"[-] TTS Error (401) after refresh: {response.text}")
-                return None, token 
-                
-            else:
-                print(f"[-] TTS Error: {response.text}")
-                return None, token
-                
-        except Exception as e:
-            print(f"[-] TTS Request Failed: {e}")
-            return None, token
-            
-    return None, token
+# Audio generation logic migrated to foley_talk.py
+# Only get_audio_duration helper retained locally or imported if desired (but foley_talk has it too)
+# We will rely on foley_talk's generate_audio_asset
 
-def pitch_shift_file(input_file, semitones):
-    """Shifts pitch using FFmpeg (Robust)."""
-    if semitones == 0: return input_file
-    try:
-        # Probe sample rate
-        probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'stream=sample_rate', '-of', 'default=noprint_wrappers=1:nokey=1', input_file]
-        try:
-             sr_str = subprocess.check_output(probe_cmd).strip()
-             sample_rate = int(sr_str)
-        except:
-             sample_rate = 24000 # Fallback for Journey
-
-        ratio = math.pow(2, semitones / 12.0)
-        new_rate = int(sample_rate * ratio)
-        tempo_corr = 1.0 / ratio
-        
-        output_file = input_file.replace(".wav", f"_p{semitones}.wav")
-        # Filter: asetrate changes pitch+speed, atempo fixes speed, aresample prevents drift
-        filter_str = f"asetrate={new_rate},atempo={tempo_corr},aresample={sample_rate}"
-        
-        subprocess.run(['ffmpeg', '-i', input_file, '-af', filter_str, output_file, '-y', '-loglevel', 'error'], check=True)
-        return output_file
-    except Exception as e:
-        print(f"[-] Pitch shift error: {e}")
-        return input_file
 
 def generate_image(prompt, output_path):
     """Generates an image using Gemini 2.5 Flash."""
@@ -300,6 +236,7 @@ def main():
     parser.add_argument("--project", help="GCP Project ID for billing override (TTS)")
     parser.add_argument("--vpform", default="24-cartoon", help="Vision Platonic Form (e.g. 24-cartoon)")
     parser.add_argument("--slength", type=float, default=0.0, help="Override duration in seconds")
+    parser.add_argument("--fc", action="store_true", help="Enable Frame & Canvas (Code Painter) Mode")
     args = parser.parse_args()
 
     print("🎭 IMPROV ANIMATOR: The 24-Minute Special")
@@ -488,16 +425,26 @@ def main():
             # I must fix this inconsistency in the function definition locally before running.
             
             # Fixing logic inline:
-            audio_bytes, access_token = synthesize_text_rest(text, voice, access_token, project_id)
+            # New Foley Talk API:
+            # generate_audio_asset(text, output_path, voice_name=..., pitch=..., mode="cloud", project_id=...)
             
-            if not audio_bytes:
+            # Using Cloud mode default
+            final_wav = generate_audio_asset(
+                text, 
+                wav_path, # It handles returning the final path, potentially suffixed
+                voice_name=voice, 
+                pitch=pitch, 
+                mode="cloud", 
+                project_id=project_id
+            )
+
+            if not final_wav or not os.path.exists(final_wav):
                 print("       [!] Audio failed.")
                 continue
-                
-            with open(wav_path, 'wb') as f: f.write(audio_bytes)
             
-            # Pitch Shift
-            final_wav = pitch_shift_file(wav_path, pitch)
+            # No manual pitch shift needed! foley_talk handles it.
+            
+            duration = get_audio_duration(final_wav)
             duration = get_audio_duration(final_wav)
             # Add small pauses
             duration += 0.5 
@@ -515,7 +462,40 @@ def main():
                 f"Visual Focus: {visual}"
             )
             
-            if not generate_image(full_visual_prompt, img_path):
+            if args.fc:
+                 # CODE PAINTER MODE
+                 print(f"       [FC] Painted via Code: {os.path.basename(img_path)}...")
+                 
+                 # Construct Context
+                 # Global: Cast + Setup
+                 # Local: Action + Visual
+                 
+                 ctx = {
+                     "global_concept": f"Improv Comedy Show. Cast:\n{cast_desc}\nStyle: {COURTROOM_STYLE_PROMPT}",
+                     "frame_index": turn_count + 1,
+                     "current_speaker": speaker,
+                     "current_action": action,
+                     "visual_focus": visual
+                 }
+                 
+                 # Hack: text_engine is in scope
+                 model_inst = text_engine.get_model_instance()
+                 
+                 img = frame_canvas.generate_via_code(
+                     prompt=full_visual_prompt,
+                     width=1024, height=1024,
+                     context=ctx,
+                     model=model_inst
+                 )
+                 
+                 if img:
+                     img.save(img_path)
+                 else:
+                     print("       [!] FC Paint Failed. Fallback to Black Frame logic?")
+                     # Fallback Black Frame
+                     subprocess.run(['ffmpeg', '-f', 'lavfi', '-i', 'color=c=black:s=1024x1024:d=0.1', '-frames:v', '1', img_path, '-y', '-loglevel', 'error'])
+            
+            elif not generate_image(full_visual_prompt, img_path):
                 # generate_image creates a Black Frame on failure. 
                 # We attempt to overwrite it with a Stutter Step (Clone Previous) if possible.
                 if turn_count > 0:
@@ -678,7 +658,11 @@ def main():
                 continue
             
             # Delete Temp Media
-            if f.lower().endswith(('.jpg', '.png', '.wav', '.mp4')):
+            # Delete Temp Media
+            # Keep Audio as requested
+            if f.lower().endswith(('.jpg', '.png', '.mp4')):
+                # SKIP if it is the Final Output (unlikely inside session dir but safe check)
+                if "Improv_Special" in f: continue
                 os.remove(f_path)
                 cleaned_count += 1
                 

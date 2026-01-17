@@ -16,12 +16,11 @@ import random
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Import Veo from action (Adapter pattern)
-try:
-    import action
-except ImportError:
-    logging.warning("⚠️ action.py not found. Video generation will be disabled.")
-    action = None
+import requests
+import base64
+from google import genai
+from google.genai import types
+import definitions # Ensure definitions is available (it was imported inside run_dispatch, likely need it global or locally)
 
 from truth_safety import TruthSafety
 
@@ -31,6 +30,213 @@ os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
 # --- Configuration ---
 FLUX_CACHE = "/Volumes/ORICO/flux_models"
 FLUX_REPO = "black-forest-labs/FLUX.1-schnell"
+
+# --- VEO DIRECTOR (Inlined from action.py) ---
+
+def download_video(uri, local_path, api_key):
+    """Downloads video from URI using requests with API Key authentication."""
+    logging.info(f"   ⬇️ Downloading to {local_path}...")
+    
+    try:
+        if uri.startswith("gs://"):
+            cmd = f"gcloud storage cp {uri} {local_path}"
+            os.system(cmd)
+            return
+
+        # Prepare HTTP request
+        params = {}
+        if "generativelanguage.googleapis.com" in uri:
+            params['key'] = api_key
+            
+        r = requests.get(uri, params=params, stream=True)
+        if r.status_code == 200:
+            with open(local_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192): 
+                    f.write(chunk)
+            logging.info("      ✓ Saved.")
+        else:
+            logging.error(f"      ❌ Download Failed ({r.status_code}): {r.text[:100]}")
+            
+    except Exception as e:
+        logging.error(f"      ❌ Download Error: {e}")
+
+def extract_last_frame(video_path):
+    """Extracts the last frame of a video as a JPG."""
+    if not os.path.exists(video_path):
+        return None
+        
+    output_img = video_path.replace(".mp4", "_last.jpg")
+    logging.info(f"   🖼️ Extracting last frame to {output_img}...")
+    
+    # ffmpeg: seek to last second, grab last frame
+    cmd = f"ffmpeg -sseof -1 -i {video_path} -update 1 -q:v 2 {output_img} -y >/dev/null 2>&1"
+    
+    ret = os.system(cmd)
+    if ret == 0 and os.path.exists(output_img):
+        return output_img
+    else:
+        logging.warning("   ⚠️ Frame Extraction Failed.")
+        return None
+
+class VeoDirector:
+    def __init__(self, api_key, model_version=3, model_name=None, pg_mode=False):
+        self.api_key = api_key
+        self.pg_mode = pg_mode
+        # Priority: model_name > model_version
+        if model_name:
+            self.model_endpoint = model_name
+        else:
+            self.model_endpoint = "veo-2.0-generate-001" if model_version == 2 else "veo-3.0-generate-001"
+        
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta/models"
+
+    def generate_segment(self, prompt, context_uri=None, context_type="video", retry_safe=True):
+        """
+        Generates a video segment.
+        context_uri: Optional URI (gs:// or https://) for the previous clip/image.
+        context_type: "video" or "image".
+        retry_safe: If True, attempts to soften prompt on safety trigger.
+        """
+        # --- GEMINI PATH (L-Tier) ---
+        if "gemini" in self.model_endpoint.lower():
+            logging.info(f"   🎥 Rolling Gemini (L-Tier): {self.model_endpoint}...")
+            # Use SDK v1 Client
+            client = genai.Client(api_key=self.api_key)
+            try:
+                # Simple prompt wrapping
+                prompt_text = f"Generate a short video clip: {prompt}"
+                
+                response = client.models.generate_content(
+                    model=self.model_endpoint,
+                    contents=prompt_text
+                )
+                
+                # Check for response
+                if response.candidates and response.candidates[0].content.parts:
+                    for part in response.candidates[0].content.parts:
+                        # SDK v1 usually returns inline_data or uri logic differently?
+                        # Actually, L-Tier video generation purely via text-prompt is rare/experimental on Gemini.
+                        # Usually it's Veo. But if this path is hit:
+                         if part.video_metadata:
+                             logging.info(f"   🎥 Found Video Metadata: {part.video_metadata}")
+                         if part.text:
+                             logging.info(f"   📄 Text Response: {part.text[:200]}...")
+
+                logging.warning(f"   ⚠️ Gemini Video Gen is experimental. Response Text: {response.text[:100]}")
+                return None  
+
+            except Exception as e:
+                logging.error(f"   Gemini Error: {e}")
+                return None
+
+        # --- VEO PATH (J/K Tier) ---
+        clean_endpoint = self.model_endpoint.replace("models/", "")
+        url = f"{self.base_url}/{clean_endpoint}:predictLongRunning?key={self.api_key}"
+        headers = { "Content-Type": "application/json" }
+        
+        # 1. Try with Context (Base64 Image)
+        if context_uri and os.path.exists(context_uri) and context_type == "image":
+             try:
+                 logging.info(f"   🎥 Rolling with Context (Base64): {context_uri}...")
+                 with open(context_uri, "rb") as image_file:
+                     encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                 
+                 payload = {
+                   "instances": [{ 
+                       "prompt": prompt, 
+                       "image": { "bytesBase64Encoded": encoded_string, "mimeType": "image/jpeg" } 
+                   }]
+                 }
+                 
+                 res = requests.post(url, json=payload, headers=headers)
+                 if res.status_code == 200:
+                     return res.json().get('name')
+                 else:
+                     logging.warning(f"   ⚠️ Context Request Rejected ({res.status_code}): {res.text[:200]}... Retrying standalone...")
+             except Exception as e:
+                 logging.error(f"   ⚠️ Context Error: {e}")
+                
+        # 2. Standalone (No Context)
+        payload = {
+            "instances": [{ "prompt": prompt }]
+        }
+        logging.info("   🎥 Rolling Standalone...")
+        
+        try:
+            res = requests.post(url, json=payload, headers=headers)
+            
+            # --- SAFETY CHECK & RETRY ---
+            # Now explicitly using self.pg_mode
+            if res.status_code == 400 and "policy" in res.text.lower():
+                logging.warning(f"   ⚠️ Safety Trigger: {res.text[:100]}")
+                if retry_safe:
+                    logging.info(f"   🛡️ Initiating Safety Protocol (PG={self.pg_mode})...")
+                    try:
+                        cleaner = TruthSafety(api_key=self.api_key)
+                        # We pass context_dict just for flavor, or omit
+                        safe_prompt = cleaner.refine_prompt(prompt, context_dict={"Task": "Rescue"}, pg_mode=self.pg_mode)
+                        
+                        if safe_prompt != prompt:
+                            logging.info("   🔄 Retrying with Refined Prompt...")
+                            return self.generate_segment(safe_prompt, context_uri, context_type, retry_safe=False)
+                    
+                    except Exception as e_safe:
+                        logging.error(f"   ❌ Safety Cleanup Failed: {e_safe}")
+
+            if res.status_code != 200:
+                logging.error(f"Veo Request Failed ({res.status_code}): {res.text}")
+                return None
+            
+            data = res.json()
+            op_name = data.get('name')
+            if not op_name:
+                logging.error(f"No operation name returned: {data}")
+                return None
+                
+            return op_name
+
+        except Exception as e:
+            logging.error(f"Director Error: {e}")
+            return None
+
+    def wait_for_lro(self, op_name):
+        """Polls for completion."""
+        if op_name and op_name.startswith("IMMEDIATE:"):
+            uri = op_name.replace("IMMEDIATE:", "")
+            logging.info("   > Cut! (Immediate Success)")
+            return {'videos': [{'uri': uri}]}
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/{op_name}?key={self.api_key}"
+        logging.info(f"   > Action! Polling {op_name}...")
+        
+        start_t = time.time()
+        while time.time() - start_t < 600: # 10m timeout
+            try:
+                res = requests.get(url)
+                data = res.json()
+                
+                if 'done' in data and data['done']:
+                    if 'error' in data:
+                        logging.error(f"   x Cut! Error: {data['error']}")
+                        return None
+                    
+                    logging.info("   > Cut! (Success)")
+                    try:
+                        result = data.get('response')
+                        if not result: return "UNKNOWN_URI"
+                        return result
+                    except:
+                        return data
+                    
+                time.sleep(10)
+                print(".", end="", flush=True)
+                
+            except Exception as e:
+                logging.warning(f"Polling glitch: {e}")
+                time.sleep(5)
+                
+        logging.error("   x Cut! Timeout.")
+        return None
 
 class FluxDirector:
     def __init__(self):
@@ -91,8 +297,6 @@ class VideoDirectorAdapter:
     Wraps action.VeoDirector for the MVP Dispatcher with Key Rotation.
     """
     def __init__(self, keys: list, model_name: str, pg_mode: bool = False):
-        if not action:
-            raise ImportError("action module missing")
         self.keys = keys
         self.model_name = model_name
         self.pg_mode = pg_mode
@@ -130,7 +334,7 @@ class VideoDirectorAdapter:
             logging.info(f"   🔑 [Key Rotation] Action!")
             
             # Instantiate Director on the fly (lightweight) to swap key
-            director = action.VeoDirector(api_key=current_key, model_name=self.model_name)
+            director = VeoDirector(api_key=current_key, model_name=self.model_name, pg_mode=self.pg_mode)
             
             # 1. Generate
             try:
@@ -156,7 +360,7 @@ class VideoDirectorAdapter:
                     continue
                     
                 # 3. Extract URI
-                # action.VeoDirector logic is a bit messy with extraction validation, 
+                # VeoDirector logic is a bit messy with extraction validation, 
                 # let's rely on finding 'uri' in the deep structure or 'video' key
                 video_uri = None
                 
@@ -201,7 +405,7 @@ class VideoDirectorAdapter:
                     continue # Retry on weird response?
                     
                 # 4. Download
-                action.download_video(video_uri, output_path, current_key)
+                download_video(video_uri, output_path, current_key)
                 return True
                 
             except Exception as e:
@@ -317,9 +521,9 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
             context_arg = None
             if last_file:
                 # Extract frame? 
-                # action.extract_last_frame exists.
-                if mode == "video" and action:
-                     last_frame = action.extract_last_frame(str(last_file))
+                # extract_last_frame exists locally now.
+                if mode == "video":
+                     last_frame = extract_last_frame(str(last_file))
                      if last_frame:
                          context_arg = last_frame
                 else:

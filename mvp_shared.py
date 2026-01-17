@@ -77,6 +77,22 @@ class Indecision(BaseModel):
     candidates: List[Dict[str, Any]] = Field(..., description="List of options/prompts to try")
     criteria: str = Field(..., description="Criteria for the Editor to decide best option")
 
+class DialogueLine(BaseModel):
+    """
+    A single line of spoken dialogue.
+    """
+    character: str
+    text: str
+    emotion: str = "neutral"
+    duration: float = Field(default=0.0, description="Duration in seconds (0 = auto)")
+    start_offset: float = Field(default=0.0, description="Start time in seconds relative to video start")
+
+class DialogueScript(BaseModel):
+    """
+    A script for IndexTTS.
+    """
+    lines: List[DialogueLine]
+
 class Manifest(BaseModel):
     """
     Mapping of segments to file paths.
@@ -84,6 +100,7 @@ class Manifest(BaseModel):
     segs: List[Seg]
     files: Dict[int, str] = Field(default_factory=dict, description="Map Seg ID -> File Path")
     indecisions: List[Indecision] = Field(default_factory=list)
+    dialogue: Optional[DialogueScript] = None
 
 # --- I/O Helpers ---
 

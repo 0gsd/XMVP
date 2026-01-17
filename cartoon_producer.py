@@ -30,6 +30,9 @@ from text_engine import TextEngine
 from truth_safety import TruthSafety
 from mvp_shared import VPForm, CSSV, Constraints, Story, Portion, save_xmvp, load_xmvp, load_manifest
 from vision_producer import get_chaos_seed
+import frame_canvas # Support FC Mode
+import definitions
+from definitions import Modality, get_active_model
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -39,7 +42,8 @@ DEFAULT_TF = Path("/Users/0gs/METMcloud/METMroot/tools/fmv/fbf_data")
 DEFAULT_VF = Path("/Volumes/ORICO/fmv_corpus")
 
 # Model Configuration
-IMAGE_MODEL = "gemini-2.5-flash-image" # Default (Fast/Capable)
+# Model Configuration
+# IMAGE_MODEL = "gemini-2.5-flash-image" # Default (Fast/Capable) - DEPRECATED for Registry
 FLIPBOOK_STYLE_PROMPT = "You are a commercial animator working in a large production house with Fortune 500 clients in the 1990's. though you have SOME room for artistic expression and deviating from the frame prompt you are given, in order to fulfill your job as an animator, you need to ensure that you reference the previous frame (provided helpfully as context) and draw the exact next frame in the scene's (and thus the narrative's) trajectory. VISUAL:"
 
 ANI_INSTRUCTION = """
@@ -112,6 +116,51 @@ def analyze_audio(audio_path):
     except Exception as e:
         logging.error(f"   ❌ Audio Analysis Failed: {e}")
         return 120.0, 60.0, 4, 8.0 # Fallback
+
+def analyze_audio_profile(audio_path, duration):
+    """
+    Creates a 'Sonic Map' of the track to guide the narrative.
+    Returns a string describing energy levels over time.
+    """
+    try:
+        y, sr = librosa.load(audio_path, sr=None)
+        # RMS Energy
+        rms = librosa.feature.rms(y=y)[0]
+        # Normalize
+        rms_norm = (rms - np.min(rms)) / (np.max(rms) - np.min(rms) + 1e-6)
+        
+        # Segment into chunks (e.g., 10 segments or every 10s)
+        # Let's do 8 segments regardless of length to give a "Story Arc"
+        num_segments = 8
+        seg_len = len(rms_norm) // num_segments
+        
+        profile_str = []
+        for i in range(num_segments):
+            start = i * seg_len
+            end = (i + 1) * seg_len
+            chunk = rms_norm[start:end]
+            avg_energy = np.mean(chunk)
+            
+            # Classification
+            emoji = "🔉"
+            desc = "Quiet"
+            if avg_energy > 0.7: 
+                emoji = "💥"
+                desc = "MAX INTENSITY"
+            elif avg_energy > 0.4:
+                emoji = "🔊"
+                desc = "High Energy"
+            elif avg_energy > 0.2:
+                emoji = "🎵"
+                desc = "Moderate"
+                
+            time_start = int((i / num_segments) * duration)
+            profile_str.append(f"[{time_start}s: {emoji} {desc}]")
+            
+        return " -> ".join(profile_str)
+    except Exception as e:
+        logging.warning(f"   ⚠️ Could not generate audio profile: {e}")
+        return "Audio Profile Unavailable."
 
 def run_ascii_forge(input_video, output_video):
     """
@@ -188,10 +237,13 @@ def blend_videos(base_video, overlay_video, output_path, opacity=0.33):
         
     return None
 
-def generate_frame_gemini(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=IMAGE_MODEL, prev_frame_path=None, pg_mode=False):
+def generate_frame_gemini(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=None, prev_frame_path=None, pg_mode=False):
     """
     Worker function using Gemini Image API (Polyglot: Imagen vs Gemini) with Round-Robin Rotation.
     """
+    if model is None:
+        model = get_active_model(Modality.IMAGE).name
+
     target_path = output_dir / f"frame_{index:04d}.png"
     if target_path.exists():
         return True # Skip if already done
@@ -353,11 +405,11 @@ def scan_projects(tf_dir):
     return projects
 
 def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
-    """
-    Runs the pipeline for a single project.
-    """
+    # Initialize Text Engine globally for the project to maintain key rotation
+    te = TextEngine()
+    
     project_name = project_dir.name
-    logging.info(f"🚀 Processing Project: {project_name}")
+    logging.info(f"▶️ Processing Project: {project_name}")
     
     analysis_file = project_dir / "analysis.json"
     metadata_file = project_dir / "metadata.json"
@@ -385,7 +437,10 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
     # 1. Find Source Video (for Audio)
     original_video = find_original_video(project_name, [vf_dir])
     if not original_video:
-        logging.warning(f"Original video for {project_name} not found in {vf_dir}. Audio stitching will be skipped.")
+        if args.mu and os.path.exists(args.mu):
+             logging.info(f"   🎵 Using provided music track: {args.mu}")
+        else:
+             logging.warning(f"Original video for {project_name} not found in {vf_dir}. Audio stitching will be skipped.")
     else:
         logging.info(f"Found original video: {original_video}")
 
@@ -525,8 +580,18 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
              frames_per_beat = 4
              bps = bpm / 60.0
              fps = bps * frames_per_beat
+             
+             # VSPEED Override
+             if args.vspeed and args.vspeed != 8.0:
+                 # User wants specific FPS override
+                 logging.info(f"   🏎️  VSpeed Override: {args.vspeed} FPS (Default 8.0)")
+                 fps = args.vspeed
         else:
              bpm, duration, fpb, fps = analyze_audio(args.mu)
+             # VSPEED Override (even for auto-detected)
+             if args.vspeed and args.vspeed != 8.0:
+                  logging.info(f"   🏎️  VSpeed Override: {args.vspeed} FPS (Detected {fps:.2f})")
+                  fps = args.vspeed
         target_frames = int(duration * fps)
         project_fps = fps
         target_duration = duration
@@ -535,7 +600,8 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
         
         # 2. Generate Story (Content)
         logging.info("   🧠 Agency Brain: Dreaming up a narrative for this track...")
-        text_engine = TextEngine()
+        # te is already initialized
+        text_engine = te
         
         # Seeds
         seeds = []
@@ -555,12 +621,18 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
         # Duration / 3?
         est_beats = max(5, int(target_duration / 3.0))
         
+        # AUDIO PROFILE
+        sonic_map = analyze_audio_profile(args.mu, target_duration)
+        logging.info(f"      🎵 Sonic Map: {sonic_map}")
+        
         story_req = (
             f"Create a VISUAL SCREENPLAY for a {target_duration}s music video (Animated).\n"
             f"Concept: {prompt_concept}\n"
             f"Chaos Seeds to weave in: {seeds}\n"
             f"Music Vibe: {bpm} BPM.\n"
+            f"Audio Profile (Energy/Mood over time): {sonic_map}\n"
             f"Constraints: We need approx {est_beats} distinct visual scenes/beats to span the song.\n"
+            f"Critical: Match the visual intensity to the Audio Profile (e.g. Calm visuals for 'Quiet', Intense for 'High Energy').\n"
             "Output JSON: { 'title': '...', 'synopsis': '...', 'beats': ['Visual description 1', 'Visual description 2', ...] }"
         )
         
@@ -779,7 +851,13 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
     # 4. Prepare Output
     ts = int(time.time())
     # Standardize output folder naming for MVP
-    project_out = output_root / f"cartoon_{project_name}_{ts}"
+    ts = int(time.time())
+    # Standardize output folder naming for MVP
+    # If the project name already looks like a final folder (MusicVideo_...), don't prepend "cartoon_"
+    if project_name.startswith("MusicVideo_") or project_name.startswith("Agency_"):
+        project_out = output_root / f"{project_name}" # Use exact name we generated in main
+    else:
+        project_out = output_root / f"cartoon_{project_name}_{ts}"
     frames_dir = project_out / "frames"
     ensure_dir(frames_dir)
     
@@ -796,61 +874,236 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
         prompts = prompts[:args.limit]
         logging.info(f"⚠️ Limit applied: Generating only {args.limit} frames.")
 
+    # TWEENING LOOP (Phase 3)
+    # Iterate in steps of 2
+    # Frame i: Generate
+    # Frame i+1: Tween (from i and i+2)
+    # Frame i+2: Generate
+    
+    step_size = 2 if args.fc else 1 # Only tween in FC mode (for now)
+    
+    # We need a list to index into (prompts)
+    # but we ALSO need to handle the fact that we might run out of prompts?
+    # No, prompts list assumes 1 prompt per frame?
+    # Yes, len(prompts) == target_frames roughly.
+    
+    last_generated_img = None
+    last_generated_idx = -1
+    
+    # We iterate i from 0 to len(prompts) with step
+    # BUT we need to be careful about not skipping the last one if ODD.
+    
+    # Actually, simpler logic:
+    # Iterate normally.
+    # If fc and i % 2 != 0 (Odd frame):
+    #    Skip standard generation. Mark for "Tween Backfill".
+    #    But we can't backfill until we have i+1 (Even).
+    #    So we generate i (Even).
+    #    If we have i-2 (Previous Even), we TWEEN i-1.
+    
     for i, p in enumerate(prompts):
         index = i + 1
         
         # Pass model from args
-        model_to_use = getattr(args, 'model', IMAGE_MODEL)
+        model_to_use = getattr(args, 'model', None)
+        if not model_to_use:
+             model_to_use = get_active_model(Modality.IMAGE).name
 
-        # Simple Aspect Ratio logic? Assuming Square for now as per ppfad defaults (768x768)
-        # Gemini often prefers '1:1', '3:4', '4:3', '16:9'
-        
         # Define Previous Frame Path
         prev_frame = None
         if i > 0:
-             prev_frame = frames_dir / f"frame_{i:04d}.png"
-             
-        if generate_frame_gemini(index, p, frames_dir, key_cycle, aspect_ratio="1:1", model=model_to_use, prev_frame_path=prev_frame, pg_mode=args.pg):
-             print(".", end="", flush=True)
-             success_count += 1
+             prev_frame = frames_dir / f"frame_{i:04d}.png" # Wait, this looks for i (0-based) named frame_i? No frame_{i:04d} is frame i. 
+             # Logic earlier: index = i+1. So frame_{index:04d} is CURRENT.
+             # So prev_frame is frame_{i:04d} (index-1). Correct.
+        
+        # FC MODE CHECK
+        if args.fc:
+            # Code Painter Mode
+            # Reuse 'te' from top of function to preserve key rotation
+            pass
+            
+            # Context
+
+            # We inject Past (i-1) and Future (i+1) prompts to help the model flow
+            prev_p = prompts[i-1] if i > 0 else "Start of sequence."
+            next_p = prompts[i+1] if i < len(prompts) - 1 else "End of sequence."
+            
+            ctx = {
+                "global_concept": context_str if 'context_str' in locals() else "Animation",
+                "frame_index": index,
+                "total_frames": target_frames if 'target_frames' in locals() else 0,
+                "prev_frame_summary": prev_p, 
+                "next_frame_summary": next_p
+            }
+            
+            # TWEEN LOGIC:
+            # We ONLY generate on EVENS (0, 2, 4...)
+            # Odd frames (1, 3, 5) are skipped here and filled AFTER we get the next Even.
+            
+            is_even = (i % 2 == 0)
+            is_last = (i == len(prompts) - 1)
+            
+            current_img = None
+            
+            if is_even or (is_last and not is_even): # Always generate last frame to cap the sequence
+                logging.info(f"   🎨 FC Code Painter: Frame {index} (Keyframe)...")
+                # Recursive Gen
+                current_img = frame_canvas.generate_recursive(
+                    prompt=p, # The full prompt
+                    width=1024, height=1024, 
+                    context=ctx, text_engine=te,
+                    prev_img=last_generated_img,
+                    init_dim=args.kid # Pass KID
+                )
+                
+                target_path = frames_dir / f"frame_{index:04d}.png"
+                if current_img:
+                    current_img.save(target_path)
+                    print("K", end="", flush=True) # K for Keyframe
+                    success_count += 1
+                    
+                    # BACKFILL TWEEN check
+                    # If we just generated i (Even), and i > 1, it means we skipped i-1 (Odd).
+                    # We need to tween i-1 using (i-2) and (i).
+                    if i > 1 and last_generated_img:
+                        # Index of gap frame: i-1 (0-based) -> frame_{(i):04d}
+                        gap_idx = i - 1
+                        gap_frame_num = gap_idx + 1
+                        gap_prompt = prompts[gap_idx]
+                        
+                        logging.info(f"      ✨ Tweening Gap: Frame {gap_frame_num}...")
+                        
+                        # Tween
+                        tween_img = frame_canvas.tween_frames(last_generated_img, current_img, blend=0.5)
+                        # Refine
+                        refined_tween = frame_canvas.refine_tween(tween_img, gap_prompt, model=None, text_engine=te, resolution=1024)
+                        
+                        # Save
+                        gap_path = frames_dir / f"frame_{gap_frame_num:04d}.png"
+                        if refined_tween:
+                            refined_tween.save(gap_path)
+                            print("t", end="", flush=True) # t for tween
+                            success_count += 1
+                            
+                    # Update Memory
+                    last_generated_img = current_img
+                    last_generated_idx = i
+                else:
+                    logging.error(f"   [-] Frame {index} failed (Code Gen).")
+                    
+                    # FALLBACK FOR FC MODE
+                    logging.warning(f"Frame {index}: FC Code Gen Failed. Triggering Stutter Clone.")
+                    target_path = frames_dir / f"frame_{index:04d}.png"
+                    
+                    clone_source = None
+                    if prev_frame and prev_frame.exists():
+                        clone_source = prev_frame
+                    else:
+                         for back_step in range(1, 500):
+                             test_idx = index - back_step
+                             if test_idx < 1: break
+                             test_path = frames_dir / f"frame_{test_idx:04d}.png"
+                             if test_path.exists():
+                                 clone_source = test_path
+                                 break
+                    
+                    if clone_source:
+                        shutil.copy(clone_source, target_path)
+                        success_count += 1 
+                        logging.warning(f"   🩹 Stuttered: Cloned {clone_source.name} -> {target_path.name}")
+                        print("x", end="", flush=True)
+                        
+                        # RECOVERY FOR BACKFILL
+                        # We must load this cloned frame as 'current_img' so we can backfill the gap (i-1)
+                        try:
+                            from PIL import Image
+                            current_img = Image.open(target_path)
+                            # Update Memory
+                            last_generated_img = current_img
+                            last_generated_idx = i
+                            
+                            # TRIGGER BACKFILL (Copy-Paste of Logic Above)
+                            if i > 1:
+                                gap_idx = i - 1
+                                gap_frame_num = gap_idx + 1
+                                gap_prompt = prompts[gap_idx]
+                                
+                                # Since 'current' is a clone of 'prev' (likely), the tween will be static.
+                                # But we MUST produce the file.
+                                tween_img = current_img.copy() # Just clone it again for stability
+                                
+                                gap_path = frames_dir / f"frame_{gap_frame_num:04d}.png"
+                                tween_img.save(gap_path)
+                                print("x", end="", flush=True) # x for stutter-fill
+                                success_count += 1
+                                
+                        except Exception as e_rec:
+                            logging.error(f"   Recovery Backfill Failed: {e_rec}")
+
+                    else:
+                        print("!", end="", flush=True) # Fatal gap
+            
+            else:
+                # ODD FRAME (Skip)
+                # We will backfill this when we hit the next Even.
+                print("_", end="", flush=True) # _ for skip
+                pass 
+                
+            continue # Skip standard gen
         else:
-             # FAILURE FALLBACK (Gap Filling)
-             # If generation fails, we MUST fill the gap or FFmpeg will stop stitching at this frame.
-             logging.warning(f"Frame {index}: Generation Failed. Duplicating previous frame to maintain sync.")
+            # STANDARD GENERATION (Gemini/Imagen)
+            success = generate_frame_gemini(
+                index=index,
+                prompt=p,
+                output_dir=frames_dir,
+                key_cycle=key_cycle,
+                model=model_to_use,
+                prev_frame_path=prev_frame,
+                pg_mode=args.pg
+            )
+            
+            if success:
+                print(".", end="", flush=True)
+                success_count += 1
+                continue
+            
+            # FAILURE FALLBACK (Gap Filling)
+            # If generation fails, we MUST fill the gap or FFmpeg will stop stitching at this frame.
+            logging.warning(f"Frame {index}: Generation Failed. Duplicating previous frame to maintain sync.")
              
-             target_path = frames_dir / f"frame_{index:04d}.png"
+            target_path = frames_dir / f"frame_{index:04d}.png"
+            
+            # Search backwards for ANY valid frame to clone (Stutter Step)
+            # This protects against chain failures where Frame N-1 is also missing.
+            clone_source = None
+            if prev_frame and prev_frame.exists():
+                clone_source = prev_frame
+            else:
+                # Deep Search (Look back 500 frames)
+                for back_step in range(1, 500):
+                    test_idx = index - back_step
+                    if test_idx < 1: break
+                    test_path = frames_dir / f"frame_{test_idx:04d}.png"
+                    if test_path.exists():
+                        clone_source = test_path
+                        break
+            
+            if clone_source:
+                shutil.copy(clone_source, target_path)
+                success_count += 1 
+                logging.warning(f"   🩹 Stuttered: Cloned {clone_source.name} -> {target_path.name}")
+            else:
+                # If Frame 1 fails or no history, create a black frame.
+                try:
+                    from PIL import Image
+                    img = Image.new('RGB', (768, 768), color='black')
+                    img.save(target_path)
+                    success_count += 1
+                    logging.warning(f"   ⚫ Black Frame: Created {target_path.name}")
+                except ImportError:
+                    logging.error("PIL missing. Cannot create fallback frame.")
              
-             # Search backwards for ANY valid frame to clone (Stutter Step)
-             # This protects against chain failures where Frame N-1 is also missing.
-             clone_source = None
-             if prev_frame and prev_frame.exists():
-                 clone_source = prev_frame
-             else:
-                 # Deep Search (Look back 500 frames)
-                 for back_step in range(1, 500):
-                     test_idx = index - back_step
-                     if test_idx < 1: break
-                     test_path = frames_dir / f"frame_{test_idx:04d}.png"
-                     if test_path.exists():
-                         clone_source = test_path
-                         break
-             
-             if clone_source:
-                 shutil.copy(clone_source, target_path)
-                 success_count += 1 
-                 logging.warning(f"   🩹 Stuttered: Cloned {clone_source.name} -> {target_path.name}")
-             else:
-                 # If Frame 1 fails or no history, create a black frame.
-                 try:
-                     from PIL import Image
-                     img = Image.new('RGB', (768, 768), color='black')
-                     img.save(target_path)
-                     success_count += 1
-                     logging.warning(f"   ⚫ Black Frame: Created {target_path.name}")
-                 except ImportError:
-                     logging.error("PIL missing. Cannot create fallback frame.")
-             
-             print("x", end="", flush=True)
+            print("x", end="", flush=True)
 
         # DELAY (Quota protection)
         if hasattr(args, 'delay') and args.delay > 0:
@@ -876,6 +1129,20 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
         # Let's trust project_fps variable if set.
         current_fps = project_fps if 'project_fps' in locals() else args.fps
         
+        # 0.5 Re-sequence Frames (Gap Fixing)
+        # Ensure frame_0001, frame_0002, frame_0003... are contiguous
+        logging.info("   🔧 Re-sequencing frames for stitching...")
+        all_frames = sorted(list(frames_dir.glob("frame_*.png")))
+        temp_stitch_dir = project_out / "temp_stitch_frames"
+        if temp_stitch_dir.exists(): shutil.rmtree(temp_stitch_dir)
+        temp_stitch_dir.mkdir()
+        
+        for i, src in enumerate(all_frames):
+            dst = temp_stitch_dir / f"frame_{i+1:04d}.png"
+            shutil.copy(src, dst)
+            
+        frames_pattern = temp_stitch_dir / "frame_%04d.png"
+
         # 1. Video Only
         cmd_vid = [
             "ffmpeg", "-y",
@@ -893,10 +1160,16 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
             return
 
         # 2. Mux with Audio (if available or provided via --mu)
-        audio_source = original_video
+        audio_source = None
+        
+        # Priority 1: Explicit Audio File (--mu)
         if args.mu and os.path.exists(args.mu):
              audio_source = Path(args.mu)
              logging.info(f"   🎵 Using provided music track: {audio_source}")
+        # Priority 2: Inferred Original Video (Legacy/FBF)
+        elif original_video and original_video.exists():
+             audio_source = original_video
+             logging.info(f"   🎵 Using original video audio: {audio_source}")
         
         if audio_source and raw_video.exists():
             logging.info("🔊 Muxing Audio...")
@@ -1014,8 +1287,19 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
         
         # A. Hallucinate Metadata
         # Use a fresh client/key
+        # A. Hallucinate Metadata
+        # Use a fresh client/key
         meta_key = get_random_key(keys)
-        meta_client = genai.Client(api_key=meta_key)
+        if not meta_key:
+             meta_key = os.environ.get("GEMINI_API_KEY")
+        
+        if not meta_key:
+             logging.warning("   ⚠️ No API Key available for Metadata Hallucination. Skipping context.")
+             meta_result = {"title": f"Cartoon {project_name}", "synopsis": "A generated cartoon.", "characters": [], "themes": [], "vibe": "Hand Drawn", "vibe": "Hand Drawn"}
+        else:
+             meta_client = genai.Client(api_key=meta_key)
+             # ... continue logic below
+
         
         # Sample descriptions to save tokens/time
         sample_size = 20
@@ -1108,6 +1392,18 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
         mvp_shared.save_xmvp(xmvp_data, xml_path)
         logging.info(f"   📜 XMVP Saved: {xml_path}")
         
+        # 6. Cleanup
+        # "Delete all but frame one from the frames folder"
+        logging.info("   🧹 Cleaning up frames...")
+        try:
+            frames_to_keep = ["frame_0001.png"]
+            if frames_dir.exists():
+                for f in frames_dir.iterdir():
+                    if f.name not in frames_to_keep:
+                        f.unlink()
+        except Exception as e:
+            logging.warning(f"   ⚠️ Cleanup failed: {e}")
+        
     except Exception as e_xml:
         logging.error(f"XMVP Generation Failed: {e_xml}")
 
@@ -1156,6 +1452,12 @@ def main():
     parser.add_argument("--bpm", type=float, help="Manual BPM override for music modes (bypasses detection)")
     parser.add_argument("--pg", action="store_true", help="Enable PG Mode (Relaxed Celebrity/Strict Child Safety)")
     
+    # v1.2 FC Integration
+    parser.add_argument("--vspeed", type=float, default=8.0, help="Visualizer Speed (FPS) for music-agency. Default 8. Supports 2, 4, 16.")
+    parser.add_argument("--fc", action="store_true", help="Enable Frame & Canvas (Code Painter) Mode")
+    parser.add_argument("--kid", type=int, default=1024, help="Keyframe Init Dimension (default: 1024). Higher = Better composition before downscale.")
+    parser.add_argument("--local", action="store_true", help="Local Mode (Use Gemma + Flux)") # NEW
+    
     args = parser.parse_args()
     
     # Setup Paths
@@ -1167,7 +1469,7 @@ def main():
     
     # Using mvp/v0.5 specific output dir
     base_dir = Path(__file__).resolve().parent # v0.5
-    output_root = base_dir / "z_test-outputs"
+    output_root = base_dir / "z_test-outputs" / "cartoons"
     ensure_dir(output_root)
 
     keys = load_keys(env_file)
@@ -1183,16 +1485,47 @@ def main():
     logging.info(f"   Transcript Folder: {args.tf}")
     logging.info(f"   Video Folder: {args.vf}")
     
-    # Model Selection
-    model = IMAGE_MODEL # Default Imagen 4
+    # 0. Load Keys (Already done at startup)
+    # keys = load_keys(Path("env_vars.yaml"))  <-- DELETE THIS REDUNDANT LINE
+    pass
+    
+    # --- PRODUCER MODE SWITCHING ---
+    if args.local:
+        logging.info("🔌 Local Mode Requested. Switching Registry to Local Models...")
+        try:
+            # Switch Text -> Gemma
+            definitions.set_active_model(Modality.TEXT, "gemma-2-9b-it")
+            # Switch Image -> Flux
+            definitions.set_active_model(Modality.IMAGE, "flux-schnell")
+            # Switch Video -> LTX (Future proofing)
+            definitions.set_active_model(Modality.VIDEO, "ltx-video")
+        except Exception as e:
+            logging.error(f"❌ Failed to switch to Local Mode: {e}")
+            
+    # Initialize Engines
+    # ----------------
+    # Text Engine (Global Singleton)
+    text_engine = TextEngine(config_path="env_vars.yaml")
+    
+    # Re-verify local status if requested
+    if args.local and text_engine.backend != "local_gemma":
+        logging.warning("⚠️ Local Mode requested but TextEngine didn't switch? Forcing...")
+        text_engine.backend = "local_gemma"
+        text_engine._init_local_model()
+
+    # Truth Safety
+    safety = TruthSafety()
+    
+    # 1. Model Selection (Registry Aware)
+    model = get_active_model(Modality.IMAGE).name
+    
     if args.vpform == "fbf-cartoon":
-        model = "gemini-2.5-flash-image"
-        logging.info("   ⚡ FBF Mode: Using Gemini 2.5 Flash Image (L-Tier) for speed/quota.")
+         # Force Image Model? Or respect Registry?
+         # Legacy behavior was specific. Let's stick to Registry unless overridden.
+         pass
     elif args.vpform in ["creative-agency", "music-visualizer", "music-agency"]:
-        # Changed to Gemini 2.0 Flash for Multimodal Context (Previous Frame Awareness)
-        # generated_frame_gemini will detect this model and use it as a "Director" for the 2.5 Image model.
         model = "gemini-2.0-flash" 
-        logging.info(f"   🎨 {args.vpform}: Using Gemini 2.0 Flash (Director) -> 2.5 Flash Image (Renderer).")
+        logging.info(f"   🎨 {args.vpform}: Using Gemini 2.0 Flash (Director) -> {get_active_model(Modality.IMAGE).name} (Renderer).")
         
     logging.info(f"   Model: {model}")
     
@@ -1209,7 +1542,16 @@ def main():
                  p_name = Path(args.xb).stem
                  p_dir = Path(args.xb).parent / p_name
              else:
-                 p_name = f"agency_job_{int(time.time())}"
+                 # USEFUL NAMING: Use Music Filename or Default
+                 if args.mu:
+                     clean_stem = Path(args.mu).stem.replace(" ", "_").replace(".", "_")
+                     p_name = f"{clean_stem}_{int(time.time())}" # Add timestamp to avoid collisions? Or just overwrite? 
+                     # User hates clutter. Let's just use Stem + Date-Time or just Stem if we want single folder.
+                     # Let's use Stem_Agency
+                     p_name = f"{clean_stem}_Video"
+                 else:
+                     p_name = f"Agency_Creative_{int(time.time())}"
+                     
                  p_dir = output_root / p_name
                  ensure_dir(p_dir)
              
@@ -1239,7 +1581,10 @@ def main():
              process_project(mock_proj, args.vf, key_cycle, args, output_root, keys)
 
         except Exception as e:
-             logging.error(f"Agency Job Failed: {e}")
+             logging.error(f"Agency Job Failed: {e} | Type: {type(e)}")
+             import traceback
+             traceback.print_exc()
+             return
         return
 
     projects = scan_projects(args.tf)
@@ -1274,6 +1619,11 @@ def main():
             args.model = model 
             
             # Init Cycle
+            # Ensure keys exist
+            if not keys:
+                keys = load_keys(Path("env_vars.yaml"))
+                if not keys: keys = [os.environ.get("GEMINI_API_KEY")]
+            
             random.shuffle(keys)
             key_cycle = itertools.cycle(keys)
             

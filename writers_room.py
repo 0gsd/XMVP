@@ -22,10 +22,14 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
     total_duration = cssv.constraints.max_duration_sec
     seg_length = cssv.constraints.target_segment_length
     
-    # Calculate required segments
-    num_portions = math.ceil(total_duration / seg_length)
+    # Calculate required segments (Estimation only)
+    # We want variable durations between 4s and 20s.
+    # We will ask the LLM to determine scene cuts naturally.
+    # But we constrain the total duration.
     
-    logging.info(f"🧮 Calculation: {total_duration}s total / {seg_length}s seg = {num_portions} portions.")
+    # num_portions = math.ceil(total_duration / seg_length) 
+    # logging.info(f"🧮 Calculation: {total_duration}s total / {seg_length}s seg = {num_portions} portions.")
+    logging.info(f"🧮 Variable Duration Mode: Total {total_duration}s. Scenes allowed 4.0s - 20.0s.")
     
     prompt = f"""
     CONTEXT: You are a Screenwriter breaking a story into scenes.
@@ -36,18 +40,19 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
     Characters: {", ".join(story.characters)}
     
     CONSTRAINTS:
-    - Total Duration: {total_duration}s
-    - We need exactly {num_portions} sequential segments.
-    - Each segment represents approx {seg_length} seconds of screen time.
+    - Total Run Time: Approximately {total_duration} seconds.
+    - Break the story into separate Visual Scenes/Shots.
+    - Each Scene MUST have a duration between 4.0 and 20.0 seconds.
+    - Variable pacing is encouraged (e.g. fast 4s cuts for action, 15s for dialogue).
+    - Ensure the sum of durations is close to {total_duration}s (+/- 10s).
     
     TASK:
-    Write a specific visual description for each of the {num_portions} segments.
-    They must flow continuously to tell the Story.
+    Write a list of Scenes/Portions to tell this story.
     
     OUTPUT FORMAT (JSON List):
     [
-        {{ "id": 1, "content": "Description of segment 1..." }},
-        {{ "id": 2, "content": "Description of segment 2..." }},
+        {{ "id": 1, "duration": 5.5, "content": "Description of scene 1..." }},
+        {{ "id": 2, "duration": 12.0, "content": "Description of scene 2..." }},
         ...
     ]
     """
@@ -69,19 +74,29 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
             data = json.loads(text)
             
             portions = []
+            calculated_total = 0.0
             for item in data:
+                # Fallback if duration missing (should rarely happen with good prompt)
+                dur = float(item.get('duration', seg_length))
+                
+                # Clamp Duration
+                if dur < 4.0: dur = 4.0
+                if dur > 20.0: dur = 20.0
+                
                 portions.append(Portion(
                     id=item['id'],
-                    duration_sec=seg_length, 
+                    duration_sec=dur, 
                     content=item['content']
                 ))
+                calculated_total += dur
             
             # Validation
-            if len(portions) != num_portions:
-                logging.warning(f"⚠️ Generated {len(portions)} portions, expected {num_portions}. Adjusting...")
-                # Truncate or Pad? 
-                # For now, just accept it, but warn.
+            logging.info(f"   Generated {len(portions)} scenes. Total Duration: {calculated_total:.2f}s (Target: {total_duration}s)")
             
+            # Basic Check
+            if abs(calculated_total - total_duration) > 30.0:
+                 logging.warning(f"⚠️ Duration mismatch > 30s. Target: {total_duration}, Got: {calculated_total}")
+
             return portions
             
         except Exception as e:

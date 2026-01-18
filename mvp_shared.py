@@ -86,6 +86,9 @@ class DialogueLine(BaseModel):
     emotion: str = "neutral"
     duration: float = Field(default=0.0, description="Duration in seconds (0 = auto)")
     start_offset: float = Field(default=0.0, description="Start time in seconds relative to video start")
+    action: str = Field(default="", description="Physical action or stage direction")
+    foley: str = Field(default="", description="Sound effect description")
+    visual_focus: str = Field(default="", description="Camera focus or subject")
 
 class DialogueScript(BaseModel):
     """
@@ -140,8 +143,17 @@ def load_api_keys(env_path: Union[str, Path] = "env_vars.yaml") -> List[str]:
     try:
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
-            keys_str = data.get("ACTION_KEYS_LIST", "")
-            return [k.strip() for k in keys_str.split(',') if k.strip()]
+            # Merge both lists to maximize pool
+            keys_a = data.get("ACTION_KEYS_LIST", "")
+            keys_b = data.get("TEXT_KEYS_LIST", "")
+            
+            # Combine raw strings if they exist
+            full_list = []
+            if keys_a: full_list.extend([k.strip() for k in keys_a.split(',') if k.strip()])
+            if keys_b: full_list.extend([k.strip() for k in keys_b.split(',') if k.strip()])
+            
+            # Deduplicate
+            return list(set(full_list))
     except Exception:
         return []
 

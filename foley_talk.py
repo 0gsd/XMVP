@@ -231,10 +231,39 @@ def generate_audio_asset(text, output_path, voice_name="en-US-Journey-D", pitch=
                 os.remove(temp_raw)
     
     elif mode == "comfy":
-        # Placeholder for IndexTTS single line
-        # This would require the wrapper to be passed or re-init
-        logging.warning("⚠️ Single-line Comfy Gen not fully implemented yet.")
         pass
+    
+    elif mode == "kokoro":
+        # Local Kokoro
+        try:
+            from kokoro_bridge import get_kokoro_bridge
+            KOKORO_MODEL = "/Volumes/XMVPX/mw/kokoro-root/kokoro-v0_19.onnx"
+            bridge = get_kokoro_bridge(KOKORO_MODEL)
+            
+            temp_raw = output_path.replace(".wav", "_raw.wav")
+            
+            if bridge.generate(text, temp_raw, voice_name=voice_name):
+                # Apply Pitch Shift if needed
+                shifted = pitch_shift_file(temp_raw, pitch)
+                
+                # Move if needed
+                if shifted != output_path:
+                    shutil.move(shifted, output_path)
+                    
+                # Cleanup raw
+                if os.path.exists(temp_raw) and temp_raw != output_path:
+                    os.remove(temp_raw)
+                    
+                return output_path
+            
+            return None
+            
+        except ImportError:
+            logging.error("❌ Kokoro Bridge not found.")
+            return None
+        except Exception as e:
+            logging.error(f"❌ Kokoro Error: {e}")
+            return None
         
     return final_path
 
@@ -304,6 +333,86 @@ def generate_rvc_dialogue(script: DialogueScript, output_dir):
     return results
 
 
+
+
+def assign_kokoro_voice_deterministic(actor_name, available_voices):
+    """
+    Deterministically assigns a (voice_name, pitch_shift) tuple to an actor.
+    Expansion Rule: neutral, +1, -2 for every voice.
+    """
+    if not available_voices:
+        return "af_bella", 0 # Fallback
+        
+    # 1. Expand Palette
+    palette = []
+    for v in available_voices:
+        palette.append((v, 0))
+        palette.append((v, 1))
+        palette.append((v, -2))
+        
+    # 2. Hash Actor Name
+    # Simple hash based on sum of ordinals
+    seed = sum(ord(c) for c in actor_name)
+    idx = seed % len(palette)
+    
+    return palette[idx]
+
+def generate_kokoro_dialogue(script: DialogueScript, output_dir):
+    logging.info(f"🦜 [Kokoro] Generating Dialogue ({len(script.lines)} lines)...")
+    results = []
+    
+    # Initialize Bridge & Fetch Voices
+    try:
+        from kokoro_bridge import get_kokoro_bridge
+        KOKORO_MODEL = "/Volumes/XMVPX/mw/kokoro-root/kokoro-v0_19.onnx"
+        bridge = get_kokoro_bridge(KOKORO_MODEL)
+        
+        # Ensure bridge loaded to get voices
+        bridge.load()
+        available_voices = bridge.get_voice_list()
+        
+        # Filter for quality if needed, currently take all
+        # If none found (e.g. voices.json missing), fallback defaults
+        if not available_voices:
+            logging.warning("⚠️ No voices found in voices.json, using defaults.")
+            available_voices = ["af_bella", "af_sarah", "am_michael", "am_adam"]
+            
+        logging.info(f"   🎤 Available Voices: {len(available_voices)} (Expanded to {len(available_voices)*3})")
+        
+    except Exception as e:
+        logging.error(f"❌ Failed to init Kokoro for batch: {e}")
+        return []
+
+    # Cache assignments for this run
+    actor_map = {}
+
+    for i, line in enumerate(script.lines):
+        logging.info(f"   Actor {line.character}: '{line.text[:30]}...'")
+        
+        # 1. Assign Voice/Pitch
+        if line.character not in actor_map:
+            voice_name, pitch = assign_kokoro_voice_deterministic(line.character, available_voices)
+            actor_map[line.character] = (voice_name, pitch)
+            logging.info(f"     -> Assigned: {voice_name} @ {pitch} semitones")
+        else:
+            voice_name, pitch = actor_map[line.character]
+
+        out_path = os.path.join(output_dir, f"dial_{i}_{line.character}.wav")
+        # generate_audio_asset handles the pitch shift if we pass pitch
+        # but we need to pass mode="kokoro"
+        
+        # Update generate_audio_asset to support pitch for kokoro mode?
+        # Current implementation of generate_audio_asset calls bridge.generate then returns.
+        # It does NOT apply pitch shift for kokoro mode in the previous edit.
+        # We need to ensure we call pitch_shift_file for Kokoro output too.
+        
+        # Let's call generate_audio_asset with pitch, and modify it to handle shifting for all modes.
+        if generate_audio_asset(line.text, out_path, voice_name, pitch=pitch, mode="kokoro"):
+             results.append({"path": out_path, "offset": line.start_offset})
+             
+    return results
+
+
 # --- MAIN ---
 
 def main():
@@ -311,7 +420,7 @@ def main():
     parser.add_argument("--input", required=True, help="Input silent video path")
     parser.add_argument("--xb", help="Input XMVP manifest (source of dialogue)")
     parser.add_argument("--out", default="final_mix.mp4", help="Output video path")
-    parser.add_argument("--mode", choices=["cloud", "comfy", "rvc"], default="cloud", help="Audio Backend")
+    parser.add_argument("--mode", choices=["cloud", "comfy", "rvc", "kokoro"], default="cloud", help="Audio Backend")
     parser.add_argument("--dry-run", action="store_true", help="Simulate execution")
     
     args = parser.parse_args()
@@ -331,6 +440,8 @@ def main():
                     dialogue_wavs = generate_comfy_dialogue(wrapper, manifest.dialogue, out_dir)
                 elif args.mode == "rvc":
                     dialogue_wavs = generate_rvc_dialogue(manifest.dialogue, out_dir)
+                elif args.mode == "kokoro":
+                    dialogue_wavs = generate_kokoro_dialogue(manifest.dialogue, out_dir)
         except Exception as e:
             logging.error(f"Failed to load dialogue: {e}")
 

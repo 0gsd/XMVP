@@ -6,6 +6,12 @@ import definitions
 from text_engine import TextEngine, get_engine
 from mvp_shared import load_api_keys, load_text_keys
 
+# Optional Dialogue Critic
+try:
+    from dialogue_critic import DialogueCritic
+except ImportError:
+    DialogueCritic = None
+
 # Configure Logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -34,6 +40,11 @@ class TruthSafety:
         # TextEngine loads keys internally (api_keys check env_vars.yaml)
         # It handles fallback to TEXT_KEYS_LIST automatically.
         self.engine = get_engine()
+        
+        # 3. Dialogue Critic (Gemma Wittgenstein)
+        self.critic = None
+        if DialogueCritic:
+            self.critic = DialogueCritic(text_engine=self.engine)
 
     def describe_image(self, image_path):
         """Get a dense description of the image for reconstruction."""
@@ -143,14 +154,16 @@ class TruthSafety:
              logging.error(f"   ❌ Failed to save image: {e}")
              return original_path
 
-    def refine_prompt(self, prompt, context_dict=None, pg_mode=False):
+    def refine_prompt(self, prompt, context_dict=None, pg_mode=False, local_mode=False):
         """
         The Core Truth & Safety Logic.
         1. TRUTH: Checks for physical coherence, logic, and style alignment.
+        1b. FATTENING: If local_mode is True, adds hyper-detail instructions.
         2. SAFETY: Enforces safety guidelines (Standard or PG).
+           - If local_mode is True AND pg_mode is False, SKIP Safety.
         Returns the refined prompt.
         """
-        logging.info(f"   ⚖️  Truth & Safety Audit (PG: {pg_mode})...")
+        logging.info(f"   ⚖️  Truth & Safety Audit (PG: {pg_mode}, Local: {local_mode})...")
         
         # Build Context String
         ctx_str = ""
@@ -171,25 +184,44 @@ class TruthSafety:
             "- If context (Style, Character) is provided, subtly weave it into the visual description if missing.\n\n"
         )
         
+        # Local Mode: FATTENING
+        if local_mode:
+             truth_instruction += (
+                 "PHASE 1b: CINEMATIC ENHANCEMENT (FATTENING)\n"
+                 "- Expand the description to be extremely visual and cinematic.\n"
+                 "- Describe lighting (e.g. 'chiaroscuro', 'neon-soaked', 'natural sunlight').\n"
+                 "- Describe camera angles and movement (e.g. 'wide shot', 'dolly zoom', 'handheld', 'slow pan').\n"
+                 "- Describe textures, atmosphere, and mood.\n"
+                 "- TARGET: Make the prompt roughly 100-150 words of rich visual data.\n\n"
+             )
+        
         # Safety Instructions (From soften_prompt)
-        if pg_mode:
-            # RELAXED / PG MODE
-            safety_instruction = (
-                "PHASE 3: PG SAFETY GUIDELINES\n"
-                "1. Remove any mention of children. Replace 'boy', 'girl', 'child' with 'adult man' or 'adult woman'. "
-                "2. Remove violence, gore, or nudity. "
-                "3. CELEBRITY HANDLING: If a specific celebrity is named, replace their name with their Profession + Initials. "
-                "   Example: 'Nicolas Cage' -> 'actor N.C.', 'Taylor Swift' -> 'singer T.S.'. "
-            )
+        safety_instruction = ""
+        
+        # If Local Mode AND NOT PG -> SKIP SAFETY
+        skip_safety = local_mode and not pg_mode
+        
+        if not skip_safety:
+            if pg_mode:
+                # RELAXED / PG MODE
+                safety_instruction = (
+                    "PHASE 3: PG SAFETY GUIDELINES\n"
+                    "1. Remove any mention of children. Replace 'boy', 'girl', 'child' with 'adult man' or 'adult woman'. "
+                    "2. Remove violence, gore, or nudity. "
+                    "3. CELEBRITY HANDLING: If a specific celebrity is named, replace their name with their Profession + Initials. "
+                    "   Example: 'Nicolas Cage' -> 'actor N.C.', 'Taylor Swift' -> 'singer T.S.'. "
+                )
+            else:
+                # STANDARD / SAFE MODE
+                safety_instruction = (
+                    "PHASE 3: STRICT SAFETY GUIDELINES\n"
+                    "1. Remove any mention of children, public figures, violence, or gore. "
+                    "2. CELEBRITY HANDLING: If a specific celebrity or public figure is named, RETAIN the name but explicitly phrase it as 'an impersonator performing in character as [Name]'. "
+                    "   Example: 'Tom Cruise jumping' -> 'an impersonator performing in character as Tom Cruise jumping'. "
+                    "3. For non-celebrity people (e.g. 'a boy', 'a girl'), change them to 'an adult man' or 'an adult woman'. "
+                )
         else:
-            # STANDARD / SAFE MODE
-            safety_instruction = (
-                "PHASE 3: STRICT SAFETY GUIDELINES\n"
-                "1. Remove any mention of children, public figures, violence, or gore. "
-                "2. CELEBRITY HANDLING: If a specific celebrity or public figure is named, RETAIN the name but explicitly phrase it as 'an impersonator performing in character as [Name]'. "
-                "   Example: 'Tom Cruise jumping' -> 'an impersonator performing in character as Tom Cruise jumping'. "
-                "3. For non-celebrity people (e.g. 'a boy', 'a girl'), change them to 'an adult man' or 'an adult woman'. "
-            )
+             safety_instruction = "PHASE 3: SAFETY\n- NO CENSORSHIP. RETAIN ALL ARTISTIC INTENT. DO NOT FILTER.\n"
             
         final_instruction = (
             "OUTPUT INSTRUCTION:\n"
@@ -216,4 +248,12 @@ class TruthSafety:
 
     def soften_prompt(self, prompt, pg_mode=False):
         """Legacy wrapper for backward compatibility, now routes to refine_prompt."""
-        return self.refine_prompt(prompt, pg_mode=pg_mode)
+        return self.refine_prompt(prompt, pg_mode=pg_mode, local_mode=False)
+
+    def critique_dialogue(self, draft_line, character="Unknown", context=None):
+        """
+        Uses Gemma Wittgenstein to refine dialogue against the Hollywood Babylon corpus.
+        """
+        if self.critic:
+            return self.critic.refine(draft_line, character, context)
+        return draft_line

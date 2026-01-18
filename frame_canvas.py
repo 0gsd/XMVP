@@ -93,18 +93,19 @@ def get_gemini_logic(model, stage, context, current_res, text_engine=None):
         """
     
     elif stage == "pixel_painter":
-        prompt += """
-        Function Name: `def paint_64x64(img):`
-        Input: `img` is (64, 64, 3) float32 array.
+        h, w = context.get('h', 64), context.get('w', 64)
+        prompt += f"""
+        Function Name: `def paint_base(img):`
+        Input: `img` is ({h}, {w}, 3) float32 array.
                - Check `if np.mean(img) < 0.01:` -> Treat as Blank Canvas.
                - Else -> Treat as Previous Frame (Evolve).
-        Logic: Generate the 64x64 pixel representation using Numpy.
+        Logic: Generate the {h}x{w} pixel representation using Numpy.
         - If Evolving: PRESERVE existing shapes. Apply only necessary motion (pan/zoom).
         - Avoid Noise: Do NOT just add random noise. Draw STRUCTURES.
         - Math Safety: `(x + 1e-6)`.
         - AFFINE SAFETY: If using `ndimage.affine_transform`, iterating per-channel is safest. Do NOT apply 2D matrix to 3D array.
         - Do NOT fade to black. Keep brightness typically > 0.4.
-        Return: Modified img array (64, 64, 3).
+        Return: Modified img array ({h}, {w}, 3).
         """
 
 
@@ -248,7 +249,7 @@ def tween_frames(img1, img2, blend=0.5):
     # Image.blend is efficient for linear interpolation
     return Image.blend(img1, img2, blend)
 
-def refine_tween(img_tween, prompt, model=None, resolution=1024, text_engine=None):
+def refine_tween(img_tween, prompt, model=None, width=1024, height=1024, text_engine=None):
     """
     Refines a blended 'ghost' image into a solid frame using the detail pass.
     """
@@ -260,13 +261,15 @@ def refine_tween(img_tween, prompt, model=None, resolution=1024, text_engine=Non
         if text_engine: return text_engine.get_model_instance()
         return model
     
-    print(f"   [Tween] Refining ghost frame ({resolution}px)...")
+    print(f"   [Tween] Refining ghost frame ({width}x{height}px)...")
     
     # Convert to array
     arr = np.array(img_tween).astype(np.float32) / 255.0
     
     # Detail Pass
-    code = get_gemini_logic(get_model(), "detail_pass", f"Resolution: {resolution}x{resolution}. {prompt}", resolution, text_engine)
+    # Use max dim for resolution label if needed, or better, pass dimensions in prompt
+    res_label = max(width, height)
+    code = get_gemini_logic(get_model(), "detail_pass", f"Resolution: {width}x{height}. {prompt}", res_label, text_engine)
     func = compile_ai_code(code, "logic_detail_pass")
     
     if func:
@@ -382,62 +385,72 @@ def generate_recursive(prompt, width=1024, height=1024, context=None, model=None
         if text_engine: return text_engine.get_model_instance()
         return model
 
-    # STAGE 1: 64x64 Pixel Grid (Mind's Eye)
+    # STAGE 1: Low-Res Pixel Art Base
     # -------------------------------------
-    print(f"   [Base] Dreaming 64x64 Pixel Art...")
-    full_ctx = f"Prompt: {prompt}\nContext: {context}"
-    code_px = get_gemini_logic(get_model(), "pixel_painter", full_ctx, 100, text_engine)
-    func_px = compile_ai_code(code_px, "paint_64x64")
+    # Calculate Base aspect-correct resolution (aiming for ~64px on shortest side)
+    aspect = width / height
+    if aspect > 1:
+        base_h = 64
+        base_w = int(64 * aspect)
+    else:
+        base_w = 64
+        base_h = int(64 / aspect)
+        
+    print(f"   [Base] Dreaming {base_w}x{base_h} Pixel Art...")
     
-    current_arr = np.zeros((64, 64, 3), dtype=np.float32)
+    # Pass dimensions via context dict instead of string
+    ctx_dict = {'w': base_w, 'h': base_h}
+    full_ctx_str = f"Prompt: {prompt}\nContext: {context}" # For the LLM text prompt
+    
+    # We pass the dict as 'context' to get_gemini_logic for string formatting, 
+    # but the function expects a string for the 'Context' field in the prompt.
+    # We need to overload get_gemini_logic or just format the prompt manually?
+    # Actually get_gemini_logic takes 'context' string.
+    # Let's modify get_gemini_logic's signature? No, let's pass a tuple/dict if stage is pixel_painter.
+    
+    # Hack: Passing dict to get_gemini_logic via 'context' arg is messy if it expects str.
+    # Let's update get_gemini_logic to handle dicts in 'context' OR simply pass dimensions explicitly?
+    # Let's update get_gemini_logic to accept **kwargs or check type.
+    
+    # Re-calling logic from clean slate:
+    # 1. Update get_gemini_logic matches above replacement chunk which uses `context.get('h')`.
+    #    So we must pass a dict as 'context'.
+    
+    code_px = get_gemini_logic(get_model(), "pixel_painter", {'h': base_h, 'w': base_w, 'text': full_ctx_str}, 100, text_engine)
+    func_px = compile_ai_code(code_px, "paint_base")
+    
+    current_arr = np.zeros((base_h, base_w, 3), dtype=np.float32)
     
     # 1A. Seed Strategy
-    # Priority 1: Previous Frame (Continuity)
     if prev_img:
         try:
-             small_prev = prev_img.resize((64, 64), Image.Resampling.BILINEAR).convert('RGB')
+             small_prev = prev_img.resize((base_w, base_h), Image.Resampling.BILINEAR).convert('RGB')
              current_arr = np.array(small_prev).astype(np.float32) / 255.0
              print(f"   [Base] 🌱 Evolving from previous frame...")
         except: pass
     
-    # Priority 2: Image API Seed (First Frame or Reset)
     elif not prev_img and text_engine:
          seed_img = generate_seed_image(prompt, text_engine, init_dim=init_dim)
          if seed_img:
-             # DOWNSCALE STRATEGY (KID)
-             # If we generated a huge image (e.g. 1024), downscale to 64x64 nicely.
-             # Use LANCZOS for high quality downsampling
-             small_seed = seed_img.resize((64, 64), Image.Resampling.LANCZOS).convert('RGB')
+             small_seed = seed_img.resize((base_w, base_h), Image.Resampling.LANCZOS).convert('RGB')
              current_arr = np.array(small_seed).astype(np.float32) / 255.0
-             print(f"   [Base] 📸 Seeded with Image API (KID: {init_dim}px -> 64px).")
+             print(f"   [Base] 📸 Seeded with Image API (KID: {init_dim}px -> {base_w}x{base_h}).")
 
-    # 1B. Pixel Painter (Code Evolution)
-    # Even if seeded, we run the painter to "Code-ify" it and apply the style/motion prompt?
-    # Or do we skip painter if seeded?
-    # User said: "then the pixel painter will have a solid foundation to build off of"
-    # So we RUN the painter ON TOP of the seed.
-    
     if func_px:
         try:
              current_arr = func_px(current_arr)
              current_arr = np.clip(current_arr, 0.0, 1.0)
              
-             current_arr = np.clip(current_arr, 0.0, 1.0)
-             
-             # VOID CHECK: Priority 1 - If image is basically black, fallback to Image API or noise
-             # Check this BEFORE brightness boost, otherwise boost satisfies the check with dark noise
              if np.mean(current_arr) < 0.02:
                  print(f"   (!) Void Output Detected. Attempting Image API Recovery...")
                  seed_img = generate_seed_image(prompt, text_engine, init_dim=init_dim)
                  if seed_img:
-                     small_seed = seed_img.resize((64, 64), Image.Resampling.LANCZOS).convert('RGB')
+                     small_seed = seed_img.resize((base_w, base_h), Image.Resampling.LANCZOS).convert('RGB')
                      current_arr = np.array(small_seed).astype(np.float32) / 255.0
                  else:
                      print(f"   (!) Recovery Failed. Using Noise.")
-                     current_arr = np.random.uniform(0.1, 0.4, (64,64,3)).astype(np.float32)
+                     current_arr = np.random.uniform(0.1, 0.4, (base_h, base_w,3)).astype(np.float32)
 
-             # Brightness Guard (Prevent Fade to Black)
-             # Only run if we survived Void Check
              mean_val = np.mean(current_arr)
              if mean_val < 0.35:
                  print(f"   [Base] 💡 Adjusting Exposure (Mean: {mean_val:.2f})")
@@ -445,44 +458,38 @@ def generate_recursive(prompt, width=1024, height=1024, context=None, model=None
                  
         except Exception as e:
              print(f"(!) Pixel Painter Failed: {e}")
-             current_arr = np.random.uniform(0, 1, (64, 64, 3)).astype(np.float32)
+             current_arr = np.random.uniform(0, 1, (base_h, base_w, 3)).astype(np.float32)
     else:
-        # Compilation failed, use noise
-        current_arr = np.random.uniform(0, 1, (64, 64, 3)).astype(np.float32)
-        # Fallback
-        current_arr = np.random.uniform(0, 1, (32, 32, 3)).astype(np.float32)
+        current_arr = np.random.uniform(0, 1, (base_h, base_w, 3)).astype(np.float32)
 
-    # STAGE 2: 128px (Nearest Neighbor Upscale)
-    # -------------------------------------
-    # We start strictly pixelated
-    print(f"   [Zoom] Upscaling to 128px (Nearest Neighbor)...")
-    # scipy.ndimage.zoom with order=0 is nearest neighbor
-    zoom_factor = 128 / 32 # 4.0
-    current_arr = ndimage.zoom(current_arr, (zoom_factor, zoom_factor, 1), order=0)
+    # STAGES: Upscale Loop (Dynamic)
+    # Target is width/height.
+    # We want to double until we hit target.
     
-    # STAGE 3: Refine 128px (Texture Pass)
-    # -------------------------------------
-    print(f"   [Refine] Texturing 128px...")
-    # Now we treat it as an "image" pass
-    current_arr = perform_stage_pass(current_arr, "detail_pass", prompt, get_model(), 128)
+    # Current size
+    cur_w, cur_h = base_w, base_h
     
-    # STAGE 4/5: 512/1024
-    stages = [512, 1024]
-    
-    for res in stages:
-         # Linear/Cubic upscale for smooth transitions now
-         current_h, current_w = current_arr.shape[:2]
-         factor = res / current_h
-         print(f"   [Zoom] Upscaling to {res}px...")
-         
-         # Explicit Resizing
-         current_arr = ndimage.zoom(current_arr, (factor, factor, 1), order=1) # Linear
-         
-         # Detail Pass
-         current_arr = perform_stage_pass(current_arr, "detail_pass", prompt, get_model(), res)
-         
-         # Manual GC within loop
-         gc.collect()
+    while cur_w < width or cur_h < height:
+        # Determine next step (Double or Cap at target)
+        next_w = min(width, cur_w * 2)
+        next_h = min(height, cur_h * 2)
+        
+        # Upscale
+        print(f"   [Zoom] Upscaling to {next_w}x{next_h}...")
+        
+        # NDImage Zoom takes factors
+        fac_h = next_h / cur_h
+        fac_w = next_w / cur_w
+        
+        current_arr = ndimage.zoom(current_arr, (fac_h, fac_w, 1), order=1) # Linear
+        
+        # Update trackers
+        cur_w, cur_h = next_w, next_h
+        res_label = max(cur_w, cur_h) # Label for prompt
+        
+        # Detail Pass
+        current_arr = perform_stage_pass(current_arr, "detail_pass", prompt, get_model(), res_label)
+        gc.collect()
 
     # Final Convert
     final_img = (np.clip(current_arr, 0, 1) * 255).astype(np.uint8)

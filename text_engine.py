@@ -39,7 +39,7 @@ from mvp_shared import load_api_keys, load_text_keys
 class TextEngine:
     def __init__(self, config_path=None):
         self.backend = "gemini_api" # Default
-        self.local_model_path = "google/gemma-2-9b-it"
+        self.local_model_path = "mlx-community/gemma-2-9b-it-4bit"
         self.api_keys = []
         self.mlx_model = None
         self.mlx_tokenizer = None
@@ -59,7 +59,15 @@ class TextEngine:
                     config_path = c
                     break
         
-        if config_path and os.path.exists(config_path):
+        # 0. Check Environment Variable Override (Highest Priority)
+        # This allows movie_producer --local to force local mode without editing yaml
+        if os.environ.get("TEXT_ENGINE") == "local_gemma":
+             logging.info("   🔧 Overriding Text Engine Backend via ENV: local_gemma")
+             self.backend = "local_gemma"
+             # Optionally set model path if also in env, otherwise default
+             self.local_model_path = os.environ.get("LOCAL_MODEL_PATH", "mlx-community/gemma-2-9b-it-4bit")
+
+        elif config_path and os.path.exists(config_path):
             try:
                 with open(config_path, 'r') as f:
                     config = yaml.safe_load(f)
@@ -135,8 +143,12 @@ class TextEngine:
             self.mlx_model, self.mlx_tokenizer = load(self.local_model_path)
             logging.info("   ✅ Local Model Loaded.")
         except Exception as e:
-            logging.error(f"   ❌ Failed to load local model: {e}. Falling back to Gemini.")
-            self.backend = "gemini_api"
+            logging.error(f"   ❌ Failed to load local model: {e}.")
+            # STRICT LOCAL (Requested by User): Die if local fails.
+            # logging.error("Falling back to Gemini.") # NOPE.
+            # self.backend = "gemini_api"
+            raise RuntimeError("CRITICAL: Local Model Failed in Strict Local Mode.")
+            return
 
     def get_gemini_client(self):
         if not self.api_keys or not self.key_cycle:
@@ -202,30 +214,65 @@ class TextEngine:
             return self._generate_gemini(full_prompt, temperature, json_schema)
 
     def _generate_local(self, prompt, temperature):
-        from mlx_lm import generate
-        # Simple generation
-        # Gemma 2 instruct formatting usually handled by tokenizer?
-        # We can use tokenizer.apply_chat_template if available, or just raw prompt if model expects it.
-        # For robustness, we'll try to use chat template if tokenizer supports it.
+        from mlx_lm import stream_generate
+        import mlx.core as mx
         
+        # 1. Prepare Inputs
         messages = [{"role": "user", "content": prompt}]
-        
         if hasattr(self.mlx_tokenizer, "apply_chat_template"):
             input_text = self.mlx_tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         else:
-            # Fallback for raw completion models
             input_text = prompt
             
         logging.info("   🧠 Local Inference (Gemma)...")
-        response = generate(
-            self.mlx_model, 
-            self.mlx_tokenizer, 
-            prompt=input_text, 
-            temp=temperature, 
-            max_tokens=8192,  # Liberal limit for scripts
-            verbose=False
-        )
-        return response
+        
+        # 2. Define Sampler (Fix for TypeError: 'temperature')
+        # mlx_lm requires a callable sampler if we want to control temp
+        def temp_sampler(logits):
+            if temperature == 0:
+                return mx.argmax(logits, axis=-1)
+            # Apply temp
+            logits = logits / temperature
+            return mx.random.categorical(logits)
+            
+        # 3. Stream Generation with Progress
+        print("   Generating", end="", flush=True)
+        response_text = ""
+        token_count = 0
+        
+        # Use simple args 
+        # Note: generate_step() in mlx_lm usually takes 'temp' if using high-level generate(), 
+        # but here we go direct.
+        try:
+            for response in stream_generate(
+                self.mlx_model, 
+                self.mlx_tokenizer, 
+                prompt=input_text, 
+                max_tokens=8192,
+                sampler=temp_sampler
+            ):
+                text_chunk = response.text
+                response_text += text_chunk
+                token_count += 1
+                
+                # Progress Indicator
+                if token_count % 10 == 0:
+                    print(".", end="", flush=True)
+                if token_count % 100 == 0:
+                    print(f"[{token_count}]", end="", flush=True)
+
+            print(f" ✅ ({token_count} tokens)")
+            return response_text
+            
+        except TypeError as e:
+            # Fallback if sampler arg is also rejected (version chaos)
+            logging.error(f"Generation Error (Args): {e}")
+            logging.warning("Retrying with default greedy options...")
+            return self._generate_local_fallback(input_text)
+            
+    def _generate_local_fallback(self, prompt):
+        from mlx_lm import generate
+        return generate(self.mlx_model, self.mlx_tokenizer, prompt=prompt, verbose=False)
 
     def _generate_gemini(self, prompt, temperature, json_schema):
         client = self.get_gemini_client()

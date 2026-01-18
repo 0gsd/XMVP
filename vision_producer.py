@@ -29,12 +29,6 @@ VP_FORMS = {
         mime_type="video/mp4",
         description="A commercial advertisement video generated from a high-level concept."
     ),
-    "tech-movie": VPForm(
-        name="tech-movie",
-        fps=24, 
-        mime_type="video/mp4",
-        description="A narrative short film about technology."
-    ),
     "podcast-interview": VPForm(
         name="podcast-interview",
         fps=1, # Audio focused

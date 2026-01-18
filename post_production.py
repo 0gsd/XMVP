@@ -2,6 +2,10 @@ import argparse
 import logging
 import os
 import sys
+
+# Hack for Mac (OpenMP Conflict)
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 import time
 import re
 import yaml
@@ -14,10 +18,16 @@ from pathlib import Path
 from PIL import Image
 try:
     from mvp_shared import load_xmvp
+    import definitions 
+    from definitions import Modality, BackendType
+    from flux_bridge import get_flux_bridge
 except ImportError:
     # If not in path, try relative
     sys.path.append(str(Path(__file__).parent))
     from mvp_shared import load_xmvp
+    import definitions 
+    from definitions import Modality, BackendType
+    from flux_bridge import get_flux_bridge
 import json
 
 # Third Party (Check availability)
@@ -127,6 +137,26 @@ def run_ascii_forge(input_video, output_video):
         logging.error(f"ASCII Forge failed: {e}")
         return False
 
+    except Exception as e:
+        logging.error(f"ASCII Forge failed: {e}")
+        return False
+
+def get_duration(media_path):
+    """Returns duration in seconds using ffprobe (Copied from music_video.py)."""
+    try:
+        cmd = [
+            'ffprobe', 
+            '-v', 'error', 
+            '-show_entries', 'format=duration', 
+            '-of', 'default=noprint_wrappers=1:nokey=1', 
+            str(media_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return float(result.stdout.strip())
+    except Exception as e:
+        logging.error(f"[-] Error getting duration for {media_path}: {e}")
+        return None
+
 def blend_videos(base_video, overlay_video, output_path, opacity=0.33):
     """
     Blends overlay_video onto base_video with specified opacity.
@@ -188,14 +218,60 @@ class FrameUpscaler:
         
         return self._cv2_to_pil(blended)
 
-    def upscale(self, image_path, output_path, scale=2.0):
+    def upscale(self, image_path, output_path, scale=2.0, local=False, more=False):
         """
-        Resizes using the 'Pass 3' Logic (Lanczos -> Quantize).
-        Supports Hybrid Upscaling for scale > 2.0 (Style x2 -> Nearest Neighbor xRemaining).
+        Resizes and enhances.
+        Legacy: 'Pass 3' Logic (Lanczos -> Quantize).
+        Local: Flux Img2Img Upscale.
         """
         try:
             if not os.path.exists(image_path): return False
             img = Image.open(image_path).convert("RGB")
+            w, h = img.size
+            
+            # --- LOCAL FLUX UPSCALER ---
+            if local:
+                # 1. Base Upscale (Flux) ~ 2x
+                # If scale >= 2, we do at least 2x via Flux
+                # If scale < 2, just resize? Assuming scale=2 base.
+                
+                target_w, target_h = int(w * 2), int(h * 2)
+                logging.info(f"   ✨ Flux Upscaling to {target_w}x{target_h}...")
+                
+                # Resize first (Conditioning)
+                img = img.resize((target_w, target_h), Image.LANCZOS)
+                
+                # Flux Denoise (Add Detail)
+                # Load Bridge
+                config = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-schnell")
+                bridge = get_flux_bridge(config.path)
+                
+                # Prompt? "High resolution, sharp details, 4k"
+                enhanced = bridge.generate_img2img(
+                    prompt="high resolution, sharp focus, detailed, cinematic, best quality, 4k",
+                    image=img,
+                    width=target_w,
+                    height=target_h,
+                    strength=0.30, # Low strength to preserve geometry but add texture
+                    steps=4
+                )
+                
+                if not enhanced: 
+                    logging.warning("   ⚠️ Flux Upscale failed. Using Lanczos.")
+                    enhanced = img # Fallback
+                
+                img = enhanced
+                
+                # 2. Secondary Upscale (--more) -> 4x Total
+                if more and scale >= 4.0:
+                    final_w, final_h = int(w * 4), int(h * 4)
+                    logging.info(f"   ➕ Plus Upscale: Resampling to {final_w}x{final_h} (Lanczos)...")
+                    img = img.resize((final_w, final_h), Image.LANCZOS)
+                    
+                img.save(output_path)
+                return True
+
+            # --- LEGACY UPSCALER ---
             
             # 1. Obsess (Detail Injection)
             img = self.obsess(img, intensity=0.2)
@@ -247,10 +323,50 @@ class FrameInterpolator:
         self.context = context
         self.model = "gemini-2.5-flash-image"
 
-    def generate_tween(self, img_path_a, img_path_b, output_path, frame_idx_a, frame_idx_b):
+    def generate_tween(self, img_path_a, img_path_b, output_path, frame_idx_a, frame_idx_b, local=False):
         """
         Generates a frame visually between A and B.
+        Legacy: Gemini Hallucination.
+        Local: Flux Img2Img Tweening.
         """
+        if local:
+            try:
+                # 1. Load Images
+                img_a = Image.open(img_path_a).convert("RGB")
+                img_b = Image.open(img_path_b).convert("RGB")
+                
+                # 2. Simple Blend (50%)
+                blended = Image.blend(img_a, img_b, 0.5)
+                
+                # 3. Flux Denoise (Img2Img)
+                # Strength 0.55 -> Enough to hallucinate smooth transitions but keep structure
+                config = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-schnell")
+                bridge = get_flux_bridge(config.path)
+                
+                # Prompt? Just describe movement or generic?
+                # "cinematic shot, smooth motion, high quality"
+                prompt = "cinematic aesthetic, smooth motion blur, high quality, consistent lighting"
+                w, h = blended.size
+                
+                result = bridge.generate_img2img(
+                    prompt=prompt,
+                    image=blended,
+                    width=w, 
+                    height=h, 
+                    strength=0.55,
+                    steps=4
+                )
+                
+                if result:
+                    result.save(output_path)
+                    return True
+                else:
+                    return False
+            except Exception as e:
+                logging.error(f"   ❌ Local Tween Failed: {e}")
+                return False
+
+        # --- LEGACY GEMINI LOGIC ---
         key = get_random_key(self.keys)
         client = genai.Client(api_key=key)
         
@@ -330,7 +446,26 @@ def process(args):
         
     # Setup Output
     ts = int(time.time())
-    out_root = Path(args.output) if args.output else Path(f"post_prod_{ts}")
+    
+    # Check if output is a filename or dir
+    # Heuristic: If extension is .mp4, .mov, .avi, etc., assume filename.
+    target_video_file = None
+    
+    if args.output:
+        potential_out = Path(args.output)
+        if potential_out.suffix.lower() in ['.mp4', '.mov', '.mkv', '.avi']:
+            # User provided a filename!
+            target_video_file = potential_out.resolve()
+            out_root = target_video_file.parent / f"work_{target_video_file.stem}_{ts}"
+        else:
+            out_root = potential_out
+    else:
+        # Default to z_test-outputs if no output specified
+        # This prevents polluting the root directory
+        base_outputs = Path(__file__).resolve().parent / "z_test-outputs" / "post_prod"
+        ensure_dir(base_outputs)
+        out_root = base_outputs / f"post_prod_{ts}"
+        
     if not out_root.exists(): out_root.mkdir(parents=True)
     
     stage_1_frames = out_root / "1_extracted"
@@ -446,15 +581,39 @@ def process(args):
                 tween_path = stage_2_interpolated / tween_name
                 
                 logging.info(f"   🎨 Generating Tween {i}-{i+1}...")
-                success = interpolator.generate_tween(curr_frame, next_frame, tween_path, i, i+1)
+                success = interpolator.generate_tween(curr_frame, next_frame, tween_path, i, i+1, local=args.local)
                 
                 if success:
-                    # TODO: If x > 2, we might want to fill more?
-                    # For MVP v0.5, strict flipbook (A, Tween, B) is fine.
-                    # Duplicating Tween for higher X? Or defaulting logic?
-                    # Let's just stick one tween. If x=4, framerate increases, creates simple hold?
-                    # Actually, let's just do 1 tween.
                     final_sequence.append(("generated", tween_path))
+                    
+                    # More Mode: Secondary Interpolation (Wait, does user want to interp AGAIN between A->Tween and Tween->B?)
+                    # User: "with a bonus boolean, --more, we do ANOTHER round of frame interp using the simple tweening"
+                    # So: A -> Simple -> Tween -> Simple -> B
+                    # This means we should add a simple blend around the tween.
+                    if args.more:
+                        # 1. A -> Tween (Simple Blend)
+                        p1_name = f"tween_{i}_pre_more.png"
+                        p1_path = stage_2_interpolated / p1_name
+                        try:
+                           img_a = Image.open(curr_frame).convert("RGB")
+                           img_t = Image.open(tween_path).convert("RGB")
+                           Image.blend(img_a, img_t, 0.5).save(p1_path)
+                           # Insert BEFORE Tween
+                           # But we already appended tween. No, we appended ("generated", tween_path)
+                           # So we should pop or insert correctly.
+                           final_sequence.pop() # Remove Tween for a sec
+                           final_sequence.append(("simple_more", p1_path))
+                           final_sequence.append(("generated", tween_path))
+                           
+                           # 2. Tween -> B (Simple Blend)
+                           p2_name = f"tween_{i}_post_more.png"
+                           p2_path = stage_2_interpolated / p2_name
+                           img_b = Image.open(next_frame).convert("RGB")
+                           Image.blend(img_t, img_b, 0.5).save(p2_path)
+                           final_sequence.append(("simple_more", p2_path))
+                        except Exception as e:
+                            logging.warning(f"Simple More interp failed: {e}")
+                            
                 else:
                     # Fallback? Duplicate current frame to keep sync?
                     logging.warning("   ⚠️ Tween failed. Duplicating current frame.")
@@ -557,7 +716,18 @@ def process(args):
             out_path = stage_3_upscaled / out_name
             
             logging.info(f"   🚀 Upscaling Frame {idx+1}/{len(work_frames_tuples)} ({ftype})...")
-            success = upscaler.upscale(path, out_path, scale=args.scale)
+            # If args.more is True, we pass it. If args.scale (which defaults to 2.0) is unchanged but 'more' is on, 
+            # we should assume 4x?
+            # User: "default is 2x frame and 2x size, if --more is enabled we get 4x frames and 4x size."
+            # So if more is On, we force scale 4.0?
+            # Or we let upscaler handle it?
+            # Upscaler logic handles "if more and scale >= 4".
+            
+            target_scale = args.scale
+            if args.more:
+                target_scale = 4.0
+                
+            success = upscaler.upscale(path, out_path, scale=target_scale, local=args.local, more=args.more)
             
             if success:
                 upscaled_paths.append(out_path)
@@ -599,16 +769,80 @@ def process(args):
     # User usually wants 24fps final.
     # Let's stick to 24 forced if no better info.
     target_fps = 24
+    if args.local:
+        # If we did 2x interp, doubling frames. 12->24?
+        # If --more, we did 4x interp. 12->48?
+        # Assuming input is LTX generic (24fps?) post-interpolation.
+        # Actually usually if we interpolate we want SLOW MOTION or SMOOTHER MOTION.
+        # If we keep FPS same -> Slow Motion.
+        # If we increase FPS -> Smoother.
+        # "music-video" implies sync. So duration must match.
+        # If we have 4x frames, we need 4x FPS to keep duration.
+        base_fps = 24
+        multiplier = 2 if args.x > 1 else 1 # Simple assumption
+        if args.more: multiplier = 4
+        
+        target_fps = base_fps * multiplier
     
     # Check if we have audio
     audio_cmd = ""
+    
+    # --- MUSIC VIDEO LOGIC ---
+    # Merge of music_video.py
+    if args.mu:
+        if os.path.exists(args.mu):
+            audio_path = Path(args.mu)
+            logging.info(f"🎵 Music Video Mode: Syncing to {audio_path.name}...")
+            
+            # 1. Measure Audio Duration
+            audio_dur = get_duration(audio_path)
+            
+            # 2. Measure Expected Video Duration at Current Target FPS
+            # We have len(work_frames_tuples) frames (or we should count final frames dir?)
+            # Usually final_frames_dir has the 'work_frames_tuples' equivalent.
+            # Let's count explicitly to be safe.
+            final_files = list(final_frames_dir.glob("frame_*.png")) 
+            num_frames = len(final_files)
+            
+            if audio_dur and num_frames > 0:
+                expected_dur = num_frames / target_fps
+                diff = abs(audio_dur - expected_dur)
+                
+                logging.info(f"   ⏱️ Audio: {audio_dur:.2f}s | Frames: {num_frames} | @{target_fps}fps = {expected_dur:.2f}s")
+                logging.info(f"   ⚠️ Delta: {diff:.2f}s")
+                
+                # 3. Stretch/Squeeze Threshold (10s) OR Forced Stitch
+                if diff <= 10.0 or args.stitch_audio:
+                    # Calculate Perfect FPS
+                    new_fps = num_frames / audio_dur
+                    logging.info(f"   ✨ Auto-Sync: Adjusting FPS {target_fps} -> {new_fps:.4f} to match audio (Stitch Mode: {args.stitch_audio}).")
+                    target_fps = new_fps
+                else:
+                    logging.warning("   ⚠️ Delta > 10s. Keeping original FPS (Audio might cut off or videeo silent). Use --stitch-audio to force.")
+                    
+        else:
+             logging.warning(f"   ⚠️ Audio file not found: {args.mu}")
+
     if audio_path:
         audio_cmd = f"-i '{audio_path}' -map 0:v -map 1:a -c:a copy"
+        # If we did the squeez, we want shortest? 
+        # If we calculated exact FPS, it should match.
+        # But for safety, -shortest is good logic if we prioritized audio.
+        if args.mu: audio_cmd += " -shortest"
     
     cmd = f"ffmpeg -framerate {target_fps} -i '{final_frames_dir}/frame_%05d.png' {audio_cmd} -c:v libx264 -pix_fmt yuv420p '{output_video}' -y -loglevel error"
     os.system(cmd)
     
-    logging.info(f"🎉 Post Production Complete: {output_video}")
+    # 6. Finalize (Move to Target)
+    if target_video_file:
+         logging.info(f"🚚 Moving final output to {target_video_file}...")
+         # Check if target dir exists
+         if not target_video_file.parent.exists():
+             target_video_file.parent.mkdir(parents=True, exist_ok=True)
+         shutil.copy(output_video, target_video_file)
+         logging.info(f"✨ Custom Output Saved: {target_video_file}")
+    else:
+         logging.info(f"🎉 Post Production Complete: {output_video}")
 
 
 def stitch_videos(log, output_filename):
@@ -645,6 +879,12 @@ def stitch_videos(log, output_filename):
     
     ret = os.system(cmd)
     if ret == 0:
+        # 6. Finalize (Move to Target)
+        # Note: target_video_file and final_output are not defined in this function's scope.
+        # This block seems intended for the main `process` function's final output handling.
+        # Assuming `output_filename` is the `final_output` here.
+        # And `target_video_file` would be `args.output` if it were passed.
+        # For now, just logging the successful stitch.
         logging.info(f"   ✅ stitched: {output_filename}")
         try:
             os.remove(list_file)
@@ -660,6 +900,10 @@ def main():
     parser.add_argument("-x", type=int, default=2, help="Frame Expansion Factor (Tweening). Default: 2")
     parser.add_argument("--scale", type=float, default=2.0, help="Upscale Factor. Default: 2.0")
     parser.add_argument("--restyle", type=str, default=None, help="Restyle Mode (e.g. 'ascii').")
+    parser.add_argument("--local", action="store_true", help="Run Locally (Flux Img2Img)")
+    parser.add_argument("--more", action="store_true", help="Enable Secondary Interpolation/Upscale (4x Total)")
+    parser.add_argument("--mu", type=str, help="Audio File for Music Video Sync")
+    parser.add_argument("--stitch-audio", action="store_true", help="Force-stitch frames to match audio duration (Ignore Delta).")
     
     args = parser.parse_args()
     

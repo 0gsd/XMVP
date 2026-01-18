@@ -28,7 +28,9 @@ from truth_safety import TruthSafety
 os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
 
 # --- Configuration ---
-FLUX_CACHE = "/Volumes/ORICO/flux_models"
+import definitions
+# Retrieve Config from Registry
+FLUX_CACHE = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE]["flux-schnell"].path
 FLUX_REPO = "black-forest-labs/FLUX.1-schnell"
 
 # --- VEO DIRECTOR (Inlined from action.py) ---
@@ -238,6 +240,44 @@ class VeoDirector:
         logging.error("   x Cut! Timeout.")
         return None
 
+class LTXDirector:
+    """
+    Director for Local LTX-Video Generation.
+    """
+    def __init__(self):
+        self.bridge = None
+        
+    def load(self):
+        if self.bridge: return
+        try:
+            from ltx_bridge import get_ltx_bridge
+            import definitions
+            
+            # Get path from definitions
+            config = definitions.MODAL_REGISTRY[definitions.Modality.VIDEO].get("ltx-video")
+            if not config:
+                logging.warning("⚠️ LTX-Video config not found in definitions. Using fallback path.")
+                path = "/Volumes/XMVPX/mw/LT2X-root"
+            else:
+                path = config.path
+                
+            self.bridge = get_ltx_bridge(path)
+            
+        except Exception as e:
+            logging.error(f"❌ Failed to load LTX Bridge: {e}")
+            sys.exit(1)
+
+    def generate(self, prompt, output_path, width=768, height=512, seed=None, image_path=None):
+        return self.bridge.generate(
+            prompt=prompt,
+            output_path=output_path,
+            width=width,
+            height=height,
+            seed=seed,
+            image_path=image_path
+        )
+
+
 class FluxDirector:
     def __init__(self):
         self.pipe = None
@@ -441,22 +481,30 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
         director = FluxDirector()
         director.load()
     elif mode == "video":
-        keys = load_api_keys()
-        if not keys:
-            logging.error("No API Keys for Video Dispatch.")
-            return False
+        local_mode = kwargs.get('local_mode', False)
         
-        # Resolve Model Name using action/definitions logic if possible, 
-        # or hardcode fallback? 
-        # We'll use definitions if available
-        try:
-            import definitions
-            model_name = definitions.get_video_model(model_tier)
-        except:
-             model_name = "veo-2.0-generate-001"
-             
-        # Pass ALL keys to the adapter for rotation
-        director = VideoDirectorAdapter(keys, model_name=model_name, pg_mode=pg_mode)
+        if local_mode:
+            logging.info("🎥 Mode: Video (Local LTX)")
+            director = LTXDirector()
+            director.load()
+        else:
+            keys = load_api_keys()
+            if not keys:
+                logging.error("No API Keys for Video Dispatch.")
+                return False
+            
+            # Resolve Model Name using action/definitions logic if possible, 
+            # or hardcode fallback? 
+            # We'll use definitions if available
+            try:
+                import definitions
+                model_name = definitions.get_video_model(model_tier)
+            except:
+                model_name = "veo-2.0-generate-001"
+                
+            # Pass ALL keys to the adapter for rotation
+            director = VideoDirectorAdapter(keys, model_name=model_name, pg_mode=pg_mode)
+
     else:
         logging.error(f"Unknown mode: {mode}")
         return False
@@ -518,6 +566,10 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
             # Let's verify if we need to do that here or if VeoDirector handles it.
             # action.VeoDirector expects "image" context usually.
             
+            # action.VeoDirector expects "image" context usually.
+            
+            local_mode = kwargs.get('local_mode', False)
+            
             context_arg = None
             if last_file:
                 # Extract frame? 
@@ -529,11 +581,40 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
                 else:
                      context_arg = str(last_file) # For image-to-image/video?
             
-            success = director.generate(
-                prompt=seg.prompt,
-                output_path=str(filepath),
-                context_uri=context_arg
-            )
+            if local_mode:
+                # LTX Logic with TruthSafety Fattening (Local Mode = True)
+                logging.info(f"   ✨ Enhancing Prompt for Local LTX (PG: {pg_mode})...")
+                try:
+                    # We need an API key for TruthSafety (uses TextEngine internally)
+                    # We can use a random key or load keys. 
+                    # TruthSafety handles key loading if none provided.
+                    cleaner = TruthSafety() 
+                    fat_prompt = cleaner.refine_prompt(
+                        seg.prompt, 
+                        context_dict={"Task": "Cinematic Video"}, 
+                        pg_mode=pg_mode, 
+                        local_mode=True
+                    )
+                    logging.info(f"   💪 Fattened Prompt: {fat_prompt[:60]}...")
+                except Exception as e:
+                    logging.warning(f"   ⚠️ Fattening failed: {e}. Using raw prompt.")
+                    fat_prompt = seg.prompt
+
+                seed = 42 + seg.id
+                success = director.generate(
+                    prompt=fat_prompt,
+                    output_path=str(filepath),
+                    width=width,   # LTX supports width/height
+                    height=height, # LTX supports width/height
+                    seed=seed,
+                    image_path=context_arg if context_arg else None # Img2Vid
+                )
+            else:
+                success = director.generate(
+                    prompt=seg.prompt,
+                    output_path=str(filepath),
+                    context_uri=context_arg
+                )
             
         if success:
             manifest.files[seg.id] = str(filepath)
@@ -568,6 +649,7 @@ def main():
     parser.add_argument("--pg", action="store_true", help="Enable PG Mode (Relaxed Celebrity/Strict Child Safety)")
     parser.add_argument("--width", type=int, default=768, help="Output width (Image Mode)")
     parser.add_argument("--height", type=int, default=768, help="Output height (Image Mode)")
+    parser.add_argument("--local", action="store_true", help="Force Local Mode (LTX for Video)")
     
     args = parser.parse_args()
     
@@ -579,7 +661,8 @@ def main():
         staging_dir=args.staging,
         pg_mode=args.pg,
         width=args.width,
-        height=args.height
+        height=args.height,
+        local_mode=args.local
     )
     
     if not success:

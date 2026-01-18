@@ -8,6 +8,9 @@ frozen_requirements.txt
 clean_requirements.txt
 brew_packages.txt
 setup_studio.sh
+script_scraper.py
+prepare_training_data.py
+z_training_data/
 
 # Shells on the Batch
 run_improv.sh
@@ -15,6 +18,7 @@ run_improv_batch.sh
 run_animator.sh
 run_comfy.sh
 setup_comfy_infrastructure.py
+rescue_ep.py
 
 # Python
 __pycache__/
@@ -43,6 +47,14 @@ migrate_weights.py
 producerjasonwoliner/
 actionscript/
 _deprecated/
+work_aulmNet-0006_1768694416/
+post_prod_1768709789/
+screenplay_injest.py
+corpus_reverse_engineer.py
+check_diffusers.py
+debug_diffusers.log
+debug_keys.py
+debug_kokoro.py
 
 # OS
 v0.5.code-workspace

@@ -69,7 +69,7 @@ MODAL_REGISTRY: Dict[Modality, Dict[str, ModelConfig]] = {
     Modality.VIDEO: {
         "veo-3.1-fast": ModelConfig("veo-3.1-fast-generate-preview", BackendType.CLOUD, Modality.VIDEO, api_key_env="GEMINI_API_KEY"),
         "veo-3.1-4k": ModelConfig("veo-3.1-generate-preview", BackendType.CLOUD, Modality.VIDEO, api_key_env="GEMINI_API_KEY"),
-        "ltx-video": ModelConfig("ltx-video", BackendType.LOCAL, Modality.VIDEO, path="/Volumes/XMVPX/mw/LT2X-root/ltxv-13b-0.9.8-distilled.safetensors")
+        "ltx-video": ModelConfig("ltx-video", BackendType.LOCAL, Modality.VIDEO, path="/Volumes/XMVPX/mw/LT2X-root")
     },
     Modality.SPOKEN_TTS: {
         "google-journey": ModelConfig("en-US-Journey-F", BackendType.CLOUD, Modality.SPOKEN_TTS, api_key_env="GOOGLE_CLOUD_ACCESS_TOKEN"),

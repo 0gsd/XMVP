@@ -67,7 +67,17 @@ MODELS = {
         "repo": "city96/t5-v1_1-xxl-encoder-bf16",
         "type": "snapshot",
         "target": MW_ROOT / "t5weights-root"
-    }
+    },
+    "Kokoro": {
+        "repo": "Kijai/Kokoro-82M-ONNX",
+        "type": "snapshot",
+        "target": MW_ROOT / "kokoro-root"
+    },
+    "hunyuan-foley": {
+        "repo": "tencent/HunyuanVideo-Foley", # Corrected Repo ID
+        "type": "snapshot",
+        "target": MW_ROOT / "hunyuan-foley"
+    },
 }
 
 COMFY_REPO = "https://github.com/comfyanonymous/ComfyUI"
@@ -139,6 +149,7 @@ def main():
             if conf['type'] == 'snapshot':
                 snapshot_download(
                     repo_id=conf['repo'],
+                    revision=conf.get('revision', None), # Add revision
                     local_dir=str(conf['target']),
                     local_dir_use_symlinks=False
                 )
@@ -146,6 +157,7 @@ def main():
                 hf_hub_download(
                     repo_id=conf['repo'],
                     filename=conf['filename'],
+                    revision=conf.get('revision', None), # Add revision
                     local_dir=str(conf['target']),
                     local_dir_use_symlinks=False
                 )
@@ -155,6 +167,7 @@ def main():
                     hf_hub_download(
                         repo_id=conf['repo'],
                         filename=fname,
+                        revision=conf.get('revision', None), # Add revision
                         local_dir=str(conf['target']),
                         local_dir_use_symlinks=False
                     )

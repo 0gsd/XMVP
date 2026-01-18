@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import re
 import os
 import json
@@ -12,6 +11,7 @@ import yaml
 import itertools
 import shutil
 import warnings
+import pyloudnorm as pyln
 from pathlib import Path
 import librosa
 import numpy as np
@@ -31,6 +31,10 @@ from truth_safety import TruthSafety
 from mvp_shared import VPForm, CSSV, Constraints, Story, Portion, save_xmvp, load_xmvp, load_manifest
 from vision_producer import get_chaos_seed
 import frame_canvas # Support FC Mode
+try:
+    from flux_bridge import get_flux_bridge
+except ImportError:
+    pass # Handle locally inside function if missing
 import definitions
 from definitions import Modality, get_active_model
 
@@ -39,7 +43,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Default Paths (Can be overridden by args)
 DEFAULT_TF = Path("/Users/0gs/METMcloud/METMroot/tools/fmv/fbf_data")
-DEFAULT_VF = Path("/Volumes/ORICO/fmv_corpus")
+DEFAULT_VF = Path("/Volumes/XMVPX/fmv_corpus")
 
 # Model Configuration
 # Model Configuration
@@ -119,43 +123,86 @@ def analyze_audio(audio_path):
 
 def analyze_audio_profile(audio_path, duration):
     """
-    Creates a 'Sonic Map' of the track to guide the narrative.
-    Returns a string describing energy levels over time.
+    Creates a 'Sonic Map' of the track using LUFS (Loudness) and Dynamic Range.
+    Returns a string describing energy levels and sudden changes over time.
     """
     try:
+        # Load audio (Librosa)
         y, sr = librosa.load(audio_path, sr=None)
-        # RMS Energy
-        rms = librosa.feature.rms(y=y)[0]
-        # Normalize
-        rms_norm = (rms - np.min(rms)) / (np.max(rms) - np.min(rms) + 1e-6)
         
-        # Segment into chunks (e.g., 10 segments or every 10s)
-        # Let's do 8 segments regardless of length to give a "Story Arc"
+        # Pyloudnorm Setup
+        meter = pyln.Meter(sr) # create BS.1770 meter
+        
+        # Calculate Integrated Loudness (Overall)
+        try:
+            loudness_overall = meter.integrated_loudness(y)
+        except Exception:
+            loudness_overall = -24.0 # Default fallback
+            
+        logging.info(f"   📊 Audio Integrated Loudness: {loudness_overall:.2f} LUFS")
+
+        # Dynamic Analysis: Windowed LUFS
+        # Segment into chunks (e.g., 8 segments for narrative structure)
         num_segments = 8
-        seg_len = len(rms_norm) // num_segments
+        seg_samples = len(y) // num_segments
         
         profile_str = []
+        lufs_values = []
+        
         for i in range(num_segments):
-            start = i * seg_len
-            end = (i + 1) * seg_len
-            chunk = rms_norm[start:end]
-            avg_energy = np.mean(chunk)
+            start = i * seg_samples
+            end = (i + 1) * seg_samples
+            chunk = y[start:end]
             
-            # Classification
+            # Check length to avoid PyLoudnorm errors on tiny chunks
+            if len(chunk) < sr * 0.4: # < 400ms might error
+                chunk_lufs = loudness_overall # Fallback
+            else:
+                try:
+                    chunk_lufs = meter.integrated_loudness(chunk)
+                except ValueError:
+                    # Silence or too short
+                    chunk_lufs = -70.0 
+            
+            lufs_values.append(chunk_lufs)
+
+        # Detect Deltas (Changes)
+        # Relative to Overall
+        for i, val in enumerate(lufs_values):
+            time_start = int((i / num_segments) * duration)
+            
+            diff_from_avg = val - loudness_overall
+            
+            # Determine previous value for Delta
+            prev_val = lufs_values[i-1] if i > 0 else val
+            delta = val - prev_val
+            
             emoji = "🔉"
             desc = "Quiet"
-            if avg_energy > 0.7: 
-                emoji = "💥"
-                desc = "MAX INTENSITY"
-            elif avg_energy > 0.4:
+            
+            # 1. Absolute Levels
+            if val > -14.0:
                 emoji = "🔊"
                 desc = "High Energy"
-            elif avg_energy > 0.2:
+            elif val > -24.0:
                 emoji = "🎵"
                 desc = "Moderate"
+            else:
+                emoji = "🔉"
+                desc = "Quiet"
                 
-            time_start = int((i / num_segments) * duration)
-            profile_str.append(f"[{time_start}s: {emoji} {desc}]")
+            # 2. Dynamic Deltas (Overrides)
+            if delta > 6.0:
+                emoji = "💥"
+                desc = "SUDDEN IMPACT"
+            elif delta < -10.0:
+                emoji = "🤫"
+                desc = "Sudden Drop"
+            elif val > -10.0: # Very Loud
+                emoji = "🔥"
+                desc = "MAX INTENSITY"
+                
+            profile_str.append(f"[{time_start}s: {emoji} {desc} ({val:.1f} LUFS)]")
             
         return " -> ".join(profile_str)
     except Exception as e:
@@ -237,146 +284,196 @@ def blend_videos(base_video, overlay_video, output_path, opacity=0.33):
         
     return None
 
-def generate_frame_gemini(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=None, prev_frame_path=None, pg_mode=False):
+def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=None, prev_frame_path=None, pg_mode=False, force_local=False):
     """
-    Worker function using Gemini Image API (Polyglot: Imagen vs Gemini) with Round-Robin Rotation.
+    Worker function using Universal Backend (Flux Local or Gemini/Imagen Cloud).
     """
     if model is None:
-        model = get_active_model(Modality.IMAGE).name
+        model = get_active_model(Modality.IMAGE).name # String name from Registry
+
+    # Resolve Model Config to check backend
+    config = definitions.MODAL_REGISTRY[Modality.IMAGE].get(model)
+    if not config:
+        # Fallback for legacy string names not in registry
+        # Assume Cloud if unknown
+        is_local = False
+    else:
+        is_local = (config.backend == definitions.BackendType.LOCAL)
+
+    # STRICT LOCAL ENFORCEMENT
+    if force_local and not is_local:
+        logging.error(f"❌ STRICT LOCAL ENFORCEMENT FAILED: Model '{model}' is not configured as LOCAL.")
+        logging.error("   Please update active_models.json or definitions.py to point to a local model (e.g. flux-schnell).")
+        # Fail hard
+        raise RuntimeError("Local execution enforced but model is cloud-based/unknown.")
 
     target_path = output_dir / f"frame_{index:04d}.png"
     if target_path.exists():
         return True # Skip if already done
 
     # Retry Loop
-    # Retry Loop
     max_retries = 5 # User Requested Boost
     for attempt in range(max_retries):
-        # ROTATION: Get next key from cycle
-        current_key = next(key_cycle)
-        logging.info(f"🎨 Rendering Frame {index} (Attempt {attempt+1}/{max_retries}) [Key Rotation]...")
         
-        # Instantiate fresh client with rotated key
-        client = genai.Client(api_key=current_key)
-        
-        try:
-            
-            # MODE SWITCH
-            if "imagen" in model.lower():
-                # Method A: Imagen (generate_images)
-                response = client.models.generate_images(
-                    model=model, 
-                    prompt=prompt,
-                    config=types.GenerateImagesConfig(
-                        number_of_images=1,
-                        aspect_ratio=aspect_ratio, 
-                    )
-                )
-                if response.generated_images:
-                    image = response.generated_images[0]
-                    if image.image:
-                        image.image.save(target_path)
-                        return True
-            else:
-                # Method B: Gemini Flash (generate_content)
+        # --- LOCAL FLUX PATH ---
+        if is_local:
+            logging.info(f"🎨 Rendering Frame {index} (Attempt {attempt+1}/{max_retries}) [Flux Local]...")
+            try:
+                # Get Bridge
+                try:
+                    from flux_bridge import get_flux_bridge
+                except ImportError:
+                    logging.error("Flux Bridge not found.")
+                    return False
                 
-                # --- DIRECTOR MODE (Gemini 2.0 Flash) ---
-                # If model is 2.0 Flash, we use it to DESCRIBE the next frame, then use 2.5 Image to RENDER it.
-                if model == "gemini-2.0-flash":
-                    director_prompt = f"""
-                    You are a Lead Animator. 
-                    Goal: Describe the EXACT VISUALS for the next frame in this animation sequence.
-                    Context: Previous frame is attached (if available). 
-                    Current Prompt: "{prompt}".
-                    
-                    CRITICAL: 
-                    1. Maintain the STYLE described in the prompt exactly.
-                    2. If the 'Action' is similar to the previous frame, describe INCREMENTAL MOTION (flipbook style). Do not change camera angles or character designs unless explicitly told to.
-                    3. If the 'Action' is a new beat, describe the new scene but KEEP THE VISUAL STYLE CONSISTENT.
-                    4. ABSOLUTELY NO TEXT DESCRIPTIONS IN THE IMAGE. Do not ask for "Frame 1" text.
-
-                    Output: A dense, visual description of the image to generate. No conversational filler.
-                    """
-                    
-                    director_contents = []
-                    
-                    # Attach context if available (Put Image FIRST for better attention)
-                    if prev_frame_path and prev_frame_path.exists():
-                        try:
-                            img_bytes = prev_frame_path.read_bytes()
-                            img_part = types.Part.from_bytes(data=img_bytes, mime_type="image/png")
-                            director_contents.append(img_part)
-                            director_prompt += "\n(Refer to the image above as the PREVIOUS FRAME to maintain continuity from.)"
-                        except Exception as ex:
-                            logging.warning(f"   ⚠️ Failed to attach context image: {ex}")
-                            
-                    director_contents.append(director_prompt)
-                    
-                    # 1. Ask Director for Description
-                    director_response = client.models.generate_content(
-                        model="gemini-2.0-flash",
-                        contents=director_contents
-                    )
-                    
-                    if director_response.text:
-                        raw_desc = director_response.text
-                        logging.info(f"   🎬 Director's Direction: {raw_desc[:100]}...")
-                        
-                        # 1.5 Truth & Safety Enforce
-                        # Ensure the Director's output isn't crazy
-                        ts = TruthSafety() # Uses Text Keys for verification
-                        refined_prompt = ts.refine_prompt(raw_desc, context_dict={"Role": "Director Output"}, pg_mode=pg_mode)
-                        
-                        # BREATHING ROOM (User Request)
-                        # Prevent "Double Tap" spamming the API (Director -> Renderer instant hit)
-                        time.sleep(0.5)
-
-                        # 2. Use Renderer
-                        render_model = "gemini-2.5-flash-image"
-                        # Force "Generate an image of" prefix AND explicit silence instruction
-                        # Force "Generate an image of" prefix AND explicit silence instruction
-                        # SIMPLIFICATION: Imagen 3 prefers direct captions. Removing meta-tags.
-                        contents_payload = [f"Image of {refined_prompt} . {ANI_INSTRUCTION}"]
-                        model_to_use = render_model
-                    else:
-                        logging.warning("   ⚠️ Director failed to return text. Using raw prompt.")
-                        contents_payload = [ar_prompt]
-                        model_to_use = "gemini-2.5-flash-image"
-
+                # Check path from config
+                # config.path is the path to weights
+                bridge = get_flux_bridge(config.path)
+                
+                # Generate
+                # Flux Schnell doesn't support aspect_ratio arg directly usually, depends on bridge
+                # We'll stick to square for now unless width/height set
+                # Standardize to requested dimensions
+                img = bridge.generate(prompt, width=width, height=height) 
+                
+                if img:
+                    # Save (No resize needed if generated at target)
+                    img.save(target_path)
+                    return True
                 else:
-                    # Standard (FBF / Other)
-                    # For FBF, we don't do context injection because 2.5 Image doesn't support it well (returns text).
-                    contents_payload = [ar_prompt]
-                    model_to_use = model
+                    logging.warning("Flux returned None.")
+                    continue
+                    
+            except Exception as e:
+                logging.error(f"Flux Generation Failed: {e}")
+                continue # Retry? Or fail? Retry.
 
-                # 3. Generate Image
-                response = client.models.generate_content(
-                    model=model_to_use,
-                    contents=contents_payload
-                )
+        # --- CLOUD GEMINI/IMAGEN PATH ---
+        else:
+            # ROTATION: Get next key from cycle
+            current_key = next(key_cycle)
+            logging.info(f"🎨 Rendering Frame {index} (Attempt {attempt+1}/{max_retries}) [Cloud Key Rotation]...")
+            
+            # Instantiate fresh client with rotated key
+            client = genai.Client(api_key=current_key)
+            
+            try:
                 
-                # Check for inline data
-                if response.candidates:
-                    for part in response.candidates[0].content.parts:
-                        if part.inline_data:
-                            # Save bytes
-                            with open(target_path, "wb") as f:
-                                f.write(part.inline_data.data)
+                # MODE SWITCH
+                if "imagen" in model.lower():
+                    # Method A: Imagen (generate_images)
+                    response = client.models.generate_images(
+                        model=model, 
+                        prompt=prompt,
+                        config=types.GenerateImagesConfig(
+                            number_of_images=1,
+                            aspect_ratio=aspect_ratio, 
+                        )
+                    )
+                    if response.generated_images:
+                        image = response.generated_images[0]
+                        if image.image:
+                            image.image.save(target_path)
                             return True
-                        elif part.text:
-                            logging.warning(f"Frame {index}: Model returned TEXT instead of IMAGE: {part.text[:200]}...")
-            
-            logging.warning(f"Frame {index}: No image data returned. Retrying...")
-            
-        except Exception as e:
-            if "429" in str(e) or "ResourceExhausted" in str(e):
-                # RAMP COOLDOWN: 5, 10, 20, 40, 60
-                delay = 5 * (2 ** attempt)
-                if delay > 60: delay = 60
-                logging.warning(f"Frame {index}: Quota exceeded. Coping... (Waiting {delay}s)")
-                time.sleep(delay)
-            else:
-                logging.error(f"Frame {index} failed: {e}") 
+                else:
+                    # Method B: Gemini Flash (generate_content)
+                    
+                    # --- DIRECTOR MODE (Gemini 2.0 Flash) ---
+                    # If model is 2.0 Flash, we use it to DESCRIBE the next frame, then use 2.5 Image to RENDER it.
+                    if model == "gemini-2.0-flash":
+                        director_prompt = f"""
+                        You are a Lead Animator. 
+                        Goal: Describe the EXACT VISUALS for the next frame in this animation sequence.
+                        Context: Previous frame is attached (if available). 
+                        Current Prompt: "{prompt}".
+                        
+                        CRITICAL: 
+                        1. Maintain the STYLE described in the prompt exactly.
+                        2. If the 'Action' is similar to the previous frame, describe INCREMENTAL MOTION (flipbook style). Do not change camera angles or character designs unless explicitly told to.
+                        3. If the 'Action' is a new beat, describe the new scene but KEEP THE VISUAL STYLE CONSISTENT.
+                        4. ABSOLUTELY NO TEXT DESCRIPTIONS IN THE IMAGE. Do not ask for "Frame 1" text.
+
+                        Output: A dense, visual description of the image to generate. No conversational filler.
+                        """
+                        
+                        director_contents = []
+                        
+                        # Attach context if available (Put Image FIRST for better attention)
+                        if prev_frame_path and prev_frame_path.exists():
+                            try:
+                                img_bytes = prev_frame_path.read_bytes()
+                                img_part = types.Part.from_bytes(data=img_bytes, mime_type="image/png")
+                                director_contents.append(img_part)
+                                director_prompt += "\n(Refer to the image above as the PREVIOUS FRAME to maintain continuity from.)"
+                            except Exception as ex:
+                                logging.warning(f"   ⚠️ Failed to attach context image: {ex}")
+                                
+                        director_contents.append(director_prompt)
+                        
+                        # 1. Ask Director for Description
+                        director_response = client.models.generate_content(
+                            model="gemini-2.0-flash",
+                            contents=director_contents
+                        )
+                        
+                        if director_response.text:
+                            raw_desc = director_response.text
+                            logging.info(f"   🎬 Director's Direction: {raw_desc[:100]}...")
+                            
+                            # 1.5 Truth & Safety Enforce
+                            # Ensure the Director's output isn't crazy
+                            ts = TruthSafety() # Uses Text Keys for verification
+                            refined_prompt = ts.refine_prompt(raw_desc, context_dict={"Role": "Director Output"}, pg_mode=pg_mode)
+                            
+                            # BREATHING ROOM (User Request)
+                            # Prevent "Double Tap" spamming the API (Director -> Renderer instant hit)
+                            time.sleep(0.5)
+
+                            # 2. Use Renderer
+                            render_model = "gemini-2.5-flash-image"
+                            # Force "Generate an image of" prefix AND explicit size
+                            render_prompt = f"Generate an image of: {refined_prompt}"
+                            
+                            logging.info(f"      🎨 Render Prompt: {render_prompt[:50]}...")
+                            
+                            img_response = client.models.generate_images(
+                                model=render_model,
+                                prompt=render_prompt,
+                                config=types.GenerateImagesConfig(
+                                    number_of_images=1,
+                                    aspect_ratio=aspect_ratio
+                                )
+                            )
+                            if img_response.generated_images:
+                                image = img_response.generated_images[0]
+                                if image.image:
+                                    image.image.save(target_path)
+                                    return True
+                    else:
+                        # Direct Call (Legacy Gemini)
+                        response = client.models.generate_images(
+                            model=model, 
+                            prompt=prompt,
+                            config=types.GenerateImagesConfig(
+                                number_of_images=1,
+                                aspect_ratio=aspect_ratio, 
+                            )
+                        )
+                        if response.generated_images:
+                            image = response.generated_images[0]
+                            if image.image:
+                                image.image.save(target_path)
+                                return True
+                                
+            except Exception as e:
+                if "429" in str(e) or "ResourceExhausted" in str(e):
+                    # RAMP COOLDOWN: 5, 10, 20, 40, 60
+                    delay = 5 * (2 ** attempt)
+                    if delay > 60: delay = 60
+                    logging.warning(f"Frame {index}: Quota exceeded. Coping... (Waiting {delay}s)")
+                    time.sleep(delay)
+                else:
+                    logging.error(f"Frame {index} failed: {e}") 
         
         # Backoff before retry
         if attempt < max_retries - 1:
@@ -404,12 +501,17 @@ def scan_projects(tf_dir):
     projects.sort(key=lambda x: x.name) # Alphabetical/Predictable order
     return projects
 
-def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
-    # Initialize Text Engine globally for the project to maintain key rotation
-    te = TextEngine()
+def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, text_engine):
+    # Use passed TextEngine instance (Singleton)
+    te = text_engine
     
     project_name = project_dir.name
     logging.info(f"▶️ Processing Project: {project_name}")
+    
+    # Resolution Setup
+    target_w = args.w if (args.local and args.w) else args.kid
+    target_h = args.h if (args.local and args.h) else args.kid
+    logging.info(f"   📐 Target Resolution: {target_w}x{target_h}")
     
     analysis_file = project_dir / "analysis.json"
     metadata_file = project_dir / "metadata.json"
@@ -763,7 +865,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
         else:
             # CREATIVE AGENCY - Generate Story
             logging.info("   🧠 Creative Agency: Dreaming...")
-            text_engine = TextEngine()
+            # text_engine already passed in args
             
             # Seeds
             seeds = []
@@ -950,7 +1052,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
                 # Recursive Gen
                 current_img = frame_canvas.generate_recursive(
                     prompt=p, # The full prompt
-                    width=1024, height=1024, 
+                    width=target_w, height=target_h, 
                     context=ctx, text_engine=te,
                     prev_img=last_generated_img,
                     init_dim=args.kid # Pass KID
@@ -976,7 +1078,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
                         # Tween
                         tween_img = frame_canvas.tween_frames(last_generated_img, current_img, blend=0.5)
                         # Refine
-                        refined_tween = frame_canvas.refine_tween(tween_img, gap_prompt, model=None, text_engine=te, resolution=1024)
+                        refined_tween = frame_canvas.refine_tween(tween_img, gap_prompt, model=None, text_engine=te, width=target_w, height=target_h)
                         
                         # Save
                         gap_path = frames_dir / f"frame_{gap_frame_num:04d}.png"
@@ -1051,15 +1153,19 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys):
                 
             continue # Skip standard gen
         else:
-            # STANDARD GENERATION (Gemini/Imagen)
-            success = generate_frame_gemini(
+            # STANDARD GENERATION (Gemini/Imagen/Universal)
+            success = generate_frame_universal(
                 index=index,
                 prompt=p,
                 output_dir=frames_dir,
                 key_cycle=key_cycle,
                 model=model_to_use,
                 prev_frame_path=prev_frame,
-                pg_mode=args.pg
+                pg_mode=args.pg,
+                # Custom Resolution Logic: If Local, allow override. Else KID.
+                width=args.w if (args.local and args.w) else args.kid,
+                height=args.h if (args.local and args.h) else args.kid,
+                force_local=args.local
             )
             
             if success:
@@ -1455,8 +1561,10 @@ def main():
     # v1.2 FC Integration
     parser.add_argument("--vspeed", type=float, default=8.0, help="Visualizer Speed (FPS) for music-agency. Default 8. Supports 2, 4, 16.")
     parser.add_argument("--fc", action="store_true", help="Enable Frame & Canvas (Code Painter) Mode")
-    parser.add_argument("--kid", type=int, default=1024, help="Keyframe Init Dimension (default: 1024). Higher = Better composition before downscale.")
+    parser.add_argument("--kid", type=int, default=512, help="Keyframe Init Dimension (default: 512). Higher = Better composition before downscale.")
     parser.add_argument("--local", action="store_true", help="Local Mode (Use Gemma + Flux)") # NEW
+    parser.add_argument("--w", type=int, help="Override width (Local Only, e.g. 1920)")
+    parser.add_argument("--h", type=int, help="Override height (Local Only, e.g. 1080)")
     
     args = parser.parse_args()
     
@@ -1490,11 +1598,20 @@ def main():
     pass
     
     # --- PRODUCER MODE SWITCHING ---
+    # --- PRODUCER MODE SWITCHING ---
     if args.local:
         logging.info("🔌 Local Mode Requested. Switching Registry to Local Models...")
         try:
             # Switch Text -> Gemma
             definitions.set_active_model(Modality.TEXT, "gemma-2-9b-it")
+            os.environ["TEXT_ENGINE"] = "local_gemma"
+            
+            # Resolve Gemma Path Dynamically
+            gemma_conf = definitions.MODAL_REGISTRY[Modality.TEXT].get("gemma-2-9b-it")
+            if gemma_conf and gemma_conf.path:
+                os.environ["LOCAL_MODEL_PATH"] = str(gemma_conf.path)
+                logging.info(f"   📍 Text Model Path: {gemma_conf.path}")
+                
             # Switch Image -> Flux
             definitions.set_active_model(Modality.IMAGE, "flux-schnell")
             # Switch Video -> LTX (Future proofing)
@@ -1517,6 +1634,7 @@ def main():
     safety = TruthSafety()
     
     # 1. Model Selection (Registry Aware)
+    # Start with the active model (which might have been set to Flux by --local block above)
     model = get_active_model(Modality.IMAGE).name
     
     if args.vpform == "fbf-cartoon":
@@ -1524,8 +1642,13 @@ def main():
          # Legacy behavior was specific. Let's stick to Registry unless overridden.
          pass
     elif args.vpform in ["creative-agency", "music-visualizer", "music-agency"]:
-        model = "gemini-2.0-flash" 
-        logging.info(f"   🎨 {args.vpform}: Using Gemini 2.0 Flash (Director) -> {get_active_model(Modality.IMAGE).name} (Renderer).")
+        # Only switch to Gemini 2.0 (Director Mode) if NOT local.
+        # Local mode uses Flux directly.
+        if not args.local:
+            model = "gemini-2.0-flash"
+            logging.info(f"   🎨 {args.vpform}: Using Gemini 2.0 Flash (Director) -> {get_active_model(Modality.IMAGE).name} (Renderer).")
+        else:
+            logging.info(f"   🎨 {args.vpform}: Using Local Pipeline (Gemma Director -> Flux Renderer).")
         
     logging.info(f"   Model: {model}")
     
@@ -1555,14 +1678,21 @@ def main():
                  p_dir = output_root / p_name
                  ensure_dir(p_dir)
              
-             # Mock a Path object that has .name for the process function
-             # Actually, we should just refactor process_project to take a name, but
-             # we will monkey-patch or pass a Mock object to minimize drift.
-             class MockPath:
-                 def __init__(self, name): self.name = name
-                 def __truediv__(self, other): return Path(f"/tmp/{self.name}") / other
-                 
-             mock_proj = MockPath(p_name)
+             # Mock a Path object that has useable join behavior
+             # We want correct subdir behavior: proj / "analysis.json" -> output_dir / "analysis.json"
+             # But process_project expects proj to be the PARENT of the project folder?
+             # Actually, scan_projects returns the DIRECTORY of the project.
+             # So MockPath should probably represent p_dir directly.
+             
+             # The issue is usually definitions.py expects specific structure.
+             # Let's just pass p_dir (Path object) directly, but ensure it exists.
+             # Wait, process_project usually iterates files in proj.
+             # For Agency mode, there are no files yet.
+             # Let's see how process_project uses it. 
+             # It likely does: analysis_file = project / "analysis.json"
+             
+             # So we can just use p_dir!
+             mock_proj = p_dir
              
              # We need to bypass the 'analysis.json' read in process_project if in this mode.
              # Wait, process_project reads analysis.json immediately.
@@ -1578,7 +1708,7 @@ def main():
              # We need to ensure process_project doesn't fail early.
              # Call logic
              # We need to ensure process_project doesn't fail early.
-             process_project(mock_proj, args.vf, key_cycle, args, output_root, keys)
+             process_project(mock_proj, args.vf, key_cycle, args, output_root, keys, text_engine)
 
         except Exception as e:
              logging.error(f"Agency Job Failed: {e} | Type: {type(e)}")
@@ -1627,7 +1757,7 @@ def main():
             random.shuffle(keys)
             key_cycle = itertools.cycle(keys)
             
-            process_project(proj, args.vf, key_cycle, args, output_root, keys)
+            process_project(proj, args.vf, key_cycle, args, output_root, keys, text_engine)
             processed_count += 1
         except Exception as e:
             logging.error(f"Failed to process {proj.name}: {e}")

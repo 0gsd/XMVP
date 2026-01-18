@@ -57,6 +57,7 @@ def main():
     parser.add_argument("-f", "--fast", action="store_true", help="Use Faster/Cheaper Model Tier (Overwrites --vm)")
     parser.add_argument("--vfast", action="store_true", help="Use Legacy Veo 2.0 (Fastest)")
     parser.add_argument("--out", type=str, default=None, help="Override output directory")
+    parser.add_argument("--local", action="store_true", help="Run Locally (Gemma + LTX-Video)")
     
     args = parser.parse_args()
 
@@ -69,6 +70,50 @@ def main():
     if args.vfast:
         logging.info("🦕 V-Fast Mode Enabled: Switching to Tier V2 (Veo 2.0).")
         args.vm = "V2"
+
+    # Local Mode Override
+    if args.local:
+        if args.vpform == "tech-movie": # If still default
+            logging.info("🏠 Local Mode: Defaulting vpform to 'music-video'")
+            args.vpform = "music-video"
+            
+        logging.info("🏠 Local Mode Enabled: Switching models to Gemma (Text) and LTX (Video).")
+        
+        # Force Local Text Engine via Env Var (Captured by text_engine.py)
+        os.environ["TEXT_ENGINE"] = "local_gemma"
+        
+        # Resolve Local Model Path using Definitions
+        try:
+            import definitions
+            # Assuming 'gemma-2-9b-it' is the target local model
+            gemma_config = definitions.MODAL_REGISTRY[definitions.Modality.TEXT].get("gemma-2-9b-it")
+            if gemma_config and gemma_config.path:
+                 os.environ["LOCAL_MODEL_PATH"] = gemma_config.path
+                 logging.info(f"   📍 Local Text Model Path: {gemma_config.path}")
+            else:
+                 logging.warning("   ⚠️ Local Gemma path not found in definitions. Using default.")
+        except ImportError:
+             pass
+
+        # Log Safety/Quality Status
+        safety_status = "ON (Reasonable)" if args.pg else "OFF (Uncensored)"
+        logging.info(f"   🛡️ Safety Filters: {safety_status}")
+        logging.info(f"   ✨ Quality Refinement: ON (Hyper-Detailed Fattening)")
+        
+        import json
+        am_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "active_models.json")
+        try:
+            with open(am_path, "w") as f:
+                json.dump({
+                    "text": "gemma-2-9b-it",
+                    "image": "flux-schnell",
+                    "video": "ltx-video",
+                    "spoken_tts": "kokoro-v1"
+                }, f, indent=2)
+            logging.info("   ✅ Active Models Updated.")
+        except Exception as e:
+            logging.error(f"   ❌ Failed to update active_models.json: {e}")
+            sys.exit(1)
 
     # 1. Setup Output Directory
     OUT_DIR = args.out if args.out else get_output_dir()
@@ -159,7 +204,8 @@ def main():
         model_tier=args.vm,
         out_path=p_manifest_updated,
         staging_dir=DIR_PARTS,
-        pg_mode=args.pg
+        pg_mode=args.pg,
+        local_mode=args.local
     )
     if not success: sys.exit(1)
 

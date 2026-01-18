@@ -2,7 +2,9 @@
 import os
 import torch
 import logging
-from diffusers import FluxPipeline
+import torch
+import logging
+from diffusers import FluxPipeline, FluxImg2ImgPipeline
 from transformers import CLIPTextModel, T5EncoderModel, CLIPTokenizer, T5TokenizerFast
 from PIL import Image
 
@@ -12,7 +14,10 @@ class FluxBridge:
     def __init__(self, model_path, device="mps"):
         self.model_path = model_path
         self.device = device
+        self.model_path = model_path
+        self.device = device
         self.pipeline = None
+        self.img2img_pipeline = None
         
         # Check availability
         if device == "mps" and not torch.backends.mps.is_available():
@@ -106,6 +111,68 @@ class FluxBridge:
             logging.error(f"   ❌ Flux Generation Error: {e}")
             return None
 
+            return None
+
+    def load_img2img(self):
+        """Lazy loads the Img2Img pipeline, reusing components if possible."""
+        if self.img2img_pipeline: return
+
+        logging.info("   🔄 Loading Flux Img2Img Pipeline...")
+        from diffusers import FluxImg2ImgPipeline
+        
+        try:
+            if self.pipeline:
+                # Reuse components!
+                self.img2img_pipeline = FluxImg2ImgPipeline(
+                    **self.pipeline.components
+                ).to(self.device)
+                logging.info("   ✅ Flux Img2Img Ready (Shared Components).")
+            else:
+                # Fallback: Load from scratch (Expensive!)
+                logging.warning("   ⚠️ Primary Pipeline not loaded. Loading Img2Img from scratch.")
+                if os.path.isabs(self.model_path) and os.path.exists(self.model_path):
+                     self.img2img_pipeline = FluxImg2ImgPipeline.from_single_file(
+                         self.model_path,
+                         torch_dtype=torch.bfloat16
+                     ).to(self.device)
+                else:
+                     self.img2img_pipeline = FluxImg2ImgPipeline.from_pretrained(
+                         self.model_path,
+                         torch_dtype=torch.bfloat16
+                     ).to(self.device)
+                logging.info("   ✅ Flux Img2Img Ready (Independent).")
+                
+        except Exception as e:
+            logging.error(f"   ❌ Failed to load Flux Img2Img: {e}")
+
+    def generate_img2img(self, prompt, image, strength=0.6, width=1024, height=1024, steps=4, seed=None):
+        self.load_img2img()
+        if not self.img2img_pipeline:
+            return None
+            
+        logging.info(f"   🎨 Flux Img2Img: {prompt[:40]}... (Str: {strength}, {width}x{height})")
+        
+        generator = None
+        if seed is not None:
+            generator = torch.Generator(device="cpu").manual_seed(seed)
+            
+        try:
+            out_img = self.img2img_pipeline(
+                prompt=prompt,
+                image=image,
+                strength=strength,
+                height=height,
+                width=width,
+                num_inference_steps=steps,
+                generator=generator,
+                guidance_scale=0.0
+            ).images[0]
+            return out_img
+        except Exception as e:
+             logging.error(f"   ❌ Flux Img2Img Error: {e}")
+             return None
+
+
 # Singleton Pattern for specific use cases
 _BRIDGE = None
 def get_flux_bridge(path):
@@ -113,6 +180,7 @@ def get_flux_bridge(path):
     if _BRIDGE is None:
         _BRIDGE = FluxBridge(path)
     return _BRIDGE
+
 
 if __name__ == "__main__":
     # Test

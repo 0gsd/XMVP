@@ -8,10 +8,18 @@ import gc # Garbage Collection
 import numpy as np
 import io
 import io
-import google.generativeai as genai
-from google.genai import types # V2 Types for Image Gen
+GEMINI_AVAILABLE = False
+try:
+    import google.generativeai as genai
+    from google.genai import types # V2 Types for Image Gen
+    GEMINI_AVAILABLE = True
+except ImportError:
+    pass
 from PIL import Image
-import scipy.ndimage as ndimage
+try:
+    import scipy.ndimage as ndimage
+except ImportError:
+    ndimage = None
 import definitions
 from definitions import Modality, BackendType
 try:
@@ -30,6 +38,7 @@ except ImportError:
 # -----------------------------------------------------------------------------
 
 def setup_gemini(api_key):
+    if not GEMINI_AVAILABLE: return None
     if not api_key:
         print("Error: API Key is missing. Set GOOGLE_API_KEY env var or use --api_key.")
         sys.exit(1)

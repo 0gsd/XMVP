@@ -1,7 +1,12 @@
 import os
 import logging
-from google import genai
-from google.genai import types
+GEMINI_AVAILABLE = False
+try:
+    from google import genai
+    from google.genai import types
+    GEMINI_AVAILABLE = True
+except ImportError:
+    pass
 import definitions
 from text_engine import TextEngine, get_engine
 from mvp_shared import load_api_keys, load_text_keys
@@ -24,7 +29,7 @@ class TruthSafety:
             api_key = keys[0] if keys else None
         
         self.client = None
-        if api_key:
+        if api_key and GEMINI_AVAILABLE:
              self.client = genai.Client(api_key=api_key)
              
         self.l_model = definitions.VIDEO_MODELS["L"] 

@@ -1,162 +1,101 @@
+#!/usr/bin/env python3
 import os
 import sys
-import torch
-import torchaudio
 import logging
-import random
-import numpy as np
+import subprocess
+from pathlib import Path
 
 # Config
-MW_ROOT = "/Volumes/XMVPX/mw"
-CODE_ROOT = os.path.join(MW_ROOT, "hunyuan-foley-code")
-MODEL_ROOT = os.path.join(MW_ROOT, "hunyuan-foley")
-
-# Add Code to Path
-if os.path.exists(CODE_ROOT):
-    sys.path.append(CODE_ROOT)
-    # Also add the inner directory if needed, but 'hunyuanvideo_foley' is usually top level package in repo
-    # Check structure: code_root/hunyuanvideo_foley
-else:
-    print(f"[-] Hunyuan Code not found at {CODE_ROOT}")
-
-# Attempt Imports
-try:
-    from hunyuanvideo_foley.utils.model_utils import load_model, denoise_process
-    from hunyuanvideo_foley.utils.feature_utils import feature_process
-    from hunyuanvideo_foley.utils.media_utils import merge_audio_video
-except ImportError as e:
-    print(f"[-] Hunyuan Import Failed: {e}")
-    # Fallback to prevent crash during import, but class will fail
-    load_model = None
+REPO_PATH = "/Volumes/XMVPX/mw/hunyuan-foley-code"
+MODEL_PATH = "/Volumes/XMVPX/mw/hunyuan-foley" # Assuming weights here? Check listing.
 
 class HunyuanFoleyBridge:
-    def __init__(self, model_path=MODEL_ROOT, device="auto"):
-        self.model_path = model_path
-        self.model_dict = None
-        self.cfg = None
-        self.device = self._setup_device(device)
+    def __init__(self, repo_path=REPO_PATH, model_path=MODEL_PATH):
+        self.repo_path = Path(repo_path)
+        self.model_path = Path(model_path)
         
-        # Load Model
-        if load_model:
-            self.load()
-        else:
-            print("[-] HunyuanFoley Logic not imported.")
-
-    def _setup_device(self, device_str):
-        if device_str == "auto":
-            if torch.cuda.is_available():
-                return torch.device("cuda")
-            elif torch.backends.mps.is_available():
-                # MPS Support check? The code uses torch.float16 or bfloat16 often.
-                # MacOS might need explicit MPS.
-                return torch.device("mps") 
-            return torch.device("cpu")
-        return torch.device(device_str)
-
-    def load(self):
-        config_path = os.path.join(self.model_path, "config.yaml")
-        # Check if XL or XXL. Standard weighting seems to be XXL (10GB file).
-        # Let's check which config exists or default to code repo config if not in weights
-        if not os.path.exists(config_path):
-             # Try code repo config
-             config_path = os.path.join(CODE_ROOT, "configs/hunyuanvideo-foley-xxl.yaml")
+        if not self.repo_path.exists():
+            logging.error(f"❌ Hunyuan Repo not found: {self.repo_path}")
+            
+    def generate_foley(self, video_path, prompt, output_dir, model_size="xxl"):
+        """
+        Generates foley audio for a video file.
+        Returns path to generated .wav file.
+        """
+        if not self.repo_path.exists(): return None
         
-        print(f"   🌊 Loading HunyuanFoley from {self.model_path} (Config: {config_path})...")
+        # Output naming (infer.py likely creates default names)
+        # We need to capture what it made.
+        # "video_filename_foley.wav" usually?
         
+        cmd = [
+            sys.executable, 
+            str(self.repo_path / "infer.py"),
+            "--model_path", str(self.model_path),
+            "--single_video", str(video_path),
+            "--single_prompt", prompt,
+            "--output_dir", str(output_dir),
+            "--model_size", model_size
+            # "--enable_offload" ?
+        ]
+        
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(self.repo_path) + ":" + env.get("PYTHONPATH", "")
+        
+        logging.info(f"🔊 Generating Foley: {prompt[:30]}...")
         try:
-            # enable_offload=True by default for consumer cards/Mac?
-            # model_size="xxl" implied by config? load_model arg has model_size
-            self.model_dict, self.cfg = load_model(
-                self.model_path, 
-                config_path, 
-                self.device, 
-                enable_offload=True, # Safety for VRAM
-                model_size="xxl" # Assuming standard model
-            )
-            print("   ✅ HunyuanFoley Loaded.")
-        except Exception as e:
-            print(f"   ❌ Failed to load HunyuanFoley: {e}")
-
-    def generate_foley(self, text_prompt, video_path, output_path, duration=None, guidance_scale=4.5, steps=30):
-        if not self.model_dict:
-            print("   ❌ Model not loaded.")
-            return False
-
-        print(f"   🎵 Generating Foley: '{text_prompt}' (Video: {os.path.basename(video_path)})...")
-        
-        try:
-            # Feature Process
-            # neg_prompt default
-            neg_prompt = "noisy, harsh, low quality, distortion"
+            subprocess.run(cmd, check=True, env=env, cwd=str(self.repo_path), stdout=subprocess.DEVNULL)
             
-            # The model seems to assume video_path exists.
-            # feature_process returns: visual_feats, text_feats, audio_len_in_s
-            visual_feats, text_feats, audio_len_in_s = feature_process(
-                video_path,
-                text_prompt,
-                self.model_dict,
-                self.cfg,
-                neg_prompt=neg_prompt
-            )
+            # Find output
+            # Usually stem + "_foley.wav" or just in the dir?
+            # Let's verify output.
+            vid_stem = Path(video_path).stem
+            # infer.py behavior: saves to output_dir / {vid_stem}.wav ?
             
-            # Duration Override?
-            # feature_process calculates audio_len_in_s from video.
-            # We can override if needed, but keeping sync is best.
-            if duration:
-                # If we want to extend/shorten? 
-                pass 
-
-            # Denoise
-            # Note: steps=30 (tuned down from 50 default for speed?)
-            audio, sample_rate = denoise_process(
-                visual_feats,
-                text_feats,
-                audio_len_in_s,
-                self.model_dict,
-                self.cfg,
-                guidance_scale=guidance_scale,
-                num_inference_steps=steps
-            )
+            expected_output = Path(output_dir) / f"{vid_stem}.wav" 
+            # Or checks infer.py code...
             
-            # Save
-            # audio is [1, T] tensor?
-            # denoise_process returns: return audio.cpu(), sample_rate
-            # audio[0] based on infer.py
-            
-            torchaudio.save(output_path, audio[0], sample_rate)
-            return True
+            if expected_output.exists():
+                return str(expected_output)
+                
+            # Fallback check
+            for f in Path(output_dir).glob("*.wav"):
+                if vid_stem in f.name:
+                    return str(f)
+                    
+            return None
             
         except Exception as e:
-            print(f"   ❌ Foley Generation Error: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
+            logging.error(f"❌ Foley Generation Failed: {e}")
+            return None
 
-# Singleton
-_bridge = None
-
-def generate_foley_asset(prompt, output_path, video_path=None, duration=4.0):
-    global _bridge
-    if not _bridge:
-        _bridge = HunyuanFoleyBridge()
-        
-    if not video_path:
-        print("   ⚠️ No video path provided for Foley. Hunyuan is Video-to-Audio.")
-        # We could generate a dummy black video here if needed, but content_producer should provide it.
-        # Fallback to dummy?
-        # Let's create a temp black video of duration
-        temp_vid = output_path.replace(".wav", "_temp_black.mp4")
-        import subprocess
-        subprocess.run([
-            'ffmpeg', '-f', 'lavfi', '-i', f'color=c=black:s=512x512:d={duration}', 
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', temp_vid, '-y', '-loglevel', 'error'
-        ])
-        video_path = temp_vid
-        
-    success = _bridge.generate_foley(prompt, video_path, output_path, duration=duration)
+def generate_foley_asset(prompt, output_wav, video_path=None, duration=None):
+    """
+    Wrapper for Content Producer compatibility.
+    """
+    # Create Bridge
+    bridge = HunyuanFoleyBridge()
     
-    # Cleanup temp video if we made it
-    if "temp_black" in video_path and os.path.exists(video_path):
-        os.remove(video_path)
+    # Needs video path. If none, we can't do Foley (It's video-to-audio).
+    if not video_path or not os.path.exists(video_path):
+        logging.warning("Foley Engine requires video_path.")
+        return None
         
-    return output_path if success else None
+    output_dir = os.path.dirname(output_wav)
+    
+    result = bridge.generate_foley(video_path, prompt, output_dir)
+    
+    if result and os.path.exists(result):
+        # Rename to target output_wav if needed
+        if os.path.abspath(result) != os.path.abspath(output_wav):
+            if os.path.exists(output_wav): os.remove(output_wav)
+            os.rename(result, output_wav)
+        return output_wav
+        
+    return None
+
+if __name__ == "__main__":
+    # Test
+    logging.basicConfig(level=logging.INFO)
+    bridge = HunyuanFoleyBridge()
+    # Dummy test if args provided?

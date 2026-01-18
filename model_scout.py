@@ -112,7 +112,7 @@ def probe_model(keys, model_name):
             fail_count += 1
         time.sleep(1)
 
-def pull_model(model_name, dest_dir="/Volumes/ORICO/1_o_gemmas"):
+def pull_model(model_name, dest_dir="/Volumes/XMVPX/mw/gemma-root"):
     """Downloads/Converts HF model via mlx-lm."""
     print(f"\n📦 MODEL PULL: {model_name} -> {dest_dir}")
     if not os.path.exists(dest_dir):

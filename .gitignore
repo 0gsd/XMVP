@@ -11,6 +11,8 @@ setup_studio.sh
 script_scraper.py
 prepare_training_data.py
 z_training_data/
+train_director.sh
+adapters/
 
 # Shells on the Batch
 run_improv.sh

@@ -2,10 +2,11 @@ import argparse
 import json
 import logging
 import sys
+import subprocess
 from typing import Optional
 from pathlib import Path
 from mvp_shared import CSSV, Constraints, VPForm, save_cssv
-import librosa
+# import librosa (Stubbed for MVP stability)
 import numpy as np
 # Monkeypatch for Scipy 1.13+ vs Librosa < 0.10 compatibility
 try:
@@ -58,6 +59,12 @@ VP_FORMS = {
         fps=24,
         mime_type="video/mp4",
         description="A music video synchronized to an audio track."
+    ),
+    "draft-animatic": VPForm(
+        name="draft-animatic",
+        fps=24,
+        mime_type="video/mp4", # Sequence of images really
+        description="High-speed 512x288 animatic for storyboard visualization."
     )
 }
 
@@ -180,16 +187,33 @@ def get_specific_seed(query: str) -> str:
         
     return query
 
+def get_audio_duration(file_path):
+    """Get precise duration using ffprobe."""
+    try:
+        cmd = [
+            'ffprobe', '-i', str(file_path),
+            '-show_entries', 'format=duration',
+            '-v', 'quiet', '-of', 'csv=p=0'
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return float(result.stdout.strip())
+    except Exception:
+        return 60.0
+
 def analyze_audio(audio_path):
     """
-    Analyzes audio for Duration.
+    Analyzes audio for Duration (Stubbed BPM).
     Returns (duration, bpm)
     """
     try:
-        y, sr = librosa.load(audio_path, sr=None)
-        duration = librosa.get_duration(y=y, sr=sr)
-        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-        bpm = float(tempo[0] if isinstance(tempo, (list, np.ndarray)) else tempo)
+        # y, sr = librosa.load(audio_path, sr=None)
+        # duration = librosa.get_duration(y=y, sr=sr)
+        duration = get_audio_duration(audio_path)
+        
+        # tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        # bpm = 120.0
+        bpm = 120.0 # Stub
+        
         return duration, bpm
     except Exception as e:
         logging.error(f"Audio analysis failed: {e}")
@@ -266,7 +290,7 @@ def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: 
             height=768,
             fps=fps,
             max_duration_sec=duration_sec,
-            target_segment_length=seg_len,
+            target_segment_length=seg_len if form.name != "draft-animatic" else 15.0, # Default higher for animatic
             black_and_white=False,
             silent=False if "audio" in form.mime_type or "video" in form.mime_type else True
         ),
@@ -274,6 +298,12 @@ def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: 
         situation=situation_text,
         vision=get_default_vision(form.name, seg_count=seg_count)
     )
+
+    # DRAFT ANIMATIC OVERRIDE
+    if form.name == "draft-animatic":
+        # We rely on the Writers Room to be variable.
+        # We implicitly signal this by the form name check downstream
+        pass
 
     # 5. Save
     out_path_obj = Path(out_path)
@@ -286,8 +316,13 @@ def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: 
 
 def main():
     parser = argparse.ArgumentParser(description="Vision Producer: The Showrunner")
-    parser.add_argument("--vpform", type=str, required=True, help="The VPForm to use (e.g. realize-ad)")
-    parser.add_argument("--prompt", type=str, required=True, help="The core request/concept (The 'Situation')")
+    
+    # Smart Positional Args
+    parser.add_argument("pos_arg1", nargs='?', help="VPForm OR Prompt")
+    parser.add_argument("pos_arg2", nargs='?', help="Prompt (if arg1 was VPForm)")
+    
+    parser.add_argument("--vpform", type=str, help="The VPForm to use (e.g. realize-ad)")
+    parser.add_argument("--prompt", type=str, help="The core request/concept (The 'Situation')")
     parser.add_argument("--slength", type=float, default=60.0, help="Total Duration in Seconds")
     parser.add_argument("--flength", type=int, default=0, help="Total Duration in Frames (Overrides slength if set)")
     parser.add_argument("--seg_len", type=float, default=8.0, help="Target Segment Length in Seconds")
@@ -295,6 +330,29 @@ def main():
     parser.add_argument("--out", type=str, default="bible.json", help="Output path for the CSSV Bible")
     
     args = parser.parse_args()
+    
+    # --- Smart Resolution ---
+    potential_form = args.pos_arg1
+    resolved_prompt = None
+    
+    # Check if pos_arg1 looks like a VPForm (dashed, short)
+    if potential_form and ("-" in potential_form) and (" " not in potential_form) and (len(potential_form) < 30):
+         if not args.vpform:
+             args.vpform = potential_form
+             logging.info(f"🔎 Detected Positional VPForm: {args.vpform}")
+         resolved_prompt = args.pos_arg2
+    else:
+         # arg1 is likely the prompt (if vpform provided via flag, or missing)
+         if potential_form:
+             resolved_prompt = potential_form
+             
+    # Assign Prompt
+    if resolved_prompt and not args.prompt:
+        args.prompt = resolved_prompt
+        
+    # Validation
+    if not args.vpform or not args.prompt:
+        parser.error("VPForm and Prompt are required (either via flags or positional args 'form prompt')")
 
     run_producer(
         vpform_name=args.vpform,

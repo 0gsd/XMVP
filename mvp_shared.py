@@ -49,6 +49,25 @@ class Story(BaseModel):
     characters: List[str]
     theme: str
 
+class DialogueLine(BaseModel):
+    """
+    A single line of spoken dialogue.
+    """
+    character: str
+    text: str
+    emotion: str = "neutral"
+    duration: float = Field(default=0.0, description="Duration in seconds (0 = auto)")
+    start_offset: float = Field(default=0.0, description="Start time in seconds relative to video start")
+    action: str = Field(default="", description="Physical action or stage direction")
+    foley: str = Field(default="", description="Sound effect description")
+    visual_focus: str = Field(default="", description="Camera focus or subject")
+
+class DialogueScript(BaseModel):
+    """
+    A script for IndexTTS.
+    """
+    lines: List[DialogueLine]
+
 class Portion(BaseModel):
     """
     A high-level narrative chunk.
@@ -56,6 +75,7 @@ class Portion(BaseModel):
     id: int
     duration_sec: float
     content: str = Field(..., description="Narrative description of this portion")
+    dialogue: List[DialogueLine] = Field(default_factory=list, description="Dialogue lines in this portion")
     
 class Seg(BaseModel):
     """
@@ -76,25 +96,6 @@ class Indecision(BaseModel):
     type: str = "A/B_TEST"
     candidates: List[Dict[str, Any]] = Field(..., description="List of options/prompts to try")
     criteria: str = Field(..., description="Criteria for the Editor to decide best option")
-
-class DialogueLine(BaseModel):
-    """
-    A single line of spoken dialogue.
-    """
-    character: str
-    text: str
-    emotion: str = "neutral"
-    duration: float = Field(default=0.0, description="Duration in seconds (0 = auto)")
-    start_offset: float = Field(default=0.0, description="Start time in seconds relative to video start")
-    action: str = Field(default="", description="Physical action or stage direction")
-    foley: str = Field(default="", description="Sound effect description")
-    visual_focus: str = Field(default="", description="Camera focus or subject")
-
-class DialogueScript(BaseModel):
-    """
-    A script for IndexTTS.
-    """
-    lines: List[DialogueLine]
 
 class Manifest(BaseModel):
     """

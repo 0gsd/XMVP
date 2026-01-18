@@ -5,7 +5,7 @@
 # Options: "gemini_api" (Default), "local_gemma"
 TEXT_ENGINE: "gemini_api"
 # If local, specify HuggingFace ID or Path (e.g. "google/gemma-2-9b-it")
-# or just the folder name if inside /Volumes/ORICO/1_o_gemmas/
+# or just the folder name if inside /Volumes/XMVPX/mw/gemma-root/
 LOCAL_MODEL_PATH: ""
 
 # --- GEMINI API KEYS ---

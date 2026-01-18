@@ -10,9 +10,14 @@ from pathlib import Path
 import itertools
 
 # Strict Import (No more legacy fallback)
-from google import genai
-from google.genai import types
-GEMINI_AVAILABLE = True
+GEMINI_AVAILABLE = False
+try:
+    from google import genai
+    from google.genai import types
+    GEMINI_AVAILABLE = True
+except ImportError:
+    logging.warning("⚠️ Google GenAI SDK (v1.0+) not found. Cloud features disabled.")
+    pass
 
 # Lazy import for MLX (Apple Silicon)
 # We don't import at top level to avoid crashing on non-Macs or if missing
@@ -78,7 +83,7 @@ class TextEngine:
                     custom_path = config.get("LOCAL_MODEL_PATH")
                     if custom_path:
                         # Check if it's a full path, or just a name in the volume
-                        volume_path = Path("/Volumes/ORICO/1_o_gemmas") / custom_path
+                        volume_path = Path("/Volumes/XMVPX/mw/gemma-root") / custom_path
                         if volume_path.exists():
                             self.local_model_path = str(volume_path)
                         else:
@@ -246,7 +251,13 @@ class TextEngine:
         # 1. Prepare Inputs
         messages = [{"role": "user", "content": prompt}]
         if hasattr(self.mlx_tokenizer, "apply_chat_template"):
-            input_text = self.mlx_tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            try:
+                input_text = self.mlx_tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            except Exception as e:
+                # Fallback for Jinja2 "System role not supported" or similar
+                logging.warning(f"   ⚠️ Chat Template Error: {e}. using Manual Gemma Formatting.")
+                # Manual formatting for Gemma 2
+                input_text = f"<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
         else:
             input_text = prompt
             

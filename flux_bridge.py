@@ -92,25 +92,37 @@ class FluxBridge:
             
         logging.info(f"   🎨 Flux Generating: {prompt[:40]}... ({width}x{height}, {steps} steps)")
         
+        # Memory Cleanup (Critical for Loop Stability)
+        import gc
+        gc.collect()
+        if self.device == "mps":
+            torch.mps.empty_cache()
+        
         generator = None
         if seed is not None:
             generator = torch.Generator(device="cpu").manual_seed(seed) # MPS generators tricky? Use CPU for determinism if needed
             
         try:
-            image = self.pipeline(
+            image_obj = self.pipeline(
                 prompt,
                 height=height,
                 width=width,
                 num_inference_steps=steps,
                 generator=generator,
                 guidance_scale=0.0 # Flux Schnell needs 0 guidance usually? Or 3.5? Schnell is 0.
-            ).images[0]
+            )
+            image = image_obj.images[0]
+            del image_obj
             
+            # Post-Gen Cleanup
+            import gc
+            gc.collect() 
+            if self.device == "mps":
+                torch.mps.empty_cache()
+                
             return image
         except Exception as e:
             logging.error(f"   ❌ Flux Generation Error: {e}")
-            return None
-
             return None
 
     def load_img2img(self):
@@ -152,12 +164,18 @@ class FluxBridge:
             
         logging.info(f"   🎨 Flux Img2Img: {prompt[:40]}... (Str: {strength}, {width}x{height})")
         
+        # Memory Cleanup
+        import gc
+        gc.collect()
+        if self.device == "mps":
+            torch.mps.empty_cache()
+        
         generator = None
         if seed is not None:
             generator = torch.Generator(device="cpu").manual_seed(seed)
             
         try:
-            out_img = self.img2img_pipeline(
+            out_img_obj = self.img2img_pipeline(
                 prompt=prompt,
                 image=image,
                 strength=strength,
@@ -166,7 +184,16 @@ class FluxBridge:
                 num_inference_steps=steps,
                 generator=generator,
                 guidance_scale=0.0
-            ).images[0]
+            )
+            out_img = out_img_obj.images[0]
+            del out_img_obj
+            
+            # Post-Gen Cleanup
+            import gc
+            gc.collect() 
+            if self.device == "mps":
+                torch.mps.empty_cache()
+
             return out_img
         except Exception as e:
              logging.error(f"   ❌ Flux Img2Img Error: {e}")
@@ -184,7 +211,7 @@ def get_flux_bridge(path):
 
 if __name__ == "__main__":
     # Test
-    path = "/Volumes/ORICO/weightsquared/weights/flux1-schnell.safetensors"
+    path = "/Volumes/XMVPX/mw/flux-root"
     if os.path.exists(path):
         bridge = FluxBridge(path)
         img = bridge.generate("A pixel art cyberpunk city", width=512, height=512)

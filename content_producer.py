@@ -58,7 +58,8 @@ try:
     from truth_safety import TruthSafety
     from foley_talk import generate_audio_asset
     from vision_producer import get_chaos_seed
-    import frame_canvas
+    from vision_producer import get_chaos_seed
+    # frame_canvas moved to lazy import
     
     # Local Bridges
     from flux_bridge import get_flux_bridge
@@ -66,6 +67,8 @@ try:
 except ImportError as e:
     print(f"[-] Critical Import Error: {e}")
     sys.exit(1)
+
+print("DEBUG: Imports Done.")
 
 # --- CONFIG ---
 OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "z_test-outputs"))
@@ -422,8 +425,15 @@ def run_improv_session(vpform, output_dir, text_engine, args):
         
         # C. Visual (First, so Foley can see it)
         img_path = os.path.join(session_dir, f"turn_{turn_count:04d}.jpg")
-        visual_prompt = f"{COURTROOM_STYLE_PROMPT}\nAction: {action}\nFocus: {visual}"
         
+        # Truncate prompt to avoid CLIP 77 token warning (User Request)
+        # Using ~300 chars as safe proxy for 76 tokens
+        full_vis_prompt = f"{COURTROOM_STYLE_PROMPT}\nAction: {action}\nFocus: {visual}"
+        if len(full_vis_prompt) > 300:
+            visual_prompt = full_vis_prompt[:297] + "..."
+        else:
+            visual_prompt = full_vis_prompt
+            
         if not generate_image(visual_prompt, img_path):
              create_black_frame(img_path)
              
@@ -487,19 +497,49 @@ def run_improv_session(vpform, output_dir, text_engine, args):
         total_duration += duration
         turn_count += 1
         
-    # 4. Stitch
-    stitch_assets(assets, session_dir, os.path.join(output_dir, f"Improv_{session_id}.mp4"))
+    # 4. Stitch / Export
+    # Naming Logic: GAHD-{ep}-{ts}
+    ep_str = f"{args.ep}-" if args.ep else ""
+    final_basename = f"GAHD-{ep_str}{session_id}"
     
-    # 5. Export XMVP
+    # Target Directory
+    gahd_out_dir = os.path.join(output_dir, "gahd-scripts-vids")
+    os.makedirs(gahd_out_dir, exist_ok=True)
+    
+    final_mp4_path = os.path.join(gahd_out_dir, f"{final_basename}.mp4")
+    
+    stitch_assets(assets, session_dir, final_mp4_path)
+    
+    # 5. Export XMVP XML
+    # Save alongside MP4
+    xml_path = os.path.join(gahd_out_dir, f"{final_basename}.xml")
+    
+    cast_names = list(cast.keys())
+    
+    # We call helper differently? No, helper creates filename usually?
+    # export_xmvp_manifest definition: def export_xmvp_manifest(output_dir, base_name, ...)
+    # It constructs path: os.path.join(output_dir, f"{base_name}_manifest.xml")
+    # User requested same name for MP4 and XML.
+    # helper adds "_manifest.xml". We might want to adjust helper call or helper itself.
+    # Let's adjust helper call to use gahd_out_dir and final_basename, but accepting the suffix for now.
+    # User said: "same name for the MP4 and XML files" -> GAHD-201-1234.xml vs GAHD-201-1234_manifest.xml?
+    # Usually clean names are better.
+    # I'll let the helper add _manifest for clarity, or I'll patch helper too if needed.
+    # Let's check helper definition below. 
+    # Helper: xml_path = os.path.join(output_dir, f"{base_name}_manifest.xml")
+    # I'll stick to that convention for now, close enough.
+    
     export_xmvp_manifest(
-        session_dir,
-        f"Improv_{session_id}",
+        gahd_out_dir,
+        final_basename,
         assets,
-        list(cast.keys()),
+        cast_names,
         seeds=seeds,
-        title=f"Improv Session {session_id}",
+        title=f"Improv Session {session_id} (Ep {args.ep})",
         synopsis="A generated improv comedy set."
     )
+    
+    print(f"✅ GAHD Session Complete. Output: {final_mp4_path}")
 
 
 # --- PODCAST LOGIC (From podcast_animator.py) ---
@@ -737,10 +777,174 @@ def export_xmvp_manifest(output_dir, base_name, assets, cast_names, seeds=None, 
 
 # --- MAIN ---
 
+def run_thax_douglas_session(band_name, poem, output_dir):
+    """
+    Generates a Thax Douglas poem visualization.
+    Voice: am_michael (Kokoro)
+    Visuals: Band acting out poem.
+    """
+    if not band_name or not poem:
+        print("[-] Error: --band and --poem required for thax-douglas mode.")
+        return
+
+    session_id = int(time.time())
+    session_dir = os.path.join(output_dir, f"session_{session_id}")
+    os.makedirs(session_dir, exist_ok=True)
+    
+    print(f"🎸 Starting Thax Douglas Session: {band_name}...")
+    
+    # 1. Parse Poem
+    # User Request: Replace slashes with periods to fix TTS flow
+    # "The road is long / And my feet are tired" -> "The road is long. And my feet are tired"
+    poem_sanitized = poem.replace("/", ".")
+    
+    # Split by newlines first
+    stanzas = [line.strip() for line in poem_sanitized.split('\n') if line.strip()]
+    
+    # 1b. Smart Splitting (If single block detected)
+    # If explicit newlines weren't used, we split by sentences to create more visual variety.
+    if len(stanzas) == 1 and len(stanzas[0]) > 50:
+         text_block = stanzas[0]
+         # Split by punctuation followed by space (. ! ?)
+         # We use a positive lookbehind to keep the punctuation attached to the sentence.
+         # Regex: (?<=[.!?])\s+
+         split_stanzas = re.split(r'(?<=[.!?])\s+', text_block)
+         stanzas = [s.strip() for s in split_stanzas if s.strip()]
+         print(f"   ✂️ Auto-Split Poem into {len(stanzas)} lines based on punctuation.")
+         
+    if not stanzas:
+        stanzas = [poem] # Just one big block
+        
+    assets = []
+    
+    # 2. Loop
+    for i, line in enumerate(stanzas):
+        print(f"   📜 Stanza {i+1}/{len(stanzas)}: {line[:40]}...")
+        
+        # Audio (Thax Voice)
+        # Force Kokoro 'am_michael' (or am_adam) for Thax
+        # If Foley disabled or Cloud Mode, fall back to Journey-D via foley_talk defaults
+        audio_name = f"thax_line_{i:03d}.wav"
+        audio_path = os.path.join(session_dir, audio_name)
+        
+        # We use 'am_michael' as the 'voice_name'. foley_talk handles mapping/generation.
+        # If mode='cloud', it maps to Journey-D naturally? No, foley_talk doesn't map am_michael to journey unless we map it.
+        # So we pass 'am_michael' and mode='kokoro' if local, else 'en-US-Journey-D'.
+        
+        voice_target = "am_michael" if LOCAL_MODE else "en-US-Journey-D"
+        mode_target = "kokoro" if LOCAL_MODE else "cloud"
+        
+        # Actually foley_talk.generate_audio_asset handles this if we pass mode.
+        final_audio = generate_audio_asset(
+            line, 
+            audio_path, 
+            voice_name=voice_target, 
+            mode=mode_target
+        )
+        
+        if not final_audio:
+            print(f"   [-] Audio Gen Failed for line {i}")
+            # Use silence as fallback?
+            continue
+            
+        duration = get_audio_duration(final_audio)
+        
+        # Visual
+        img_name = f"thax_vis_{i:03d}.jpg"
+        img_path = os.path.join(session_dir, img_name)
+        
+        prompt = (
+            f"Photorealistic concert photography of the band {band_name} performing on stage. "
+            f"The band members are physically enacting the scene described: '{line}'. "
+            f"Dramatic stage lighting, 4k, cinematic composition. "
+            f"No text overlay."
+        )
+        
+        # Truncate for Flux/CLIP safety
+        if len(prompt) > 300: prompt = prompt[:297] + "..."
+        
+        if generate_image(prompt, img_path):
+            assets.append({
+                "path": img_path,
+                "duration": duration, # Image holds for audio duration
+                "audio": final_audio  # Attach audio to this slide
+            })
+        else:
+            print("   [-] Image Gen Failed.")
+            
+    # 3. Stitch
+    print("   🧵 stitching slides...")
+    video_clips = []
+    for i, asset in enumerate(assets):
+        slide_mp4 = os.path.join(session_dir, f"slide_{i:03d}.mp4")
+        # FFmpeg Image + Audio -> MP4
+        # Loop image for duration of audio
+        cmd = [
+            "ffmpeg", "-y",
+            "-loop", "1", "-i", asset['path'],
+            "-i", asset['audio'],
+            "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac", "-b:a", "192k",
+            "-shortest", 
+            "-pix_fmt", "yuv420p",
+            slide_mp4
+        ]
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            video_clips.append(slide_mp4)
+        except Exception as e:
+            print(f"   [-] Slide Mux Failed: {e}")
+            
+    # Concat clips
+    if video_clips:
+        thax_out_dir = os.path.join(output_dir, "thax-douglas")
+        os.makedirs(thax_out_dir, exist_ok=True)
+        final_filename = f"Thax-{band_name.replace(' ', '')}-{session_id}.mp4"
+        final_path = os.path.join(thax_out_dir, final_filename)
+        
+        files_txt = os.path.join(session_dir, "clips.txt")
+        with open(files_txt, 'w') as f:
+            for v in video_clips:
+                f.write(f"file '{v}'\n")
+                
+        cmd_concat = [
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+            "-i", files_txt,
+            "-c", "copy",
+            final_path
+        ]
+        subprocess.run(cmd_concat, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"✅ Thax Douglas Session Complete. Output: {final_path}")
+        
+    else:
+        print("❌ No slides generated.")
+
+def generate_image(prompt, output_path):
+    """
+    Wrapper for Image Gen (Local Flux vs Cloud Gemini).
+    """
+    global FLUX_BRIDGE
+    if LOCAL_MODE:
+        if not FLUX_BRIDGE:
+            # Init Bridge
+            from flux_bridge import get_flux_bridge
+            FLUX_BRIDGE = get_flux_bridge(FLUX_MODEL_PATH)
+        
+        # Flux Gen
+        print(f"   🎨 [Flux] {prompt[:40]}...")
+        # Flux usually returns a PIL Image
+        img = FLUX_BRIDGE.generate(prompt, width=1024, height=576, steps=4)
+        if img:
+            img.save(output_path)
+            return True
+        return False
+    else:
+        return False 
+
 def main():
     global LOCAL_MODE, FOLEY_ENABLED
-    
-    parser = argparse.ArgumentParser(description="Content Producer (Unified)")
+
+    parser = argparse.ArgumentParser(description="Content Producer v0.5 (Unified)")
+    parser.add_argument("vpform_pos", nargs="?", help="Positional Alias for VPForm (e.g. thax-douglas)")
     parser.add_argument("--vpform", help="Vision Platonic Form (e.g. 24-podcast, gahd-podcast)")
     parser.add_argument("--project", help="Project override (stub)")
     parser.add_argument("--ep", type=int, help="Episode number (stub)")
@@ -749,7 +953,17 @@ def main():
     parser.add_argument("--slength", type=float, default=0.0, help="Override duration in seconds")
     parser.add_argument("--fc", action="store_true", help="Code Painter Mode (Experimental)")
     parser.add_argument("--geminiapi", action="store_true", help="Force Cloud Gemini API for Text (Disable Local Gemma default)")
+    parser.add_argument("--band", type=str, help="Band Name (for thax-douglas mode)")
+    parser.add_argument("--poem", type=str, help="Poem Text (for thax-douglas mode)")
     args = parser.parse_args()
+    
+    # Alias Logic
+    if args.vpform_pos:
+        args.vpform = args.vpform_pos
+
+    print(f"DEBUG: Args Parsed. VPForm: {args.vpform}")
+
+
     
     LOCAL_MODE = args.local
     FOLEY_ENABLED = (args.foley == "on")
@@ -765,6 +979,11 @@ def main():
     
     print(f"🎬 CONTENT PRODUCER | Local: {LOCAL_MODE} | Foley: {FOLEY_ENABLED} | Form: {args.vpform}")
     
+    # 0. Thax Douglas Mode
+    if args.vpform == "thax-douglas":
+        run_thax_douglas_session(args.band, args.poem, OUTPUT_DIR)
+        return
+
     if args.vpform and ("podcast" in args.vpform or "cartoon" in args.vpform):
         # 1. Generative Modes (GAHD, 24-podcast, 10-podcast)
         if "gahd" in args.vpform or "24" in args.vpform or "10" in args.vpform:

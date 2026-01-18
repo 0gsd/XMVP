@@ -13,6 +13,7 @@ import math
 import shutil
 from pathlib import Path
 from mvp_shared import load_manifest, Manifest, DialogueScript, DialogueLine, get_project_id
+from hunyuan_foley_bridge import HunyuanFoleyBridge
 
 # --- CONFIGURATION ---
 COMFY_SERVER = "http://127.0.0.1:8188"
@@ -33,6 +34,61 @@ def get_audio_duration(file_path):
         return float(result.stdout.strip())
     except Exception:
         return 0.0
+
+def compose_track(assets, absolute_duration, output_path):
+    """
+    Composes a single continuous wav file from a list of {path, offset} assets.
+    Uses FFMPEG concat demuxer with padding.
+    """
+    # 1. Create Silence Asset
+    silence_path = "silence_base.wav"
+    # Create 1s silence to reuse
+    if not os.path.exists(silence_path):
+        subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono", "-t", "1", silence_path], 
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                   
+    # 2. Build List
+    # Sort by offset
+    assets = sorted(assets, key=lambda x: x['offset'])
+    
+    list_path = output_path + ".txt"
+    cursor = 0.0
+    
+    with open(list_path, 'w') as f:
+        for a in assets:
+            gap = a['offset'] - cursor
+            if gap > 0.01:
+                # Add silence
+                # FFmpeg concat demuxer allows looping a file? No, just repeat entry.
+                # To fill X seconds with 1s silence file:
+                # Need stream_loop? Or just use filters?
+                # Concat demuxer "duration" directive overrides length.
+                # file 'silence.wav' \n duration GAP
+                f.write(f"file '{os.path.abspath(silence_path)}'\n")
+                f.write(f"duration {gap}\n")
+            
+            f.write(f"file '{os.path.abspath(a['path'])}'\n")
+            # We don't know duration of clip without probing? 
+            # FFmpeg concat file directive usually auto-determines duration if not specified.
+            # BUT for gap calculation next, we MUST know it.
+            duration = get_audio_duration(a['path'])
+            cursor = a['offset'] + duration
+            
+        # Pad end?
+        if cursor < absolute_duration:
+             remaining = absolute_duration - cursor
+             f.write(f"file '{os.path.abspath(silence_path)}'\n")
+             f.write(f"duration {remaining}\n")
+
+    # 3. Render
+    cmd = [
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", list_path,
+        "-c:a", "pcm_s16le", # PCM for intermediate
+        output_path
+    ]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return True
 
 def mix_audio(video_path, foley_path, dialogue_files, output_path):
     """
@@ -209,6 +265,10 @@ def generate_audio_asset(text, output_path, voice_name="en-US-Journey-D", pitch=
     Unified entry point for generating a single audio asset (speech).
     Handles dispatch (Cloud vs Comfy) and Pitch Shifting.
     """
+    # Sanitize Text (User Request: Kokoro reads asterisks literal)
+    # Also strip hashtags used for markdown headers
+    text = text.replace("*", "").replace("#", "")
+    
     temp_raw = output_path.replace(".wav", "_raw.wav")
     
     final_path = None
@@ -298,7 +358,7 @@ def generate_cloud_dialogue(script: DialogueScript, output_dir, project_id):
 # Ported from voice_engine.py
 
 class LegacyVoiceEngine:
-    def __init__(self, weights_dir="/Volumes/ORICO/weightsquared/weights"):
+    def __init__(self, weights_dir="/Volumes/XMVPX/mw/rvc-root/weights"):
         self.weights_dir = weights_dir
         
     def generate_base_audio(self, text, output_path, gender="MALE"):
@@ -317,6 +377,37 @@ class LegacyVoiceEngine:
         logging.info(f"   [RVC] Mock Inference {model_name} -> {output_path}")
         shutil.copy(input_path, output_path)
         return True
+
+def generate_hunyuan_batch(manifest: Manifest, output_dir):
+    """
+    Generates foley for every segment in the manifest that has a video file.
+    """
+    logging.info(f"🔊 [Hunyuan] Generating Foley for {len(manifest.files)} clips...")
+    bridge = HunyuanFoleyBridge()
+    results = [] # List of {path, offset}
+    
+    # Sort segs
+    sorted_segs = sorted(manifest.segs, key=lambda s: s.id)
+    
+    # Calculate global offsets
+    current_offset = 0.0
+    
+    for seg in sorted_segs:
+        # Determine duration
+        duration_frames = seg.end_frame - seg.start_frame
+        duration_sec = duration_frames / 24.0
+        
+        if seg.id in manifest.files:
+            vid_path = manifest.files[seg.id]
+            foley_path = bridge.generate_foley(vid_path, seg.prompt, output_dir)
+            
+            if foley_path:
+                results.append({"path": foley_path, "offset": current_offset})
+                logging.info(f"   ✅ Seg {seg.id}: {foley_path} @ {current_offset:.2f}s")
+            
+        current_offset += duration_sec
+        
+    return results
 
 def generate_rvc_dialogue(script: DialogueScript, output_dir):
     logging.info(f"💾 [Legacy] Generating Dialogue...")
@@ -417,15 +508,70 @@ def generate_kokoro_dialogue(script: DialogueScript, output_dir):
 
 def main():
     parser = argparse.ArgumentParser(description="Foley Talk: Unified Audio Engine")
-    parser.add_argument("--input", required=True, help="Input silent video path")
-    parser.add_argument("--xb", help="Input XMVP manifest (source of dialogue)")
+    parser.add_argument("--input", help="Input silent video path (Required for Mixing)")
+    parser.add_argument("--xb", help="Input XMVP manifest (Source of Dialogue/Segments)")
     parser.add_argument("--out", default="final_mix.mp4", help="Output video path")
-    parser.add_argument("--mode", choices=["cloud", "comfy", "rvc", "kokoro"], default="cloud", help="Audio Backend")
+    parser.add_argument("--mode", choices=["cloud", "comfy", "rvc", "kokoro", "draft-mix"], default="cloud", help="Audio Backend")
     parser.add_argument("--dry-run", action="store_true", help="Simulate execution")
     
     args = parser.parse_args()
     out_dir = os.path.dirname(args.out) or "."
     
+    # --- DRAFT MIX MODE ---
+    if args.mode == "draft-mix":
+        if not args.xb or not args.input:
+            logging.error("❌ 'draft-mix' requires both --xb (Manifest) and --input (Video).")
+            sys.exit(1)
+            
+        logging.info("🍔 Enter Draft Mix Mode...")
+        manifest = load_manifest(args.xb)
+        
+        # 1. Foley (Hunyuan)
+        foley_assets = generate_hunyuan_batch(manifest, out_dir)
+        
+        # 2. Dialogue (Kokoro)
+        dialogue_assets = []
+        if manifest.dialogue and manifest.dialogue.lines:
+             dialogue_assets = generate_kokoro_dialogue(manifest.dialogue, out_dir)
+             
+        # 3. Mux
+        total_duration = get_audio_duration(args.input)
+        if total_duration <= 0:
+            logging.warning("⚠️ Could not determine video duration. Assuming 600s or Assets duration.")
+            total_duration = 600.0
+        
+        # Compose Tracks
+        foley_track = os.path.join(out_dir, "track_foley.wav")
+        compose_track(foley_assets, total_duration, foley_track)
+        
+        dial_track = os.path.join(out_dir, "track_dialogue.wav")
+        compose_track(dialogue_assets, total_duration, dial_track)
+        
+        # Final Mux
+        logging.info("🎛️ Final Muxing...")
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", args.input,
+            "-i", foley_track,
+            "-i", dial_track,
+            "-filter_complex", "[1:a]volume=0.6[a1];[2:a]volume=1.2[a2];[a1][a2]amix=inputs=2:duration=first[aout]",
+            "-map", "0:v", "-map", "[aout]",
+            "-c:v", "copy", "-c:a", "aac",
+            args.out
+        ]
+        try:
+            subprocess.run(cmd, check=True)
+            logging.info(f"✨ Done! Saved to {args.out}")
+        except Exception as e:
+            logging.error(f"❌ Mux Failed: {e}")
+            
+        return
+
+    # --- LEGACY MODES ---
+    if not args.input: 
+        logging.error("❌ Legacy modes require --input.")
+        sys.exit(1)
+        
     # 1. Dialogue Generation
     dialogue_wavs = []
     if args.xb:
@@ -446,13 +592,10 @@ def main():
             logging.error(f"Failed to load dialogue: {e}")
 
     # 2. Foley (Enhancement)
-    # Only implemented for Comfy Local mode currently
     foley_wav = None
     if args.mode == "comfy":
          wrapper = ComfyWrapper(dry_run=args.dry_run)
-         # foley_logic_here...
-         pass
-
+         
     # 3. Mix
     mix_audio(args.input, foley_wav, dialogue_wavs, args.out)
     logging.info(f"✨ Done! Mode: {args.mode.upper()}")

@@ -3,7 +3,7 @@ import logging
 import json
 import sys
 from pathlib import Path
-from mvp_shared import CSSV, Seg, Indecision, Manifest, load_cssv, load_api_keys, load_xmvp
+from mvp_shared import CSSV, Seg, Indecision, Manifest, DialogueScript, DialogueLine, load_cssv, load_api_keys, load_xmvp
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -28,6 +28,7 @@ def run_portion(bible_path: str, portions_path: str, out_path: str = "manifest.j
     logging.info(f"📐 Calculating segments @ {fps} FPS...")
     
     segs = []
+    all_dialogue_lines = []
     current_frame = 0
     
     for p_data in portions_data:
@@ -47,20 +48,41 @@ def run_portion(bible_path: str, portions_path: str, out_path: str = "manifest.j
             start_frame=start,
             end_frame=end,
             prompt=content,
-            action="static" # Default for now, could be inferred later
+            action="static" 
         )
         segs.append(seg)
         
+        # Extract Dialogue
+        if 'dialogue' in p_data:
+            scene_start_time = float(start) / float(fps)
+            line_offset_accumulator = 0.5 # Start 0.5s into scene
+            
+            for d in p_data['dialogue']:
+                # Basic Timing: assume 3 words per second?
+                # Or just stack them with slight gaps.
+                # Ideally, Writers Room provides duration. If not, estimate.
+                est_duration = len(d.get('text', '').split()) * 0.4 # Rough estimate
+                
+                dl = DialogueLine(
+                    character=d.get('character', 'Unknown'),
+                    text=d.get('text', ''),
+                    emotion=d.get('emotion', 'neutral'),
+                    start_offset=scene_start_time + line_offset_accumulator
+                )
+                all_dialogue_lines.append(dl)
+                line_offset_accumulator += (est_duration + 0.5)
+
         # Advance cursor
         current_frame = end
         
-    logging.info(f"✅ Generated {len(segs)} segments. Total Frames: {current_frame}")
+    logging.info(f"✅ Generated {len(segs)} segments. Total Frames: {current_frame}. Dialogue Lines: {len(all_dialogue_lines)}")
     
     # Construct Manifest
     manifest = Manifest(
         segs=segs,
         files={},
-        indecisions=[] 
+        indecisions=[],
+        dialogue=DialogueScript(lines=all_dialogue_lines) if all_dialogue_lines else None
     )
     
     # Save

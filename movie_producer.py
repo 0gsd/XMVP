@@ -12,7 +12,9 @@ import stub_reification
 import writers_room
 import portion_control
 import dispatch_director
-import post_production # For stitching
+import post_production 
+from foley_talk import get_audio_duration
+import math # For stitching
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -38,7 +40,10 @@ def clean_artifacts(out_dir):
 
 def main():
     parser = argparse.ArgumentParser(description="Movie Producer: The MVP Orchestrator (1.1)")
-    parser.add_argument("concept", nargs='?', help="The concept text (quoted string).")
+    
+    # Smart Positional Args (Heuristic-based)
+    parser.add_argument("pos_arg1", nargs='?', help="VPForm OR Concept")
+    parser.add_argument("pos_arg2", nargs='?', help="Concept (if arg1 was VPForm)")
     
     # Producer Args
     parser.add_argument("--seg", type=int, default=3, help="Number of segments to generate")
@@ -52,14 +57,44 @@ def main():
     parser.add_argument("--pg", action="store_true", help="Enable PG Mode (Relaxed Celebrity/Strict Child Safety)")
     
     # Ops Args
-    parser.add_argument("--clean", action="store_true", help="Clean intermediate JSONs before running")
-    parser.add_argument("--xb", type=str, help="XMVP Re-hydration path (Bypasses Vision Producer)")
+    parser.add_argument("--xb", type=str, default="clean", help="XMVP Re-hydration path OR 'clean' (default)")
     parser.add_argument("-f", "--fast", action="store_true", help="Use Faster/Cheaper Model Tier (Overwrites --vm)")
     parser.add_argument("--vfast", action="store_true", help="Use Legacy Veo 2.0 (Fastest)")
     parser.add_argument("--out", type=str, default=None, help="Override output directory")
     parser.add_argument("--local", action="store_true", help="Run Locally (Gemma + LTX-Video)")
     
+    parser.add_argument("--prompt", type=str, help="Alias for concept (the prompt)")
+    
     args = parser.parse_args()
+    
+    # --- Smart Argument Resolution ---
+    # Determine if pos_arg1 is a VPForm (heuristic: contains hyphen, short, no spaces)
+    potential_form = args.pos_arg1
+    concept = None
+    
+    if potential_form and ("-" in potential_form) and (" " not in potential_form) and (len(potential_form) < 30):
+        # Successful Alias Detection
+        logging.info(f"🔎 Detected Positional VPForm: {potential_form}")
+        args.vpform = potential_form
+        # Concept is strictly arg2
+        concept = args.pos_arg2
+    else:
+        # arg1 is likely the concept
+        if potential_form:
+            concept = potential_form
+            # ignore arg2? or append? Let's ignore to avoid confusion unless user fixes.
+    
+    # Store resolved concept
+    args.concept = concept
+    
+    # Alias Support: If --prompt provided but no positional concept, use prompt
+    if args.prompt and not args.concept:
+        args.concept = args.prompt
+
+    # Default Override for Draft Animatic (10 mins default)
+    if args.vpform == "draft-animatic" and args.seg == 3:
+        logging.info("📜 Draft Animatic: Defaulting to 10 minutes (75 segments @ 8s).")
+        args.seg = 75
 
     # Fast Mode Override
     if args.fast:
@@ -129,15 +164,39 @@ def main():
             os.makedirs(d)
 
     # 0. Boot
-    if not args.concept and not args.xb:
+    is_clean_run = (args.xb == "clean")
+    
+    if not args.concept and is_clean_run:
         logging.error("Please provide a concept string OR an --xb path.")
         sys.exit(1)
         
-    if args.clean:
+    if is_clean_run:
         clean_artifacts(OUT_DIR)
         
     ts = int(time.time())
     logging.info("🎬 MOVIE PRODUCER 1.1: Spinning up the Modular Vision Pipeline...")
+
+    # Auto-Carbonation for Short Titles (The "Sassprilla" Hook)
+    if args.concept and len(args.concept.split()) < 10 and "." not in args.concept and is_clean_run:
+        logging.info(f"🫧 Auto-Carbonating detected Title: '{args.concept}'")
+        try:
+             import sassprilla_carbonator
+             # Pass vpform as context (e.g. music-video implies certain lyrics/vibe)
+             expanded = sassprilla_carbonator.carbonate_prompt(
+                 args.concept, 
+                 artist=None, # inferred
+                 extra_context=args.vpform
+             )
+             if expanded:
+                 logging.info(f"✨ Carbonated Prompt Injected ({len(expanded)} chars)")
+                 # We replace the concept with the expanded version
+                 args.concept = expanded
+             else:
+                 logging.warning("Carbonator returned empty.")
+        except ImportError:
+             logging.warning("sassprilla_carbonator module not found.")
+        except Exception as e:
+             logging.warning(f"Carbonation failed (continuing with raw prompt): {e}")
 
     # Define paths
     p_bible = os.path.join(OUT_DIR, "bible.json")
@@ -147,7 +206,7 @@ def main():
     p_manifest_updated = os.path.join(OUT_DIR, "manifest_updated.json")
 
     # 1. Vision Producer (The Showrunner)
-    if args.xb:
+    if args.xb and args.xb != "clean":
         logging.info(f"📚 Re-hydrating form XMVP: {args.xb}")
         from mvp_shared import load_xmvp
         bible_content = load_xmvp(args.xb, "Bible")
@@ -160,14 +219,24 @@ def main():
         logging.info("   -> Skipped Vision Producer (Loaded from XML).")
         
     else:
-        total_length = args.seg * args.l
+        # Calculate Total Length
+        if args.vpform == "music-video" and args.mu and os.path.exists(args.mu):
+            audio_len = get_audio_duration(args.mu)
+            if audio_len > 0:
+                logging.info(f"🎵 Audio Driven Duration: {audio_len:.1f}s")
+                args.seg = math.ceil(audio_len / args.l)
+                total_length = audio_len # Use exact audio length
+            else:
+                total_length = args.seg * args.l
+        else:
+            total_length = args.seg * args.l
+
         success = vision_producer.run_producer(
             vpform_name=args.vpform,
             prompt=args.concept,
             slength=total_length,
             seg_len=args.l,
             chaos_seed_count=args.cs,
-
             cameo=args.cf,
             out_path=p_bible,
             audio_path=args.mu
@@ -198,15 +267,32 @@ def main():
     if not success: sys.exit(1)
 
     # 5. Dispatch Director (The Director)
-    success = dispatch_director.run_dispatch(
-        manifest_path=p_manifest,
-        mode="video",
-        model_tier=args.vm,
-        out_path=p_manifest_updated,
-        staging_dir=DIR_PARTS,
-        pg_mode=args.pg,
-        local_mode=args.local
-    )
+    # Both draft-animatic and music-video (in Local Mode) use the Flux Animatic Engine
+    if args.vpform in ["draft-animatic", "music-video"]:
+        logging.info(f"🎬 Mode: {args.vpform} (Flux Animatic Engine)")
+        import dispatch_animatic
+        # Resolve Flux Path
+        import definitions
+        flux_conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-schnell")
+        flux_path = flux_conf.path if flux_conf else "/Volumes/XMVPX/mw/flux-root"
+        
+        success = dispatch_animatic.run_animatic(
+            manifest_path=p_manifest,
+            out_path=p_manifest_updated,
+            staging_dir=DIR_PARTS,
+            flux_path=flux_path
+        )
+    else:
+        success = dispatch_director.run_dispatch(
+            manifest_path=p_manifest,
+            mode="video",
+            model_tier=args.vm,
+            out_path=p_manifest_updated,
+            staging_dir=DIR_PARTS,
+            pg_mode=args.pg,
+            local_mode=args.local
+        )
+    
     if not success: sys.exit(1)
 
     # 6. Post-Production (The Editor)
@@ -227,6 +313,27 @@ def main():
         logging.info(f"🧵 Stitching {len(stitch_list)} clips to {final_filename}...")
         post_production.stitch_videos(stitch_list, final_filename)
         
+        # 6.2 Draft Animatic Audio (The Whopper Integration)
+        if args.vpform == "draft-animatic" and os.path.exists(final_filename):
+            logging.info("🔊 Draft Animatic: Engaging Audio Pipeline (Draft Mix)...")
+            draft_audio_filename = os.path.join(DIR_FINAL, f"MVP_DRAFT_AUDIO_{ts}.mp4")
+            try:
+                # Call foley_talk.py via subprocess to keep environment clean
+                cmd_audio = [
+                    sys.executable, "foley_talk.py",
+                    "--input", final_filename,
+                    "--xb", p_manifest_updated,
+                    "--out", draft_audio_filename,
+                    "--mode", "draft-mix"
+                ]
+                subprocess.run(cmd_audio, check=True)
+                
+                if os.path.exists(draft_audio_filename):
+                    logging.info(f"✅ DRAFT AUDIO CUT: {draft_audio_filename}")
+                    final_filename = draft_audio_filename # Promote to final
+            except Exception as e:
+                logging.error(f"❌ Failed to run Draft Audio Pipeline: {e}")
+
         # 6.5 Music Muxing
         if args.mu and os.path.exists(args.mu) and os.path.exists(final_filename):
             logging.info(f"🎵 Muxing Audio Track: {args.mu}")

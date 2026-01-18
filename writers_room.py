@@ -7,7 +7,7 @@ import sys
 import re
 from pathlib import Path
 from text_engine import get_engine
-from mvp_shared import CSSV, Story, Portion, load_cssv, load_xmvp
+from mvp_shared import CSSV, Story, Portion, DialogueLine, load_cssv, load_xmvp
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -42,8 +42,8 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
     CONSTRAINTS:
     - Total Run Time: Approximately {total_duration} seconds.
     - Break the story into separate Visual Scenes/Shots.
-    - Each Scene MUST have a duration between 4.0 and 20.0 seconds.
-    - Variable pacing is encouraged (e.g. fast 4s cuts for action, 15s for dialogue).
+    - Each Scene MUST have a duration between 1.0 and 120.0 seconds.
+    - Variable pacing is encouraged (e.g. fast 1s cuts, or long 60s dialogue takes).
     - Ensure the sum of durations is close to {total_duration}s (+/- 10s).
     
     TASK:
@@ -51,8 +51,14 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
     
     OUTPUT FORMAT (JSON List):
     [
-        {{ "id": 1, "duration": 5.5, "content": "Description of scene 1..." }},
-        {{ "id": 2, "duration": 12.0, "content": "Description of scene 2..." }},
+        {{ 
+            "id": 1, 
+            "duration": 5.5, 
+            "content": "Description of scene 1...",
+            "dialogue": [
+                {{ "character": "Hero", "text": "Let's go!", "emotion": "urgent" }}
+            ]
+        }},
         ...
     ]
     """
@@ -80,13 +86,24 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
                 dur = float(item.get('duration', seg_length))
                 
                 # Clamp Duration
-                if dur < 4.0: dur = 4.0
-                if dur > 20.0: dur = 20.0
+                if dur < 1.0: dur = 1.0
+                if dur > 120.0: dur = 120.0 # Relaxed for Animatic / Long forms
                 
+                # Parse Dialogue
+                dialogue_list = []
+                if 'dialogue' in item:
+                    for d in item['dialogue']:
+                        dialogue_list.append(DialogueLine(
+                            character=d.get('character', 'Unknown'),
+                            text=d.get('text', ''),
+                            emotion=d.get('emotion', 'neutral')
+                        ))
+
                 portions.append(Portion(
                     id=item['id'],
                     duration_sec=dur, 
-                    content=item['content']
+                    content=item['content'],
+                    dialogue=dialogue_list
                 ))
                 calculated_total += dur
             

@@ -52,10 +52,11 @@ def get_gemini_logic(model, stage, context, current_res, text_engine=None):
     
     Current Stage: {stage}
     
-    Constraints:
+    Constraint Checklist & Confidence Score:
     1. Return ONLY the raw Python code (no markdown, no explanations).
     2. Assume input arrays are float32 (0.0 to 1.0).
     3. Ensure math is safe (no division by zero).
+    4. INDENTATION IS CRITICAL: Use 4 spaces. Ensure valid Python block structure.
     """
 
     if stage == "pixel_pass":
@@ -105,6 +106,7 @@ def get_gemini_logic(model, stage, context, current_res, text_engine=None):
         - Math Safety: `(x + 1e-6)`.
         - AFFINE SAFETY: If using `ndimage.affine_transform`, iterating per-channel is safest. Do NOT apply 2D matrix to 3D array.
         - Do NOT fade to black. Keep brightness typically > 0.4.
+        - CRITICAL: NO hallucinated functions.
         Return: Modified img array ({h}, {w}, 3).
         """
 
@@ -123,7 +125,7 @@ def get_gemini_logic(model, stage, context, current_res, text_engine=None):
         3. NO BLOCK MISMATCH: Do not try to reshape arrays into 5D tensors. Keep it simple (H, W, 3).
         4. PER-CHANNEL Filters: `ndimage` filters often flatten 3D arrays. Use:
            `for c in range(3): img_array[:,:,c] = filter(img_array[:,:,c])`
-        5. NO HALLUCINATIONS: `ndimage.sharpen` DOES NOT EXIST. Use Unsharp Mask:
+        5. NO HALLUCINATIONS: `ndimage.detail_enhance` DOES NOT EXIST. Use Unsharp Mask:
            `blurred = ndimage.gaussian_filter(img, sigma=1)`
            `sharpened = img + (img - blurred) * amount`
         
@@ -135,41 +137,33 @@ def get_gemini_logic(model, stage, context, current_res, text_engine=None):
         try:
             # 1. PREFERRED: Use TextEngine (Supports Local/Cloud abstraction)
             if text_engine:
+                 # Local Mode passes here now
                  text = text_engine.generate(prompt, temperature=0.7)
-            # 2. LEGACY: Use raw model object
-            else:
+            
+            # 2. LEGACY: Use raw model object (Cloud Only fallback)
+            elif model:
                  response = model.generate_content(prompt)
                  text = response.text
+            else:
+                 return None # No engine available
             
             if not text: return None
 
-            # Strip markdown code blocks if present
+            # Strip markdown code blocks if present (Centralized list stripping)
             if "```python" in text:
                 text = text.split("```python")[1].split("```")[0]
             elif "```" in text:
                 text = text.split("```")[1].split("```")[0]
             return text.strip()
+            
         except Exception as e:
             if "429" in str(e) or "ResourceExhausted" in str(e):
-                wait = 30 + (attempt * 5) # Heavy Linear Backoff: 30, 35, 40, 45s
+                wait = 30 + (attempt * 5)
                 print(f"(!) 429 Quota hit. Backing off {wait}s...")
-                
-                # ROTATION LOGIC (Only applies if not using TextEngine.generate(), 
-                # because TextEngine.generate handles its own rotation! 
-                # But wait, TextEngine.generate handles rotation internally? 
-                # Yes, looking at text_engine.py lines 258+.
-                # So if using text_engine, we shouldn't even be here in this catch block usually?
-                # Actually TextEngine.generate catches its own exceptions and returns string/None.
-                # So we might not catch 429 here if using text_engine.
-                
-                # We should trust TextEngine.generate() to handle headers/rotation.
-                # However, if it bubbled up here, it means it failed/exhausted.
-                # We MUST sleep to avoid busy loops.
                 time.sleep(wait)
                 continue 
-                
             else:
-                print(f"(!) Gemini Reasoning Error: {e}")
+                print(f"(!) Reasoning Error: {e}")
                 return None
     return None
 
@@ -319,7 +313,7 @@ def generate_seed_image(prompt, text_engine, init_dim=1024):
     # Fallback Cascade: Verified via model_scout.py
     candidate_models = [
         'gemini-2.5-flash-image',               # Native Content Gen
-        'gemini-2.0-flash-exp-image-generation', # Native Content Gen
+        'gemini-2.0-flash',                     # Native Content Gen (Stable)
         'imagen-4.0-generate-001',              # Imagen Native
         'imagen-4.0-fast-generate-001',         # Speed Fallback
         'gemini-2.0-flash'                      # Last Resort

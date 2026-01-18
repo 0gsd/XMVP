@@ -208,10 +208,36 @@ class TextEngine:
         """
         full_prompt = f"{SYSTEM_FILTER}\n\nUSER REQUEST:\n{prompt}"
         
+        raw_text = ""
         if self.backend == "local_gemma" and self.mlx_model:
-            return self._generate_local(full_prompt, temperature)
+            raw_text = self._generate_local(full_prompt, temperature)
         else:
-            return self._generate_gemini(full_prompt, temperature, json_schema)
+            raw_text = self._generate_gemini(full_prompt, temperature, json_schema)
+            
+        if not raw_text: return ""
+        
+        # --- CLEANING ---
+        # 1. Strip Markdown Code Blocks (common in Gemma/Gemini)
+        # Handle ```json ... ``` or just ``` ... ```
+        clean_text = raw_text
+        if "```" in clean_text:
+            try:
+                # Split by ``` and take the first block that looks like content
+                # Usually it's: text ```json CONTENT ``` text
+                parts = clean_text.split("```")
+                if len(parts) >= 3:
+                     # part 0: pre, part 1: content, part 2: post
+                     clean_text = parts[1]
+                     # If it starts with 'json' or 'python', strip that
+                     if clean_text.startswith("json"): clean_text = clean_text[4:]
+                     elif clean_text.startswith("python"): clean_text = clean_text[6:]
+                else:
+                    # Maybe just one block at end?
+                    clean_text = parts[1]
+            except:
+                pass # Fallback to raw if logic fails
+        
+        return clean_text.strip()
 
     def _generate_local(self, prompt, temperature):
         from mlx_lm import stream_generate

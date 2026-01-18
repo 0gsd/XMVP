@@ -186,7 +186,7 @@ def generate_image(prompt, output_path, ts=None):
                 if ts: final_prompt = ts.refine_prompt(prompt, pg_mode=True)
                 
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash-exp", 
+                    model="gemini-2.0-flash", 
                     contents=final_prompt
                 )
                 if response.candidates:
@@ -238,10 +238,10 @@ def generate_dynamic_cast(text_engine, seeds):
     print("    [✨] Casting Call: Generating Dynamic Personas...")
     selected_seeds = seeds[:4]
     slots = [
-        {"voice": "en-US-Journey-D", "pitch": 1, "gender": "Male"},
-        {"voice": "en-US-Journey-F", "pitch": -2, "gender": "Female"},
-        {"voice": "en-US-Journey-D", "pitch": -2, "gender": "Male"},
-        {"voice": "en-US-Journey-F", "pitch": 1, "gender": "Female"}
+        {"voice": "en-US-Journey-D", "pitch": 0, "gender": "Male"},      # Deep
+        {"voice": "en-US-Journey-F", "pitch": 0, "gender": "Female"},    # Warm
+        {"voice": "en-US-Journey-L", "pitch": 0, "gender": "Male"},      # Neutral
+        {"voice": "en-US-Journey-O", "pitch": 0, "gender": "Female"}     # Soft
     ]
     dynamic_cast = {}
     for i, seed in enumerate(selected_seeds):
@@ -261,6 +261,61 @@ def generate_dynamic_cast(text_engine, seeds):
             pass
     return dynamic_cast
 
+def generate_ensemble_cast(text_engine):
+    """Generates 4-person cast (2M, 2F) using Legacy GAHD Logic."""
+    print("    [✨] Casting Call: Summoning Character Actors (1975-2005)...")
+    
+    prompt = (
+        "Generate a cast of 4 distinct 'Character Actors' (2 Male, 2 Female) active 1975-2005.\n"
+        "CRITERIA: Recognizable but not A-List. Distinct voices/types. Real actors or very close pastiches.\n"
+        "OUTPUT JSON: "
+        "[{ 'name': 'Name', 'gender': 'Male/Female', 'persona': 'Vocal/Personality description' }, ...]"
+    )
+    
+    try:
+        raw = text_engine.generate(prompt, json_schema=True)
+        cast_list = json.loads(raw)
+        
+        # Ensure we have a list
+        if isinstance(cast_list, dict) and "cast" in cast_list: cast_list = cast_list["cast"]
+        
+        final_cast = {}
+        slots = [
+            {'gender': 'Male', 'voice': 'en-US-Journey-D', 'pitch': 1},
+            {'gender': 'Female', 'voice': 'en-US-Journey-F', 'pitch': -2},
+            {'gender': 'Male', 'voice': 'en-US-Journey-D', 'pitch': -2},
+            {'gender': 'Female', 'voice': 'en-US-Journey-F', 'pitch': 1}
+        ]
+        
+        # Attempt to match genders to slots
+        for i, actor in enumerate(cast_list[:4]):
+            # Find matching slot
+            slot = next((s for s in slots if s['gender'].lower() == actor.get('gender', 'Male').lower()), None)
+            if not slot and slots: slot = slots[0] # Fallback
+            if slot in slots: slots.remove(slot)
+            
+            voice = slot['voice'] if slot else 'en-US-Journey-D'
+            pitch = slot['pitch'] if slot else 0
+            
+            final_cast[actor['name']] = {
+                "base": actor['name'],
+                "voice": voice, 
+                "pitch": pitch,
+                "persona": actor.get('persona', 'A character actor.')
+            }
+            print(f"       + Cast {actor['name']} as {voice} (p{pitch})")
+            
+        return final_cast
+        
+    except Exception as e:
+        print(f"    [-] Casting Failed: {e}. Using Default Backup.")
+        return {
+            "Joe Pantoliano": {"voice": "en-US-Journey-D", "pitch": 1, "persona": "Fast-talking, nervous energy."},
+            "Margo Martindale": {"voice": "en-US-Journey-F", "pitch": -2, "persona": "Authoritative, Southern warmth."},
+            "JK Simmons": {"voice": "en-US-Journey-D", "pitch": -2, "persona": "Intense, demanding, rhythmic."},
+            "CCH Pounder": {"voice": "en-US-Journey-F", "pitch": 1, "persona": "Gravitas, deep resonance."}
+        }
+
 def run_improv_session(vpform, output_dir, text_engine, args):
     """
     Main Loop for Improv Mode.
@@ -278,14 +333,38 @@ def run_improv_session(vpform, output_dir, text_engine, args):
     os.makedirs(session_dir, exist_ok=True)
     
     # 2. Seeds & Cast
-    print("[*] Gathering Chaos Seeds...")
-    seeds = [get_chaos_seed() for _ in range(6)]
-    print(f"    Seeds: {seeds}")
-    
-    cast = defs["cast"]
-    # If using a dynamic form (not implemented yet fully, but stub logic exists) 
-    # we could swap cast here. using default cast for now.
-    cast_desc = "\n".join([f"- {n}: {d['persona']}" for n, d in cast.items()])
+    if "gahd" in vpform:
+        print("[*] G.A.H.D Mode: Fetching 2 Seeds for Movie Pitch...")
+        seeds = [get_chaos_seed() for _ in range(2)]
+        print(f"    Seeds: {seeds}")
+        
+        # Restore Improv Logic for GAHD (Ensemble Casting)
+        cast = generate_ensemble_cast(text_engine)
+        cast_desc = "\n".join([f"- {n}: {d['persona']}" for n, d in cast.items()])
+        
+        # Override System Prompt for GAHD
+        system_prompt = (
+            "You are a Writers Room of 4 eccentric screenwriters (Character Actors).\n"
+            f"The Cast:\n{cast_desc}\n\n"
+            f"The Mission:\n"
+            f"Develop a high-concept Movie Pitch that combines these two random elements:\n"
+            f"1. {seeds[0]}\n2. {seeds[1]}\n\n"
+            "The Rules:\n"
+            "1. Generate ONE turn at a time (Speaker + Dialogue + Physical Action).\n"
+            "2. Maintain a coherent conversation developing the pitch.\n"
+            "3. Style: Fast-paced, witty, collaborative but argumentative.\n"
+            "4. Format: JSON {{ 'speaker': 'Name', 'text': 'Dialogue', 'action_prompt': 'Visual description', 'visual_focus': 'Focus' }}\n"
+        )
+        
+    else:
+        # Standard Improv
+        print("[*] Gathering Chaos Seeds...")
+        seeds = [get_chaos_seed() for _ in range(6)]
+        print(f"    Seeds: {seeds}")
+        
+        cast = defs["cast"]
+        cast_desc = "\n".join([f"- {n}: {d['persona']}" for n, d in cast.items()])
+        system_prompt = defs["system_prompt_template"].format(cast_desc=cast_desc)
     
     # 3. Execution Loop
     total_duration = 0.0
@@ -293,7 +372,8 @@ def run_improv_session(vpform, output_dir, text_engine, args):
     assets = []
     history = []
     
-    system_prompt = defs["system_prompt_template"].format(cast_desc=cast_desc)
+    # system_prompt is set in block above now
+    # system_prompt = defs["system_prompt_template"].format(cast_desc=cast_desc)
     
     while total_duration < target_duration:
         # A. Seed Injection
@@ -301,11 +381,22 @@ def run_improv_session(vpform, output_dir, text_engine, args):
         current_seed = seeds[seed_idx] if seed_idx < len(seeds) else "The Grand Finale"
         
         # B. Write
-        prompt = (
-            f"Time: {total_duration:.1f}/{target_duration}s. Seed: {current_seed}\n"
-            f"History:\n" + "\n".join([f"{h['speaker']}: {h['text']}" for h in history[-8:]]) + 
-            "\n\nGenerate next turn (JSON)."
-        )
+        # B. Write
+        if "gahd" in vpform:
+             prompt = (
+                f"Time: {total_duration:.1f}/{target_duration}s.\n"
+                f"Current Topic: Pitching '{seeds[0]}' meets '{seeds[1]}'.\n"
+                f"History:\n" + "\n".join([f"{h['speaker']}: {h['text']}" for h in history[-10:]]) + 
+                "\n\nGenerate next turn (JSON)."
+            )
+        else:
+            seed_idx = int(total_duration // 240)
+            current_seed = seeds[seed_idx] if seed_idx < len(seeds) else "The Grand Finale"
+            prompt = (
+                f"Time: {total_duration:.1f}/{target_duration}s. Seed: {current_seed}\n"
+                f"History:\n" + "\n".join([f"{h['speaker']}: {h['text']}" for h in history[-8:]]) + 
+                "\n\nGenerate next turn (JSON)."
+            )
         
         turn_data = None
         for attempt in range(3):
@@ -675,15 +766,16 @@ def main():
     print(f"🎬 CONTENT PRODUCER | Local: {LOCAL_MODE} | Foley: {FOLEY_ENABLED} | Form: {args.vpform}")
     
     if args.vpform and ("podcast" in args.vpform or "cartoon" in args.vpform):
-        if "gahd" in args.vpform:
-            # Traditional Pair/Triplet Processing
-            run_podcast_processing(TRIPLETS_DIR, OUTPUT_DIR, args)
-        else:
-            # Improv Loops (24-podcast, 10-podcast)
-            text_engine = TextEngine() # Need TextEngine for writing
+        # 1. Generative Modes (GAHD, 24-podcast, 10-podcast)
+        if "gahd" in args.vpform or "24" in args.vpform or "10" in args.vpform:
+            text_engine = TextEngine()
             run_improv_session(args.vpform, OUTPUT_DIR, text_engine, args)
+        
+        # 2. Scanning Mode (Legacy/Manual Pairs)
+        else:
+            run_podcast_processing(TRIPLETS_DIR, OUTPUT_DIR, args)
     else:
-        # Default behavior: Scan for triplets (legacy podcast_animator behavior)
+        # Default behavior
         run_podcast_processing(TRIPLETS_DIR, OUTPUT_DIR, args)
 
 if __name__ == "__main__":

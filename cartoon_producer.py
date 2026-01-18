@@ -1602,15 +1602,20 @@ def main():
     if args.local:
         logging.info("🔌 Local Mode Requested. Switching Registry to Local Models...")
         try:
-            # Switch Text -> Gemma
+            # Switch Text -> Gemma (Use 4-bit Quantized by default for Safety)
             definitions.set_active_model(Modality.TEXT, "gemma-2-9b-it")
             os.environ["TEXT_ENGINE"] = "local_gemma"
             
             # Resolve Gemma Path Dynamically
             gemma_conf = definitions.MODAL_REGISTRY[Modality.TEXT].get("gemma-2-9b-it")
             if gemma_conf and gemma_conf.path:
-                os.environ["LOCAL_MODEL_PATH"] = str(gemma_conf.path)
-                logging.info(f"   📍 Text Model Path: {gemma_conf.path}")
+                # Force the 4-bit safe path if the registry points to raw
+                # Or trust TextEngine's default? 
+                # TextEngine default is "mlx-community/gemma-2-9b-it-4bit"
+                # But here we are setting env var override. 
+                # Let's set it to the safe default explicitly to fail-safe.
+                os.environ["LOCAL_MODEL_PATH"] = "mlx-community/gemma-2-9b-it-4bit"
+                logging.info(f"   📍 Text Model Path: {os.environ['LOCAL_MODEL_PATH']}")
                 
             # Switch Image -> Flux
             definitions.set_active_model(Modality.IMAGE, "flux-schnell")

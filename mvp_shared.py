@@ -153,7 +153,15 @@ def load_api_keys(env_path: Union[str, Path] = "env_vars.yaml") -> List[str]:
             if keys_b: full_list.extend([k.strip() for k in keys_b.split(',') if k.strip()])
             
             # Deduplicate
-            return list(set(full_list))
+            keys = list(set(full_list))
+            
+            # --- SIDEEFFECT: Load HF_TOKEN if present ---
+            hf_token = data.get("HF_TOKEN")
+            if hf_token:
+                os.environ["HF_TOKEN"] = hf_token.strip()
+                os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token.strip()
+                
+            return keys
     except Exception:
         return []
 

@@ -41,14 +41,14 @@ def clean_artifacts(out_dir):
 def main():
     parser = argparse.ArgumentParser(description="Movie Producer: The MVP Orchestrator (1.1)")
     
-    # Smart Positional Args (Heuristic-based)
-    parser.add_argument("pos_arg1", nargs='?', help="VPForm OR Concept")
-    parser.add_argument("pos_arg2", nargs='?', help="Concept (if arg1 was VPForm)")
+    # Global/Shared Positional Args
+    import definitions
+    definitions.add_global_vpform_args(parser)
     
     # Producer Args
     parser.add_argument("--seg", type=int, default=3, help="Number of segments to generate")
     parser.add_argument("--l", type=float, default=8.0, help="Length of each segment in seconds")
-    parser.add_argument("--vpform", type=str, default="tech-movie", help="Form/Genre (realize-ad, tech-movie)")
+    parser.add_argument("--vpform", type=str, default=None, help="Form/Genre (realize-ad, tech-movie)")
     parser.add_argument("--cs", type=int, default=0, help="Chaos Seeds level")
 
     parser.add_argument("--cf", type=str, default=None, help="Cameo Feature: Wikipedia URL or Search Query")
@@ -65,31 +65,49 @@ def main():
     
     parser.add_argument("--prompt", type=str, help="Alias for concept (the prompt)")
     
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
     
-    # --- Smart Argument Resolution ---
-    # Determine if pos_arg1 is a VPForm (heuristic: contains hyphen, short, no spaces)
-    potential_form = args.pos_arg1
+    # --- Smart Argument Resolution via Definitions ---
+    # 1. Resolve VPForm from cli_args
+    resolved_form = definitions.parse_global_vpform(args, current_default=args.vpform)
+    args.vpform = resolved_form
+    
+    # 2. Resolve Concept from leftover args
+    # Concept is the first positional arg that is NOT the resolved form alias and NOT 'run'
     concept = None
-    
-    if potential_form and ("-" in potential_form) and (" " not in potential_form) and (len(potential_form) < 30):
-        # Successful Alias Detection
-        logging.info(f"🔎 Detected Positional VPForm: {potential_form}")
-        args.vpform = potential_form
-        # Concept is strictly arg2
-        concept = args.pos_arg2
-    else:
-        # arg1 is likely the concept
-        if potential_form:
-            concept = potential_form
-            # ignore arg2? or append? Let's ignore to avoid confusion unless user fixes.
-    
-    # Store resolved concept
+    if args.cli_args:
+        for val in args.cli_args:
+            val_lower = val.lower()
+            if val_lower == "run": continue
+            
+            # Check if this val IS the form alias
+            form_match = definitions.resolve_vpform(val)
+            if form_match and form_match.key == resolved_form:
+                continue # Consumed as VPForm
+            
+            # If not consumed, it's the concept
+            concept = val
+            break # Take first non-form arg as concept
+            
     args.concept = concept
     
     # Alias Support: If --prompt provided but no positional concept, use prompt
     if args.prompt and not args.concept:
         args.concept = args.prompt
+
+    # Auto-Carbonation (Sassprilla)
+    if args.concept:
+        p_clean = args.concept.strip()
+        if p_clean.istitle() and "." not in p_clean and len(p_clean) < 80:
+            logging.info(f"🫧 Auto-Carbonating Title Prompt: '{p_clean}'...")
+            try:
+                 import sassprilla_carbonator
+                 expanded = sassprilla_carbonator.carbonate_prompt(p_clean)
+                 if expanded:
+                     logging.info(f"   ✨ Expanded to {len(expanded)} chars.")
+                     args.concept = expanded
+            except Exception as e:
+                 logging.warning(f"   ⚠️ Carbonation failed: {e}")
 
     # Default Override for Draft Animatic (10 mins default)
     if args.vpform == "draft-animatic" and args.seg == 3:
@@ -114,17 +132,40 @@ def main():
             
         logging.info("🏠 Local Mode Enabled: Switching models to Gemma (Text) and LTX (Video).")
         
+    # Cloud Movie Overrides (Veo Constraints)
+    if args.vpform in ["movies-movie", "parody-movie"]:
+        if not args.local:
+             logging.info(f"🌩️ Cloud Movie Mode ({args.vpform}): Enforcing Veo Constraints.")
+             if args.l != 8.0:
+                 logging.warning(f"   ⚠️ Overriding segment length {args.l}s -> 8.0s (Veo Requirement)")
+                 args.l = 8.0
+             
+             # Default to K (Veo 3.1) unless Fast is specified
+             if not args.fast and not args.vfast and args.vm == "K": # K is default
+                 # Ensure it stays K or upgrade? It's fine.
+                 pass
+             elif args.vm != "K" and not args.fast and not args.vfast:
+                 logging.info(f"   🎥 Switching Video Model to 'K' (Veo 3.1) for best results.")
+                 args.vm = "K"
+        
         # Force Local Text Engine via Env Var (Captured by text_engine.py)
         os.environ["TEXT_ENGINE"] = "local_gemma"
         
         # Resolve Local Model Path using Definitions
         try:
             import definitions
-            # Assuming 'gemma-2-9b-it' is the target local model
-            gemma_config = definitions.MODAL_REGISTRY[definitions.Modality.TEXT].get("gemma-2-9b-it")
+            # Assuming 'gemma-2-9b-it-director' (GemmaW) is the target local model with adapter
+            gemma_config = definitions.MODAL_REGISTRY[definitions.Modality.TEXT].get("gemma-2-9b-it-director")
+            if not gemma_config: # Fallback to base
+                 gemma_config = definitions.MODAL_REGISTRY[definitions.Modality.TEXT].get("gemma-2-9b-it")
+            
             if gemma_config and gemma_config.path:
                  os.environ["LOCAL_MODEL_PATH"] = gemma_config.path
                  logging.info(f"   📍 Local Text Model Path: {gemma_config.path}")
+                 
+                 if gemma_config.adapter_path:
+                      os.environ["LOCAL_ADAPTER_PATH"] = gemma_config.adapter_path
+                      logging.info(f"   🧩 Local Adapter Path: {gemma_config.adapter_path}")
             else:
                  logging.warning("   ⚠️ Local Gemma path not found in definitions. Using default.")
         except ImportError:
@@ -177,7 +218,10 @@ def main():
     logging.info("🎬 MOVIE PRODUCER 1.1: Spinning up the Modular Vision Pipeline...")
 
     # Auto-Carbonation for Short Titles (The "Sassprilla" Hook)
-    if args.concept and len(args.concept.split()) < 10 and "." not in args.concept and is_clean_run:
+    # DISABLE for Cloud Movies (they are exact remakes)
+    if args.vpform in ["movies-movie", "parody-movie"]:
+        logging.info("🚫 Cloud Movie Mode: Auto-Carbonation Disabled (Preserving Exact Title).")
+    elif args.concept and len(args.concept.split()) < 10 and "." not in args.concept and is_clean_run:
         logging.info(f"🫧 Auto-Carbonating detected Title: '{args.concept}'")
         try:
              import sassprilla_carbonator
@@ -220,7 +264,7 @@ def main():
         
     else:
         # Calculate Total Length
-        if args.vpform == "music-video" and args.mu and os.path.exists(args.mu):
+        if args.vpform in ["music-video", "full-movie"] and args.mu and os.path.exists(args.mu):
             audio_len = get_audio_duration(args.mu)
             if audio_len > 0:
                 logging.info(f"🎵 Audio Driven Duration: {audio_len:.1f}s")
@@ -267,8 +311,8 @@ def main():
     if not success: sys.exit(1)
 
     # 5. Dispatch Director (The Director)
-    # Both draft-animatic and music-video (in Local Mode) use the Flux Animatic Engine
     if args.vpform in ["draft-animatic", "music-video"]:
+        # FLUX ANIMATIC ENGINE
         logging.info(f"🎬 Mode: {args.vpform} (Flux Animatic Engine)")
         import dispatch_animatic
         # Resolve Flux Path
@@ -282,7 +326,18 @@ def main():
             staging_dir=DIR_PARTS,
             flux_path=flux_path
         )
+    elif args.vpform == "full-movie":
+        # WAN VIDEO ENGINE
+        logging.info("🎬 Mode: full-movie (Wan 2.1 Video Engine)")
+        import dispatch_wan
+        success = dispatch_wan.run_wan_pipeline(
+            manifest_path=p_manifest,
+            out_path=p_manifest_updated,
+            staging_dir=DIR_PARTS,
+            args=args
+        )
     else:
+        # Default Director (Legacy / Standard)
         success = dispatch_director.run_dispatch(
             manifest_path=p_manifest,
             mode="video",

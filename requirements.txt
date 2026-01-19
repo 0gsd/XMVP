@@ -12,3 +12,6 @@ google-genai
 tqdm
 requests
 pillow
+pyloudnorm
+soundfile
+librosa

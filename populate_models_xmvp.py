@@ -78,6 +78,11 @@ MODELS = {
         "type": "snapshot",
         "target": MW_ROOT / "hunyuan-foley"
     },
+    "Wan-2.1": {
+        "repo": "Wan-AI/Wan2.1-I2V-14B-720P",
+        "type": "snapshot", 
+        "target": MW_ROOT / "wan-root"
+    },
 }
 
 COMFY_REPO = "https://github.com/comfyanonymous/ComfyUI"

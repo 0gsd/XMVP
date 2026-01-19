@@ -36,7 +36,7 @@ try:
 except ImportError:
     pass # Handle locally inside function if missing
 import definitions
-from definitions import Modality, get_active_model
+from definitions import Modality, BackendType, get_active_model
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -520,7 +520,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
     
     # Bypass for Creative Agency / XB
     # Bypass for Creative Agency / XB / Music Visualizer / Music Agency
-    if args.vpform in ["creative-agency", "music-visualizer", "music-agency"] or args.xb:
+    if args.vpform in ["creative-agency", "music-visualizer", "music-video"] or args.xb:
         descriptions = ["Placeholder"] # Will be overwritten by logic below
     else:    
         with open(analysis_file, 'r') as f:
@@ -661,8 +661,9 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
              raw_desc = f"Visualizer Beat {i}. A single continuous abstract form {phase}. Progress: {int(progress*100)}%."
              prompts.append(f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames})")
 
-    elif args.vpform == "music-agency":
-        # === MUSIC AGENCY MODE ===
+    elif args.vpform == "music-video":
+        print(f"   Mode: Music Video Agency (Legacy: music-agency)")
+        # === MUSIC VIDEO AGENCY MODE ===
         # Combo: Audio Sync (Timing) + Creative Story (Content)
         
         if not args.mu or not os.path.exists(args.mu):
@@ -1003,7 +1004,112 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
     #    So we generate i (Even).
     #    If we have i-2 (Previous Even), we TWEEN i-1.
     
-    for i, p in enumerate(prompts):
+    # === NEW RECURSIVE LOGIC (5-Frame Buildout) ===
+    # 1 (Flux) -> 5 (Flux) -> 3 (Flux Tween) -> 2,4 (Pixel Fills)
+    recursive_mode = (getattr(args, 'fc', False) and getattr(args, 'vpform', '') in ['music-video', 'full-movie'] and getattr(args, 'local', False))
+
+    if recursive_mode:
+        logging.info("🚀 Engaging 5-Frame Recursive Flux Buildout (Local FC Mode)...")
+        i_idx = 0
+        N = len(prompts)
+        
+        while i_idx < N:
+            # 1. Start Frame (Frame Index i+1)
+            frame_start_idx = i_idx + 1
+            start_path = frames_dir / f"frame_{frame_start_idx:04d}.png"
+            
+            start_img = None
+            if i_idx == 0:
+                 # Generate First Frame via Flux (Seed)
+                 logging.info(f"   🎨 Batch Start: Frame {frame_start_idx} (Flux Seed)...")
+                 start_img = frame_canvas.generate_seed_image(prompts[i_idx], te, init_dim=args.kid)
+                 if start_img:
+                     start_img.save(start_path)
+                     last_generated_img = start_img
+                     success_count += 1
+            else:
+                 # Load existing start frame
+                 if start_path.exists():
+                      from PIL import Image
+                      start_img = Image.open(start_path)
+                 else:
+                      logging.warning(f"   ⚠️ Start Frame {frame_start_idx} missing in batch. Regenerating...")
+                      start_img = frame_canvas.generate_seed_image(prompts[i_idx], te, init_dim=args.kid)
+                      if start_img: start_img.save(start_path)
+
+            if not start_img:
+                logging.error("   ❌ Batch Start Failed. Aborting batch.")
+                i_idx += 1
+                continue
+
+            # 2. Determine End Frame (Target: +4 frames)
+            step = 4
+            next_i = min(i_idx + step, N - 1)
+            
+            if next_i <= i_idx:
+                 break # End of sequence
+                 
+            # 3. Generate End Frame via Flux
+            frame_end_idx = next_i + 1
+            end_path = frames_dir / f"frame_{frame_end_idx:04d}.png"
+            logging.info(f"   🎨 Batch End: Frame {frame_end_idx} (Flux)...")
+            
+            end_img = frame_canvas.generate_seed_image(prompts[next_i], te, init_dim=args.kid)
+            if end_img:
+                end_img.save(end_path)
+                success_count += 1
+            else:
+                 logging.error(f"   ❌ Batch End Frame {frame_end_idx} Failed.")
+                 # Fallback: Just advance one step linearly if Flux fails?
+                 i_idx += 1
+                 continue
+
+            # 4. Generate Mid Frame via Tween+Flux (i + next_i // 2)
+            mid_i = (i_idx + next_i) // 2
+            mid_img = None
+            
+            if mid_i > i_idx and mid_i < next_i:
+                 frame_mid_idx = mid_i + 1
+                 mid_path = frames_dir / f"frame_{frame_mid_idx:04d}.png"
+                 logging.info(f"   ✨ Batch Mid: Frame {frame_mid_idx} (Flux Tween)...")
+                 
+                 tween_mid = frame_canvas.tween_frames(start_img, end_img, blend=0.5)
+                 # Refine Tween with Flux
+                 mid_img = frame_canvas.refine_tween(tween_mid, prompts[mid_i], width=target_w, height=target_h, text_engine=te)
+                 if mid_img:
+                      mid_img.save(mid_path)
+                      success_count += 1
+                 else:
+                      logging.warning("   ⚠️ Mid-Tween Failed.")
+                      mid_img = tween_mid # Fallback to raw tween
+
+            # 5. Fill Gaps with Brute Force Blend (Tween)
+            # Gap 1: Start -> Mid
+            gap1_i = i_idx + 1
+            if gap1_i < mid_i and mid_img:
+                 logging.info(f"   🌪️  Batch Fill A: Frame {gap1_i+1} (Brute Force Blend)...")
+                 # Tween Start <-> Mid (50% blend)
+                 fill1 = frame_canvas.tween_frames(start_img, mid_img, blend=0.5)
+                 if fill1:
+                      fill1.save(frames_dir / f"frame_{gap1_i+1:04d}.png")
+                      success_count += 1
+
+            # Gap 2: Mid -> End
+            gap2_i = mid_i + 1
+            if gap2_i < next_i and mid_img and end_img:
+                  logging.info(f"   🌪️  Batch Fill B: Frame {gap2_i+1} (Brute Force Blend)...")
+                  # Tween Mid <-> End (50% blend)
+                  fill2 = frame_canvas.tween_frames(mid_img, end_img, blend=0.5)
+                  if fill2:
+                       fill2.save(frames_dir / f"frame_{gap2_i+1:04d}.png")
+                       success_count += 1
+
+            # Advance loop: The End Frame becomes the new Start Frame
+            i_idx = next_i
+            last_generated_img = end_img
+
+    legacy_prompts = [] if recursive_mode else prompts
+    for i, p in enumerate(legacy_prompts):
         index = i + 1
         
         # Pass model from args
@@ -1245,7 +1351,23 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         
         for i, src in enumerate(all_frames):
             dst = temp_stitch_dir / f"frame_{i+1:04d}.png"
-            shutil.copy(src, dst)
+            
+            # SAFE STITCHING: Resize if mismatch
+            # We use args.w/h if present, else args.kid, else 768
+            target_w = args.w if args.w else (args.kid if args.kid else 768)
+            target_h = args.h if args.h else (args.kid if args.kid else 768)
+            
+            try:
+                from PIL import Image
+                with Image.open(src) as img:
+                    if img.size != (target_w, target_h):
+                        logging.debug(f"   Resize {src.name} {img.size} -> {target_w}x{target_h}")
+                        img_resized = img.resize((target_w, target_h), Image.LANCZOS)
+                        img_resized.save(dst)
+                    else:
+                        shutil.copy(src, dst)
+            except ImportError:
+                shutil.copy(src, dst) # Fallback if PIL missing
             
         frames_pattern = temp_stitch_dir / "frame_%04d.png"
 
@@ -1498,6 +1620,44 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         mvp_shared.save_xmvp(xmvp_data, xml_path)
         logging.info(f"   📜 XMVP Saved: {xml_path}")
         
+        # --- WAN VIDEO HIJACK (Full Movie) ---
+        if args.vpform == "full-movie":
+            logging.info("🎬 Mode: full-movie (Wan 2.1 Video Engine). Hijacking FBF Loop.")
+            
+            # Convert XMVP Portions to Manifest JSON
+            # We need a 'manifest.json' for dispatch_wan
+            manifest_path = project_out / "manifest.json"
+            manifest = {
+                "vpform": "full-movie",
+                "portions": [p.model_dump() for p in portions]
+            }
+            # Note: Portions in cartoon mode typically lack 'audio_path'.
+            # dispatch_wan assumes some audio might exist or generates silence?
+            # User said: "We will generate all of the dialogue lines BEFORE..."
+            # In cartoon_producer, 'generate_visual_script' creates the text.
+            # But where is the audio?
+            # If using 'transcript folder', audio might be aligned? 
+            # Or assume text-to-video only (Wan supports it).
+            # We will pass what we have.
+            
+            with open(manifest_path, 'w') as f:
+                json.dump(manifest, f, indent=2)
+                
+            import dispatch_wan
+            success = dispatch_wan.run_wan_pipeline(
+                manifest_path=manifest_path,
+                out_path=project_out / "manifest_updated.json",
+                staging_dir=project_out / "parts",
+                args=args
+            )
+            
+            if success:
+                logging.info("✅ Wan Pipeline Complete.")
+                return # Skip FBF Loop
+            else:
+                logging.error("❌ Wan Pipeline Failed.")
+                return
+
         # 6. Cleanup
         # "Delete all but frame one from the frames folder"
         logging.info("   🧹 Cleaning up frames...")
@@ -1538,7 +1698,11 @@ def get_project_duration(project_dir):
 
 def main():
     parser = argparse.ArgumentParser(description="Cartoon Producer v1.1: The Creative Agency")
-    parser.add_argument("--vpform", type=str, default="creative-agency", help="VP Form (default: creative-agency)") # New Default!
+    
+    # CLI Polish: Positional Args for Aliases
+    definitions.add_global_vpform_args(parser)
+
+    parser.add_argument("--vpform", type=str, default=None, help="VP Form (default: creative-agency)") # Default via logic
     parser.add_argument("--tf", type=Path, default=DEFAULT_TF, help="Transcript Folder (Source)")
     parser.add_argument("--vf", type=Path, default=DEFAULT_VF, help="Video Folder (Corpus)")
     parser.add_argument("--fps", type=int, default=4, help="Expansion Factor (FBF) or Output FPS (Legacy). Default: 1")
@@ -1566,7 +1730,36 @@ def main():
     parser.add_argument("--w", type=int, help="Override width (Local Only, e.g. 1920)")
     parser.add_argument("--h", type=int, help="Override height (Local Only, e.g. 1080)")
     
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
+
+    # Handle 'run' in unknown if not captured by cli_args
+    for u in unknown:
+        if u.lower() == "run":
+            pass # Ignored command
+        elif u.startswith("-"):
+            logging.warning(f"Unknown flag ignored: {u}")
+    
+    # CLI Polish: Handle Aliases via Global Registry
+    # This automatically resolves 'music-agency', 'mv', 'viz' -> 'music-video'
+    args.vpform = definitions.parse_global_vpform(args, current_default="creative-agency")
+    
+    logging.info(f"   CLI: Resolved VPForm: {args.vpform}")
+
+    # Auto-Carbonation (Sassprilla)
+    # Check for "Song Title Case" prompts (Short, Title Case, No Periods)
+    if args.prompt:
+        p_clean = args.prompt.strip()
+        # Heuristic: Title Case, No periods (not a sentence), relatively short (< 60 chars)
+        if p_clean.istitle() and "." not in p_clean and len(p_clean) < 80:
+            logging.info(f"🫧 Auto-Carbonating Title Prompt: '{p_clean}'...")
+            try:
+                import sassprilla_carbonator
+                expanded = sassprilla_carbonator.carbonate_prompt(p_clean)
+                if expanded:
+                    logging.info(f"   ✨ Expanded to {len(expanded)} chars.")
+                    args.prompt = expanded
+            except Exception as e:
+                logging.warning(f"   ⚠️ Carbonation failed: {e}")
     
     # Setup Paths
     # Point to CENTRAL env_vars.yaml in tools/fmv/
@@ -1594,9 +1787,13 @@ def main():
     logging.info(f"   Video Folder: {args.vf}")
     
     # 0. Load Keys (Already done at startup)
-    # keys = load_keys(Path("env_vars.yaml"))  <-- DELETE THIS REDUNDANT LINE
-    pass
     
+    # 0.5 Full-Movie Resolution Default
+    if args.vpform == "full-movie":
+        if not args.w: args.w = 512
+        if not args.h: args.h = 288
+        logging.info(f"   🎥 Full Movie Mode: Enforcing {args.w}x{args.h}")
+        
     # --- PRODUCER MODE SWITCHING ---
     # --- PRODUCER MODE SWITCHING ---
     if args.local:
@@ -1646,7 +1843,7 @@ def main():
          # Force Image Model? Or respect Registry?
          # Legacy behavior was specific. Let's stick to Registry unless overridden.
          pass
-    elif args.vpform in ["creative-agency", "music-visualizer", "music-agency"]:
+    elif args.vpform in ["creative-agency", "music-visualizer", "music-agency", "music-video", "full-movie"]:
         # Only switch to Gemini 2.0 (Director Mode) if NOT local.
         # Local mode uses Flux directly.
         if not args.local:
@@ -1658,7 +1855,7 @@ def main():
     logging.info(f"   Model: {model}")
     
     # Scan (Only needed for legacy FBF/Transcript mode)
-    if args.vpform in ["creative-agency", "music-visualizer", "music-agency"] or args.xb:
+    if args.vpform in ["creative-agency", "music-visualizer", "music-agency", "music-video", "full-movie"] or args.xb:
         # Virtual Project
         try:
              args.model = model

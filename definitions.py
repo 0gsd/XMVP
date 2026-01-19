@@ -6,9 +6,11 @@
 import os
 import json
 from enum import Enum
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Any
+import argparse
+import logging
 
 # --- LEGACY SUPPORT ---
 VIDEO_MODELS = {
@@ -46,6 +48,7 @@ class ModelConfig:
     backend: BackendType
     modality: Modality
     path: Optional[str] = None # For Local (Absolute path)
+    adapter_path: Optional[str] = None # For Local Adapters (Relative to root or Absolute)
     endpoint: Optional[str] = None # For Cloud (if non-standard)
     api_key_env: Optional[str] = None # Env var name for key
     cost_estimate: float = 0.0
@@ -59,7 +62,8 @@ MODAL_REGISTRY: Dict[Modality, Dict[str, ModelConfig]] = {
     Modality.TEXT: {
         "gemini-2.0-flash": ModelConfig("gemini-2.0-flash", BackendType.CLOUD, Modality.TEXT, api_key_env="GEMINI_API_KEY"),
         "gemini-1.5-pro": ModelConfig("gemini-1.5-pro-002", BackendType.CLOUD, Modality.TEXT, api_key_env="GEMINI_API_KEY"),
-        "gemma-2-9b-it": ModelConfig("gemma-2-9b-it", BackendType.LOCAL, Modality.TEXT, path="/Volumes/XMVPX/mw/gemma-root")
+        "gemma-2-9b-it": ModelConfig("gemma-2-9b-it", BackendType.LOCAL, Modality.TEXT, path="/Volumes/XMVPX/mw/gemma-root"),
+        "gemma-2-9b-it-director": ModelConfig("gemma-2-9b-it", BackendType.LOCAL, Modality.TEXT, path="/Volumes/XMVPX/mw/gemma-root", adapter_path="adapters/director_v1")
     },
     Modality.IMAGE: {
         "gemini-2.5-flash-image": ModelConfig("gemini-2.5-flash-image", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
@@ -139,3 +143,145 @@ def set_active_model(modality: Modality, model_id: str):
     save_data = {k.value: v for k, v in ACTIVE_PROFILE.items()}
     with open(ACTIVE_PROFILE_PATH, 'w') as f:
         json.dump(save_data, f, indent=2)
+
+# -----------------------------------------------------------------------------
+# VP FORM REGISTRY (Unified)
+# -----------------------------------------------------------------------------
+
+@dataclass
+class VPFormConfig:
+    key: str                    # Unique ID (e.g. "music-agency")
+    aliases: List[str]          # Aliases (e.g. ["music-video", "mv"])
+    description: str            # Help text
+    default_args: Dict[str, Any] = field(default_factory=dict) # Default overrides
+
+# The Master Form Registry
+FORM_REGISTRY = {
+    # --- SHARED GLOBAL FORMS ---
+    "music-video": VPFormConfig(
+        key="music-video", # Unified Key (Was 'music-agency' in cartoon_producer)
+        aliases=["mv", "music-agency"], 
+        default_args={"fps": 8, "vspeed": 8},
+        description="Music Video Generation (Story/Agency Mode)"
+    ),
+    "music-visualizer": VPFormConfig(
+        key="music-visualizer",
+        aliases=["viz", "visualizer", "audio-reactive"],
+        default_args={"fps": 12},
+        description="Abstract Music Visualizer"
+    ),
+    "creative-agency": VPFormConfig(
+        key="creative-agency", 
+        aliases=["ca", "commercial", "ad", "agency"],
+        default_args={"fps": 12},
+        description="Commercial/Creative Agency Spot"
+    ),
+
+    # --- MOVIE PRODUCER SPECIFIC ---
+    "tech-movie": VPFormConfig(
+        key="tech-movie",
+        aliases=["tech", "tm"],
+        default_args={},
+        description="Tech/Code Movie Generator"
+    ),
+    "draft-animatic": VPFormConfig(
+        key="draft-animatic",
+        aliases=["animatic", "draft", "storyboard"],
+        default_args={},
+        description="Static Storyboard / Animatic Mode"
+    ),
+    "full-movie": VPFormConfig(
+        key="full-movie",
+        aliases=["feature", "movie"],
+        default_args={"fps": 23.976},
+        description="A full-length feature film animatic."
+    ),
+    "movies-movie": VPFormConfig(
+        key="movies-movie",
+        aliases=["mm", "remake", "blockbuster"],
+        default_args={},
+        description="Condensed Hollywood Blockbuster Remake (Cloud/Veo)."
+    ),
+    "parody-movie": VPFormConfig(
+        key="parody-movie",
+        aliases=["pm", "spoof", "parody"],
+        default_args={},
+        description="Direct Parody/Spoof of a Movie (Cloud/Veo)."
+    ),
+
+    # --- CONTENT PRODUCER SPECIFIC ---
+    "thax-douglas": VPFormConfig(
+        key="thax-douglas",
+        aliases=["thax", "td"],
+        default_args={},
+        description="Thax Douglas Spoken Word Generator"
+    ),
+    "gahd-podcast": VPFormConfig(
+        key="gahd-podcast",
+        aliases=["gahd", "god", "history"],
+        default_args={},
+        description="Great Moments in History Podcast"
+    ),
+    "24-podcast": VPFormConfig(
+        key="24-podcast",
+        aliases=["24", "news"],
+        default_args={},
+        description="The Around The Entire World In 24 Minutes Or So By William, Maggie, Francis, and Anne Tailored Podcast"
+    ),
+     "10-podcast": VPFormConfig(
+        key="10-podcast",
+        aliases=["10", "tech-news"],
+        default_args={},
+        description="The Vibes Only Who Are You Maybe Cringe Always Topical Totally Random Except Not Chaos Unpacking Podcast"
+    ),
+    "route66-podcast": VPFormConfig(
+        key="route66-podcast",
+        aliases=["r66", "route66"],
+        default_args={},
+        description="6-Person Improv Narrative (66 Minutes)"
+    ),
+}
+
+def resolve_vpform(input_string: str) -> Optional[VPFormConfig]:
+    """
+    Resolves an input string (key or alias) to a VPFormConfig.
+    Returns the CONFIG object or None if not found.
+    """
+    if not input_string: return None
+    s = input_string.lower().strip()
+    
+    # Direct Key Match
+    if s in FORM_REGISTRY:
+        return FORM_REGISTRY[s]
+    
+    # Alias Match
+    for form in FORM_REGISTRY.values():
+        if s in form.aliases:
+            return form
+            
+    return None
+
+def add_global_vpform_args(parser: argparse.ArgumentParser):
+    """Adds the standard positional 'cli_args' to a parser."""
+    parser.add_argument("cli_args", nargs="*", help="Global Positional Args (VPForm Alias, Commands)")
+
+def parse_global_vpform(args, current_default: str = None) -> str:
+    """
+    Extracts and resolves the VPForm from args.cli_args or args.vpform.
+    Returns the RESOLVED canonical key (e.g. 'music-agency').
+    """
+    # 1. Check Explicit Flag
+    if getattr(args, "vpform", None):
+        res = resolve_vpform(args.vpform)
+        if res: return res.key
+        
+    # 2. Check Positional
+    if getattr(args, "cli_args", None):
+        for val in args.cli_args:
+            if val.lower() == "run": continue # Ignore command
+            res = resolve_vpform(val)
+            if res:
+                logging.info(f"🔎 CLI: Alias '{val}' -> '{res.key}'")
+                return res.key
+    
+    return current_default

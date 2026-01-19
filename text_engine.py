@@ -45,6 +45,7 @@ class TextEngine:
     def __init__(self, config_path=None):
         self.backend = "gemini_api" # Default
         self.local_model_path = "mlx-community/gemma-2-9b-it-4bit"
+        self.local_adapter_path = None
         self.api_keys = []
         self.mlx_model = None
         self.mlx_tokenizer = None
@@ -71,6 +72,7 @@ class TextEngine:
              self.backend = "local_gemma"
              # Optionally set model path if also in env, otherwise default
              self.local_model_path = os.environ.get("LOCAL_MODEL_PATH", "mlx-community/gemma-2-9b-it-4bit")
+             self.local_adapter_path = os.environ.get("LOCAL_ADAPTER_PATH")
 
         elif config_path and os.path.exists(config_path):
             try:
@@ -88,6 +90,7 @@ class TextEngine:
                             self.local_model_path = str(volume_path)
                         else:
                             self.local_model_path = custom_path
+                    self.local_adapter_path = config.get("LOCAL_ADAPTER_PATH")
                 
                 # Auto-detect default if not explicitly set but mode IS local
                 elif self.backend == "local_gemma":
@@ -143,9 +146,15 @@ class TextEngine:
                 return
 
         logging.info(f"   ⏳ Loading Local Model: {self.local_model_path}...")
+        if self.local_adapter_path:
+             logging.info(f"   🧩 Loading Adapter: {self.local_adapter_path}")
+
         try:
             from mlx_lm import load
-            self.mlx_model, self.mlx_tokenizer = load(self.local_model_path)
+            self.mlx_model, self.mlx_tokenizer = load(
+                self.local_model_path, 
+                adapter_path=self.local_adapter_path
+            )
             logging.info("   ✅ Local Model Loaded.")
         except Exception as e:
             logging.error(f"   ❌ Failed to load local model: {e}.")
@@ -206,6 +215,63 @@ class TextEngine:
              logging.error(f"[-] Failed to bridge V1 model: {e}")
              return None
 
+    def _clean_json_output(self, text):
+        """
+        Robustly extracts JSON from text, handling:
+        1. Markdown code blocks
+        2. Trailing text (Extra data)
+        3. Leading garbage
+        """
+        clean_text = text
+        
+        # 1. Strip Markdown Code Blocks
+        if "```" in clean_text:
+            try:
+                parts = clean_text.split("```")
+                # Usually: [pre, content, post] or [pre, content]
+                # We find the first block that looks like content
+                # Heuristic: Look for the block with largest length or just the first inner one
+                if len(parts) >= 3:
+                     clean_text = parts[1]
+                     if clean_text.lower().startswith("json"): clean_text = clean_text[4:]
+                     elif clean_text.lower().startswith("python"): clean_text = clean_text[6:]
+                elif len(parts) == 2:
+                     # Maybe content is after first ```?
+                     clean_text = parts[1]
+            except:
+                pass 
+        
+        clean_text = clean_text.strip()
+        
+        # 2. Extract JSON using raw_decode
+        # This solves "Extra data: line X column Y" by stopping at the end of valid JSON
+        try:
+            # Fast path
+            json.loads(clean_text)
+            return clean_text
+        except json.JSONDecodeError:
+            pass
+            
+        # 3. Locate Start of JSON
+        idx = -1
+        first_brace = clean_text.find('{')
+        first_bracket = clean_text.find('[')
+        
+        if first_brace != -1 and (first_bracket == -1 or first_brace < first_bracket):
+            idx = first_brace
+        elif first_bracket != -1:
+            idx = first_bracket
+            
+        if idx != -1:
+            try:
+                # raw_decode returns (obj, end_index)
+                obj, end = json.JSONDecoder().raw_decode(clean_text[idx:])
+                return clean_text[idx:idx+end]
+            except:
+                pass
+
+        return clean_text
+
     def generate(self, prompt, temperature=0.7, json_schema=None):
         """
         Universal generation method.
@@ -221,26 +287,26 @@ class TextEngine:
             
         if not raw_text: return ""
         
-        # --- CLEANING ---
-        # 1. Strip Markdown Code Blocks (common in Gemma/Gemini)
-        # Handle ```json ... ``` or just ``` ... ```
+        if json_schema:
+            return self._clean_json_output(raw_text)
+        
+        # Legacy Cleaning (Markdown only) for non-JSON requests?
+        # Actually the cleaner handles markdown nicely too, but might strip too much if not JSON?
+        # If not json_schema, we usually want raw text but maybe without markdown blocks?
+        # Let's keep existing logic for non-json to avoid regression.
+        
         clean_text = raw_text
         if "```" in clean_text:
             try:
-                # Split by ``` and take the first block that looks like content
-                # Usually it's: text ```json CONTENT ``` text
                 parts = clean_text.split("```")
                 if len(parts) >= 3:
-                     # part 0: pre, part 1: content, part 2: post
                      clean_text = parts[1]
-                     # If it starts with 'json' or 'python', strip that
                      if clean_text.startswith("json"): clean_text = clean_text[4:]
                      elif clean_text.startswith("python"): clean_text = clean_text[6:]
                 else:
-                    # Maybe just one block at end?
                     clean_text = parts[1]
             except:
-                pass # Fallback to raw if logic fails
+                pass # Fallback to raw
         
         return clean_text.strip()
 

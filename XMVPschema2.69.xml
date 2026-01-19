@@ -1,0 +1,57 @@
+<?xml version='1.0' encoding='utf-8'?>
+<XMVP version="2.69">
+  <Bible>{
+  "constraints": {
+    "width": 768,
+    "height": 768,
+    "fps": 24,
+    "max_duration_sec": 60.0,
+    "target_segment_length": 4.0,
+    "black_and_white": false,
+    "silent": false,
+    "style_bans": []
+  },
+  "scenario": "A 60.0-second tech-movie",
+  "situation": "CONCEPT: The Hero's Journey to create a free open source modular vision pipeline for easily exporting and importing structured narratives.",
+  "vision": "STYLE: Modern Sci-Fi Drama. AESTHETIC: Cold blues, warm oranges, lens flares, high-tech interfaces. PACING: Narrative-driven, suspenseful."
+}</Bible>
+  <Story>{
+  "title": "The Pipeline Protocol",
+  "synopsis": "In a fragmented digital world, a lone developer fights against monolithic walled gardens to forge the 'Modular Vision Pipeline' (MVP). Battling complexity and closed-source villains, they piece together the XMVP standard, unlocking creative freedom for the masses.",
+  "characters": [
+    "The Architect (Developer)",
+    "The Monolith (Antagonist AI)"
+  ],
+  "theme": "Democratization of Creativity"
+}</Story>
+  <Manifest>{
+  "segs": [
+    {
+      "id": 1,
+      "start_frame": 0,
+      "end_frame": 96,
+      "prompt": "Close up of The Architect coding late at night, multiple screens glowing with XMVP XML code, intense focus.",
+      "action": "static",
+      "model_overrides": {}
+    },
+    {
+      "id": 2,
+      "start_frame": 96,
+      "end_frame": 192,
+      "prompt": "The Monolith looms over a digital city, its walls made of proprietary code blocks, casting a shadow.",
+      "action": "pan_up",
+      "model_overrides": {}
+    },
+    {
+      "id": 3,
+      "start_frame": 192,
+      "end_frame": 288,
+      "prompt": "The Architect hits enter, and a wave of open source golden light spreads from their keyboard, dismantling the walls.",
+      "action": "static",
+      "model_overrides": {}
+    }
+  ],
+  "files": {},
+  "indecisions": []
+}</Manifest>
+</XMVP>

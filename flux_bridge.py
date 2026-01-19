@@ -102,14 +102,23 @@ class FluxBridge:
         if seed is not None:
             generator = torch.Generator(device="cpu").manual_seed(seed) # MPS generators tricky? Use CPU for determinism if needed
             
+        # Prompt Sanitization & Truncation (Fix for CLIP 77 token limit)
+        # Flux uses T5 (512 tokens) and CLIP (77 tokens). Diffusers usually masks the excess,
+        # but explicit truncation avoids "Batch size mismatch" or tokenizer warnings.
+        # We target ~70 words / 300 chars to be safe.
+        safe_prompt = prompt
+        if len(prompt) > 350:
+            logging.warning(f"   ✂️ Truncating long prompt ({len(prompt)} chars).")
+            safe_prompt = prompt[:350]
+            
         try:
             image_obj = self.pipeline(
-                prompt,
+                safe_prompt,
                 height=height,
                 width=width,
                 num_inference_steps=steps,
                 generator=generator,
-                guidance_scale=0.0 # Flux Schnell needs 0 guidance usually? Or 3.5? Schnell is 0.
+                guidance_scale=0.0 # Flux Schnell
             )
             image = image_obj.images[0]
             del image_obj

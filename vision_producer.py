@@ -65,6 +65,12 @@ VP_FORMS = {
         fps=24,
         mime_type="video/mp4", # Sequence of images really
         description="High-speed 512x288 animatic for storyboard visualization."
+    ),
+    "full-movie": VPForm(
+        name="full-movie",
+        fps=24,
+        mime_type="video/mp4",
+        description="A full-length feature film animatic."
     )
 }
 
@@ -105,7 +111,7 @@ def get_default_vision(form_name: str, seg_count: int = 0) -> str:
                 "PACING: Relentless, joke-a-minute, slapstick mixed with deadpan seriousness. "
                 "INSPIRATION: Airplane!, The Naked Gun, Hot Shots!, Spaceballs. "
                 "AUDIO: Pun-heavy dialogue, serious delivery of absurd lines, surreal sound effects (Firesign Theater influence). "
-                "STRUCTURE: A full three-act movie condensed into a few seconds, following the exact plot beats of the original but making them ridiculous."
+                "STRUCTURE: A full three-act movie condensed into the allocated runtime, following the exact plot beats of the original but making them ridiculous."
             )
         else:
             # Pastiche Segment
@@ -119,10 +125,15 @@ def get_default_vision(form_name: str, seg_count: int = 0) -> str:
             )
     elif form_name == "music-video":
         return (
-            "STYLE: Cinematic Music Video. "
-            "AESTHETIC: High contrast, atmospheric, visually striking, abstract or narrative-driven. "
-            "PACING: Rhythmic, aligned with music beats. "
             "CONTENT: Visual metaphors, performance shots (if band mentioned), or pure narrative storytelling."
+        )
+    elif form_name == "full-movie":
+        return (
+            "STYLE: Feature Film Animatic. "
+            "AESTHETIC: Cinematic composition, 512x288 aspect, storyboard style or rough render. "
+            "PACING: Narrative-driven, scene-by-scene. "
+            "STRUCTURE: Coherent long-form narrative. "
+            "GOAL: To visualize a complete feature film story within the duration."
         )
     else:
         return "Standard Production."

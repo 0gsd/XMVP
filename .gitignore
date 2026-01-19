@@ -2,6 +2,23 @@
 env_vars.yaml
 secrets.yaml
 .env
+setup_applio_trainer.sh
+start_applio.sh
+prep_voice_dataset.py
+debug_rvc_import.py
+debug_rvc_import_2.py
+debug_rvc_import_3.py
+test_critic_load.py
+fetch_thax_corpus.py
+install_thax_model.py
+external_trainers/
+debug_thax_rvc.sh
+debug_rvc_manual.py
+check_rvc_setup.py
+z_training_data/thax_voice/dataset
+z_training_data/thax_voice/raw
+z_training_data/24_voices
+z_training_data/route66_voices
 
 # Setups
 frozen_requirements.txt
@@ -10,7 +27,8 @@ brew_packages.txt
 setup_studio.sh
 script_scraper.py
 prepare_training_data.py
-z_training_data/
+z_training_data/parsed_scripts/
+z_training_data/parsed_scripts/*
 train_director.sh
 adapters/
 

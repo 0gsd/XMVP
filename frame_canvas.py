@@ -491,7 +491,7 @@ def generate_recursive(prompt, width=1024, height=1024, context=None, model=None
         res_label = max(cur_w, cur_h) # Label for prompt
         
         # Detail Pass
-        current_arr = perform_stage_pass(current_arr, "detail_pass", prompt, get_model(), res_label)
+        current_arr = perform_stage_pass(current_arr, "detail_pass", prompt, get_model(), res_label, text_engine)
         gc.collect()
 
     # Final Convert
@@ -500,11 +500,11 @@ def generate_recursive(prompt, width=1024, height=1024, context=None, model=None
     gc.collect()
     return Image.fromarray(final_img)
 
-def perform_stage_pass(img_arr, stage_name, prompt, model, res):
+def perform_stage_pass(img_arr, stage_name, prompt, model, res, text_engine=None):
     """ Helper to run a logic pass on an array """
     print(f"   [Refine] Adding details for {res}px...")
     full_ctx = f"Prompt: {prompt}\nResolution: {res}px"
-    code = get_gemini_logic(model, stage_name, full_ctx, 0)
+    code = get_gemini_logic(model, stage_name, full_ctx, 0, text_engine)
     func = compile_ai_code(code, f"logic_{stage_name}")
     
     if func:

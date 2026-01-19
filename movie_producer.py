@@ -47,6 +47,7 @@ def main():
     
     # Producer Args
     parser.add_argument("--seg", type=int, default=3, help="Number of segments to generate")
+    parser.add_argument("--slength", type=float, default=0.0, help="Target Total Duration in Seconds")
     parser.add_argument("--l", type=float, default=8.0, help="Length of each segment in seconds")
     parser.add_argument("--vpform", type=str, default=None, help="Form/Genre (realize-ad, tech-movie)")
     parser.add_argument("--cs", type=int, default=0, help="Chaos Seeds level")
@@ -130,7 +131,43 @@ def main():
             logging.info("🏠 Local Mode: Defaulting vpform to 'music-video'")
             args.vpform = "music-video"
             
-        logging.info("🏠 Local Mode Enabled: Switching models to Gemma (Text) and LTX (Video).")
+        if args.vpform == "full-movie":
+            logging.info("🏠 Local Mode Enabled: Switching models to Local Gemma (Text) and Wan 2.1 (Video).")
+        else:
+            logging.info("🏠 Local Mode Enabled: Switching models to Local Gemma (Text) and LTX (Video).")
+
+        # Explicitly Enforce Local Text Engine
+        os.environ["TEXT_ENGINE"] = "local_gemma"
+        
+        # ⚠️ CRITICAL: Reset TextEngine Singleton
+        # If any module (e.g. sassprilla/carbonator) initialized the engine early,
+        # it would have picked up the default (Gemini). We must force a re-init.
+        try:
+             import text_engine
+             text_engine._ENGINE = None
+             logging.info("   ♻️  TextEngine Singleton Reset (Forcing Local Re-Init).")
+        except ImportError:
+             pass
+
+        # Resolve Local Model Path using Definitions (Global for ALL local modes)
+        try:
+            import definitions
+            # Assuming 'gemma-2-9b-it-director' (GemmaW) is the target local model with adapter
+            gemma_config = definitions.MODAL_REGISTRY[definitions.Modality.TEXT].get("gemma-2-9b-it-director")
+            if not gemma_config: # Fallback to base
+                 gemma_config = definitions.MODAL_REGISTRY[definitions.Modality.TEXT].get("gemma-2-9b-it")
+            
+            if gemma_config and gemma_config.path:
+                 os.environ["LOCAL_MODEL_PATH"] = gemma_config.path
+                 logging.info(f"   📍 Local Text Model Path: {gemma_config.path}")
+                 
+                 if gemma_config.adapter_path:
+                      os.environ["LOCAL_ADAPTER_PATH"] = gemma_config.adapter_path
+                      logging.info(f"   🧩 Local Adapter Path: {gemma_config.adapter_path}")
+            else:
+                 logging.warning("   ⚠️ Local Gemma path not found in definitions. Using default.")
+        except ImportError:
+             pass
         
     # Cloud Movie Overrides (Veo Constraints)
     if args.vpform in ["movies-movie", "parody-movie"]:
@@ -151,26 +188,6 @@ def main():
         # Force Local Text Engine via Env Var (Captured by text_engine.py)
         os.environ["TEXT_ENGINE"] = "local_gemma"
         
-        # Resolve Local Model Path using Definitions
-        try:
-            import definitions
-            # Assuming 'gemma-2-9b-it-director' (GemmaW) is the target local model with adapter
-            gemma_config = definitions.MODAL_REGISTRY[definitions.Modality.TEXT].get("gemma-2-9b-it-director")
-            if not gemma_config: # Fallback to base
-                 gemma_config = definitions.MODAL_REGISTRY[definitions.Modality.TEXT].get("gemma-2-9b-it")
-            
-            if gemma_config and gemma_config.path:
-                 os.environ["LOCAL_MODEL_PATH"] = gemma_config.path
-                 logging.info(f"   📍 Local Text Model Path: {gemma_config.path}")
-                 
-                 if gemma_config.adapter_path:
-                      os.environ["LOCAL_ADAPTER_PATH"] = gemma_config.adapter_path
-                      logging.info(f"   🧩 Local Adapter Path: {gemma_config.adapter_path}")
-            else:
-                 logging.warning("   ⚠️ Local Gemma path not found in definitions. Using default.")
-        except ImportError:
-             pass
-
         # Log Safety/Quality Status
         safety_status = "ON (Reasonable)" if args.pg else "OFF (Uncensored)"
         logging.info(f"   🛡️ Safety Filters: {safety_status}")
@@ -263,17 +280,25 @@ def main():
         logging.info("   -> Skipped Vision Producer (Loaded from XML).")
         
     else:
-        # Calculate Total Length
-        if args.vpform in ["music-video", "full-movie"] and args.mu and os.path.exists(args.mu):
-            audio_len = get_audio_duration(args.mu)
-            if audio_len > 0:
-                logging.info(f"🎵 Audio Driven Duration: {audio_len:.1f}s")
-                args.seg = math.ceil(audio_len / args.l)
-                total_length = audio_len # Use exact audio length
+
+        # Logic: slength > 0 overrides seg
+        if args.slength > 0:
+            import math
+            logging.info(f"⏱️  Target Duration (SLENGTH): {args.slength}s")
+            args.seg = math.ceil(args.slength / args.l)
+            total_length = args.slength
+        else:
+            # Calculate Total Length
+            if args.vpform in ["music-video", "full-movie"] and args.mu and os.path.exists(args.mu):
+                audio_len = get_audio_duration(args.mu)
+                if audio_len > 0:
+                    logging.info(f"🎵 Audio Driven Duration: {audio_len:.1f}s")
+                    args.seg = math.ceil(audio_len / args.l)
+                    total_length = audio_len # Use exact audio length
+                else:
+                    total_length = args.seg * args.l
             else:
                 total_length = args.seg * args.l
-        else:
-            total_length = args.seg * args.l
 
         success = vision_producer.run_producer(
             vpform_name=args.vpform,

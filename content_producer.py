@@ -145,10 +145,12 @@ RVC_MODELS_ROOT = os.path.join(os.path.dirname(__file__), "z_training_data")
 # Let's make RVC_MODELS_ROOT generic to "z_training_data" and include parent dir in map values.
 
 RVC_MAP = {
+    # 24-Podcast
     "William": "24_voices/william-content",
     "Maggie": "24_voices/maggie-content",
     "Francis": "24_voices/francis-content",
     "Anne Tailored": "24_voices/annetailored-content",
+    # Route 66
     "Amey": "route66_voices/amey-content",
     "Jessinny": "route66_voices/jessinny-content",
     "Lorrey": "route66_voices/lorrey-content",

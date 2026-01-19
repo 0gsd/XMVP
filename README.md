@@ -11,8 +11,10 @@ XMVP is an open-source "film studio in a box" that decomposes video production i
 - **Generate full video sequences** from a single text prompt
 - **Create music videos** synced to any audio track
 - **Animate frame-by-frame** with consistent style
-- **Run 100% locally** on Apple Silicon (M1/M2/M3) for privacy and uncensored creativity
+- **Run 100% locally** on Apple Silicon (M1/M2/M3/M4) for privacy and uncensored creativity
 - **Export everything** to the open XMVP XML format for editing, re-rendering, or sharing
+- **Auto-expand titles** into rich visual concepts with the SASSPRILLA Carbonator
+- **Generate spoken word content** with cloned voices (Thax Douglas model included!)
 
 ---
 
@@ -46,7 +48,7 @@ This is where XMVP really shines. With the right hardware and a big external dri
 
 ### What You'll Need
 
-- **Mac with Apple Silicon** (M1/M2/M3 with 16GB+ RAM recommended)
+- **Mac with Apple Silicon** (M1/M2/M3/M4 with 16GB+ RAM recommended)
 - **External SSD** (1TB+ recommended, named `XMVPX`)
 - **About 100GB** of disk space for model weights
 - **Python 3.10+** with Miniconda/Miniforge
@@ -72,6 +74,7 @@ The `mw/` folder will contain all local model weights. Here's what the final str
     ├── t5weights-root/      # T5 encoder for Flux
     ├── kokoro-root/         # Kokoro TTS (Speech)
     ├── hunyuan-foley/       # Hunyuan Foley (Sound effects)
+    ├── wan-root/            # Wan 2.1 (Speech-to-video, optional)
     ├── comfyui-root/        # ComfyUI (optional, for advanced workflows)
     ├── indextts-root/       # IndexTTS (optional, for cloned voices)
     └── rvc-root/            # RVC base assets (optional)
@@ -140,10 +143,19 @@ python3 movie_producer.py "A robot painting a sunset" --local --seg 2
 
 If everything is configured correctly, you'll see:
 ```
-🏠 Local Mode Enabled: Switching models to Gemma (Text) and LTX (Video).
+🏠 Local Mode Enabled: Switching models to Local Gemma (Text) and LTX (Video).
    📍 Local Text Model Path: /Volumes/XMVPX/mw/gemma-root
    🛡️ Safety Filters: OFF (Uncensored)
    ✨ Quality Refinement: ON (Hyper-Detailed Fattening)
+```
+
+For **Long-Form** content (e.g. `full-movie`), XMVP now uses **Wan 2.1** and **Micro-Batching**:
+
+```bash
+python3 movie_producer.py "The Odyssey" --vpform full-movie --local --slength 600
+```
+
+This will trigger the iterative writer, generating scenes in 180s chunks until the 600s target is reached.
 ```
 
 ---
@@ -165,6 +177,17 @@ python3 movie_producer.py "Underground rave documentary" --local --seg 8
 
 # Music video synced to a track
 python3 movie_producer.py "Abstract visuals" --vpform music-video --mu song.mp3
+
+# Long-form movie (Micro-Batching enabled!)
+# Generates 50 minutes of content in 3-minute iterative batches
+python3 movie_producer.py "Epic Space Opera" --vpform full-movie --local --slength 3000
+
+# Auto-carbonation: just give it a title!
+python3 movie_producer.py "Midnight Train To Georgia"
+
+# Using VPForm aliases
+python3 movie_producer.py tech-movie "AI Awakening"
+python3 movie_producer.py draft-animatic "Space Opera Epic"
 ```
 
 ### 🎨 `cartoon_producer.py` — The Animator
@@ -180,6 +203,21 @@ python3 cartoon_producer.py --vpform music-agency --mu track.mp3 --prompt "Cyber
 
 # Abstract visualizer
 python3 cartoon_producer.py --vpform music-visualizer --mu ambient.wav
+```
+
+### 🎙️ `content_producer.py` — The Podcast Factory
+
+Generates improv comedy and spoken word content.
+
+```bash
+# 24-minute 4-person improv special
+python3 content_producer.py --vpform 24-podcast
+
+# Thax Douglas spoken word (uses included voice model!)
+python3 content_producer.py --vpform thax-douglas
+
+# Local mode with Kokoro TTS
+python3 content_producer.py --vpform 24-podcast --local
 ```
 
 ### 🎞️ `post_production.py` — The Editor
@@ -227,6 +265,37 @@ python3 stub_reification.py --bible bible.json --out story.json
 
 ---
 
+## New in v2.69
+
+### 🫧 SASSPRILLA Carbonator
+Auto-expands title-style prompts into dense, genre-appropriate visual concepts:
+```bash
+python3 sassprilla_carbonator.py "Purple Rain" --artist "Prince"
+```
+
+### 🎤 Thax Douglas Voice Model
+Included in `z_training_data/thax_voice/` — a trained RVC model of Chicago poet Thax Douglas, shared with his blessing. Use with:
+```bash
+python3 content_producer.py --vpform thax-douglas
+```
+
+### 🎭 Dialogue Critic (Gemma Wittgenstein)
+Refines generated dialogue against a corpus of professional screenplays for more natural, cinematic lines.
+
+### 📹 Wan 2.1 Bridge
+New local video generation option using Wan 2.1 14B with keyframe chaining.
+
+### 🎬 Dispatch Animatic
+High-speed storyboard generation using Gemma + Flux for rapid visualization.
+
+### 📋 VP Form Registry
+Unified form system with aliases — use `tech-movie` or `tm`, `music-video` or `mv`:
+```bash
+python3 movie_producer.py mv "Neon Dreams"
+```
+
+---
+
 ## Configuration
 
 ### env_vars.yaml
@@ -269,7 +338,7 @@ Every run exports to the open XMVP XML format:
 
 ```xml
 <?xml version='1.0' encoding='utf-8'?>
-<XMVP version="2.4">
+<XMVP version="2.69">
   <Bible>{"constraints": {...}, "scenario": "...", "situation": "...", "vision": "..."}</Bible>
   <Story>{"title": "...", "synopsis": "...", "characters": [...]}</Story>
   <Manifest>{"segs": [...], "files": {...}}</Manifest>
@@ -293,7 +362,7 @@ python3 movie_producer.py --xb previous_run.xml --vm K --local
 |---------|-------|-------|
 | Text Generation | Gemini 2.0 Flash | Gemma 3 27B |
 | Image Generation | Gemini Flash / Imagen 3 | Flux.1-schnell |
-| Video Generation | Veo 3.1 | LTX-Video |
+| Video Generation | Veo 3.1 | Wan 2.1 (full-movie) / LTX-Video (clips) |
 | Speech | Google Journey TTS | Kokoro ONNX |
 | Cost | Per-generation API fees | Free after setup |
 | Content Filters | Google's safety filters | None (unless `--pg`) |
@@ -343,12 +412,23 @@ Without `--pg` in local mode: **No filters applied.** Full artistic freedom.
 → Use `--fast` for cheaper model tiers
 → Switch to `--local` mode
 
+### "RVC conversion failed" (Thax mode)
+→ Set up RVC environment: `conda create -n rvc_env python=3.10 && pip install rvc-python`
+→ Check `RVC_PYTHON_BIN` environment variable points to correct Python
+
 ---
 
-## Full API Reference
+## Training Data & Voice Models
 
-For complete documentation of every argument and option, see:
-**[docs/API2.4.md](docs/API2.4.md)**
+XMVP v2.70 includes:
+
+- **Thax Douglas Voice Model** (`z_training_data/thax_voice/`) — RVC model for the Chicago poet, shared with his permission
+- **Screenplay Corpus** (`z_training_data/parsed_scripts/`) — Parsed scripts for dialogue refinement (not included in public repo)
+
+To use the Thax voice:
+1. Ensure files are in `z_training_data/thax_voice/model/`
+2. Set up RVC environment
+3. Run `python3 content_producer.py --vpform thax-douglas`
 
 ---
 
@@ -361,6 +441,8 @@ XMVP is a personal project that I'm sharing because I think the "modular vision 
 ## License
 
 Free and open for use by all. You'll need your own API keys for cloud mode, or your own hardware for local mode.
+
+The included Thax Douglas voice model is shared with permission for creative use.
 
 ---
 

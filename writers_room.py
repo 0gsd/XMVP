@@ -17,109 +17,127 @@ def load_story(path: str) -> Story:
 
 def break_story(story: Story, cssv: CSSV) -> list[Portion]:
     """
-    Splits the story into portions based on constraints using Text Engine.
+    Splits the story into portions using an Iterative Batching approach.
+    Allows for unlimited duration by generating in chunks (Micro-Batches).
     """
-    total_duration = cssv.constraints.max_duration_sec
-    seg_length = cssv.constraints.target_segment_length
+    total_duration_target = cssv.constraints.max_duration_sec
     
-    # Calculate required segments (Estimation only)
-    # We want variable durations between 4s and 20s.
-    # We will ask the LLM to determine scene cuts naturally.
-    # But we constrain the total duration.
+    # Batch Configuration
+    BATCH_DURATION = 180.0  # Generate 3 minutes at a time
+    MIN_SCENE_DUR = 2.0
+    MAX_SCENE_DUR = 15.0  # Tighter constraint for "Micro-Scenes"
     
-    # num_portions = math.ceil(total_duration / seg_length) 
-    # logging.info(f"🧮 Calculation: {total_duration}s total / {seg_length}s seg = {num_portions} portions.")
-    logging.info(f"🧮 Variable Duration Mode: Total {total_duration}s. Scenes allowed 4.0s - 20.0s.")
+    current_total_duration = 0.0
+    all_portions = []
     
-    prompt = f"""
-    CONTEXT: You are a Screenwriter breaking a story into scenes.
-    
-    STORY:
-    Title: {story.title}
-    Synopsis: {story.synopsis}
-    Characters: {", ".join(story.characters)}
-    
-    CONSTRAINTS:
-    - Total Run Time: Approximately {total_duration} seconds.
-    - Break the story into separate Visual Scenes/Shots.
-    - Each Scene MUST have a duration between 1.0 and 120.0 seconds.
-    - Variable pacing is encouraged (e.g. fast 1s cuts, or long 60s dialogue takes).
-    - Ensure the sum of durations is close to {total_duration}s (+/- 10s).
-    
-    TASK:
-    Write a list of Scenes/Portions to tell this story.
-    
-    OUTPUT FORMAT (JSON List):
-    [
-        {{ 
-            "id": 1, 
-            "duration": 5.5, 
-            "content": "Description of scene 1...",
-            "dialogue": [
-                {{ "character": "Hero", "text": "Let's go!", "emotion": "urgent" }}
-            ]
-        }},
-        ...
-    ]
-    """
-    
+    chunk_index = 0
     engine = get_engine()
     
-    for attempt in range(3):
-        try:
-            response_text = engine.generate(prompt, temperature=0.7)
-            if not response_text:
-                raise ValueError("Empty response from Text Engine")
-
-            # Clean Markdown
-            text = response_text.replace("```json", "").replace("```", "").strip()
-            # Find list start
-            if "[" in text and "]" in text:
-                text = text[text.find("["):text.rfind("]")+1]
+    logging.info(f"🔄 Starting Batched Generation. Target: {total_duration_target}s found. Batch Size: {BATCH_DURATION}s")
+    
+    while current_total_duration < total_duration_target:
+        chunk_index += 1
+        remaining_time = total_duration_target - current_total_duration
+        current_batch_target = min(BATCH_DURATION, remaining_time)
+        
+        # Stop if we are close enough (within 10s margin or less than a minimal scene)
+        if remaining_time < 5.0:
+            logging.info("   🛑 Reached target duration.")
+            break
             
-            data = json.loads(text)
-            
-            portions = []
-            calculated_total = 0.0
-            for item in data:
-                # Fallback if duration missing (should rarely happen with good prompt)
-                dur = float(item.get('duration', seg_length))
+        logging.info(f"\n   📑 Generative Batch {chunk_index}: Target {current_batch_target}s (Progress: {current_total_duration:.1f}/{total_duration_target}s)")
+        
+        # Context Management
+        last_scenes_context = "START OF MOVIE"
+        if all_portions:
+            # Get last 3 scenes for continuity
+            tail = all_portions[-3:]
+            last_scenes_context = "\n".join([f"- Scene {p.id}: {p.content} ({p.duration_sec}s)" for p in tail])
+        
+        prompt = f"""
+        CONTEXT: You are a Screenwriter writing a long-form movie script, chunk by chunk.
+        
+        STORY:
+        Title: {story.title}
+        Synopsis: {story.synopsis}
+        
+        CURRENT STATE:
+        - Time Elapsed: {current_total_duration:.1f}s / {total_duration_target}s
+        - PREVIOUS SCENES (CONTINUITY):
+        {last_scenes_context}
+        
+        TASK:
+        Write the NEXT {current_batch_target} seconds of the movie.
+        - Create a sequence of "Micro-Scenes" (Fast cuts, dialogue bits, action beats).
+        - Focus ONLY on the immediate next segment of the plot. Do not rush to the ending unless we are near {total_duration_target}s.
+        - SCENE DURATION: Keep scenes short ({MIN_SCENE_DUR}s - {MAX_SCENE_DUR}s) for dynamic pacing.
+        - TARGET QUANTITY: You need roughly {int(current_batch_target / 5)} scenes for this batch.
+        
+        OUTPUT FORMAT (JSON List):
+        [
+            {{ 
+                "duration": 5.0, 
+                "content": "Visual description...",
+                "dialogue": [ {{ "character": "Name", "text": "Line" }} ]
+            }},
+            ...
+        ]
+        """
+        
+        success_batch = False
+        for attempt in range(3):
+            try:
+                response_text = engine.generate(prompt, temperature=0.7, json_schema=True)
+                if not response_text: continue
                 
-                # Clamp Duration
-                if dur < 1.0: dur = 1.0
-                if dur > 120.0: dur = 120.0 # Relaxed for Animatic / Long forms
+                # Loose JSON parsing
+                data = json.loads(response_text)
+                if not isinstance(data, list): data = [data] # Handle single obj
                 
-                # Parse Dialogue
-                dialogue_list = []
-                if 'dialogue' in item:
-                    for d in item['dialogue']:
-                        dialogue_list.append(DialogueLine(
-                            character=d.get('character', 'Unknown'),
-                            text=d.get('text', ''),
-                            emotion=d.get('emotion', 'neutral')
-                        ))
-
-                portions.append(Portion(
-                    id=item['id'],
-                    duration_sec=dur, 
-                    content=item['content'],
-                    dialogue=dialogue_list
-                ))
-                calculated_total += dur
+                batch_portions = []
+                batch_dur = 0.0
+                
+                start_id = len(all_portions) + 1
+                
+                for i, item in enumerate(data):
+                    dur = float(item.get('duration', 5.0))
+                    # Clamp
+                    dur = max(MIN_SCENE_DUR, min(MAX_SCENE_DUR, dur))
+                    
+                    dialogue_list = []
+                    if 'dialogue' in item:
+                        for d in item['dialogue']:
+                            dialogue_list.append(DialogueLine(
+                                character=d.get('character', 'Unknown'),
+                                text=d.get('text', ''),
+                                emotion=d.get('emotion', 'neutral')
+                            ))
+                            
+                    p = Portion(
+                        id=start_id + i,
+                        duration_sec=dur,
+                        content=item.get('content', 'Scene...'),
+                        dialogue=dialogue_list
+                    )
+                    batch_portions.append(p)
+                    batch_dur += dur
+                
+                if batch_portions:
+                    all_portions.extend(batch_portions)
+                    current_total_duration += batch_dur
+                    logging.info(f"      ✅ Batch {chunk_index} added {len(batch_portions)} scenes ({batch_dur:.1f}s). New Total: {current_total_duration:.1f}s")
+                    success_batch = True
+                    break
+                    
+            except Exception as e:
+                logging.warning(f"      ⚠️ Batch Attempt {attempt+1} failed: {e}")
+        
+        if not success_batch:
+            logging.error("      ❌ Failed to generate batch after retries. Aborting/Ending early.")
+            break
             
-            # Validation
-            logging.info(f"   Generated {len(portions)} scenes. Total Duration: {calculated_total:.2f}s (Target: {total_duration}s)")
-            
-            # Basic Check
-            if abs(calculated_total - total_duration) > 30.0:
-                 logging.warning(f"⚠️ Duration mismatch > 30s. Target: {total_duration}, Got: {calculated_total}")
-
-            return portions
-            
-        except Exception as e:
-            logging.warning(f"attempt {attempt+1} failed: {e}")
-            
-    return []
+    logging.info(f"✅ Final Script: {len(all_portions)} scenes. Total Duration: {current_total_duration:.1f}s")
+    return all_portions
 
 def run_writers(bible_path: str, story_path: str, out_path: str = "portions.json") -> bool:
     """

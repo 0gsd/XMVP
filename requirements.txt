@@ -2,6 +2,7 @@
 mlx
 mlx-lm
 huggingface_hub
+peft
 
 # Cloud Generation
 google-cloud-aiplatform

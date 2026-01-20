@@ -14,11 +14,14 @@ install_thax_model.py
 external_trainers/
 debug_thax_rvc.sh
 debug_rvc_manual.py
+check_wan_import.py
 check_rvc_setup.py
 z_training_data/thax_voice/dataset
 z_training_data/thax_voice/raw
 z_training_data/24_voices
+z_training_data/movies
 z_training_data/route66_voices
+#z_training_data/example_parodies
 
 # Setups
 frozen_requirements.txt
@@ -39,6 +42,7 @@ run_animator.sh
 run_comfy.sh
 setup_comfy_infrastructure.py
 rescue_ep.py
+recover_xmvp.py
 
 # Python
 __pycache__/

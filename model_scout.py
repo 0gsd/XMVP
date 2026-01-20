@@ -1,4 +1,4 @@
-from google import genai
+import google.generativeai as genai
 import definitions
 from mvp_shared import load_api_keys
 from definitions import Modality, BackendType, MODAL_REGISTRY, get_active_model, set_active_model

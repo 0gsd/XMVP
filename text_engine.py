@@ -9,15 +9,23 @@ from pathlib import Path
 
 import itertools
 
-# Strict Import (No more legacy fallback)
+# Strict Import with Legacy Fallback
 GEMINI_AVAILABLE = False
 try:
+    # Try New SDK (v1.0+)
     from google import genai
     from google.genai import types
     GEMINI_AVAILABLE = True
+    IS_LEGACY_SDK = False
 except ImportError:
-    logging.warning("⚠️ Google GenAI SDK (v1.0+) not found. Cloud features disabled.")
-    pass
+    # Try Legacy SDK (google-generativeai)
+    try:
+        import google.generativeai as genai
+        GEMINI_AVAILABLE = True
+        IS_LEGACY_SDK = True
+    except ImportError:
+        logging.warning("⚠️ Google GenAI SDK (v1.0+ or Legacy) not found. Cloud features disabled.")
+        pass
 
 # Lazy import for MLX (Apple Silicon)
 # We don't import at top level to avoid crashing on non-Macs or if missing
@@ -164,6 +172,26 @@ class TextEngine:
             raise RuntimeError("CRITICAL: Local Model Failed in Strict Local Mode.")
             return
 
+    def unload(self):
+        """
+        Manually unloads the local model to free memory.
+        Crucial when running concurrent heavy models (e.g. Wan Video).
+        """
+        if self.mlx_model is not None:
+             logging.info("   🗑️  Unloading Text Engine from RAM...")
+             self.mlx_model = None
+             self.mlx_tokenizer = None
+             
+             import gc
+             gc.collect()
+             logging.info("   ✅ Text Engine Unloaded.")
+             
+    def _ensure_loaded(self):
+        """Lazy load check."""
+        if self.backend == "local_gemma" and self.mlx_model is None:
+             logging.info("   ♻️  Reloading Text Engine (Lazy Load)...")
+             self._init_local_model()
+
     def get_gemini_client(self):
         if not self.api_keys or not self.key_cycle:
             logging.error("[-] TextEngine: No Gemini API keys found.")
@@ -183,199 +211,49 @@ class TextEngine:
                  return None
 
         key = next(cycle)
+        
+        # LEGACY SDK SUPPORT
+        if IS_LEGACY_SDK:
+            try:
+                genai.configure(api_key=key)
+                return "LEGACY_CLIENT" # Signal for _generate_gemini to use legacy path
+            except Exception as e:
+                logging.error(f"Legacy Configure Error: {e}")
+                return None
+                
         return genai.Client(api_key=key)
 
-    def get_model_instance(self):
-        """
-        Returns a configured genai.GenerativeModel object (V1 SDK).
-        Useful for passing to legacy scripts like frame_canvas.py
-        that expect a model object, not just a client.
-        """
-        # Retrieve key logic duplicated from get_gemini_client
-        cycle = self.fallback_cycle if (self.using_fallback and self.fallback_cycle) else self.key_cycle
-        
-        if not cycle:
-             # Try failover
-             if not self.using_fallback and self.fallback_cycle:
-                 self.using_fallback = True
-                 cycle = self.fallback_cycle
-             else:
-                 logging.error("[-] TextEngine: No Gemini API keys found.")
-                 return None
-
-        key = next(cycle)
-
-        # Quick Fix (MVP): Re-import V1 here and return V1 model object using the key.
-        try:
-             import google.generativeai as genai_v1
-             genai_v1.configure(api_key=key)
-             # Safety: Set API version if needed, but default is usually fine
-             return genai_v1.GenerativeModel("gemini-2.0-flash")
-        except Exception as e:
-             logging.error(f"[-] Failed to bridge V1 model: {e}")
-             return None
-
-    def _clean_json_output(self, text):
-        """
-        Robustly extracts JSON from text, handling:
-        1. Markdown code blocks
-        2. Trailing text (Extra data)
-        3. Leading garbage
-        """
-        clean_text = text
-        
-        # 1. Strip Markdown Code Blocks
-        if "```" in clean_text:
-            try:
-                parts = clean_text.split("```")
-                # Usually: [pre, content, post] or [pre, content]
-                # We find the first block that looks like content
-                # Heuristic: Look for the block with largest length or just the first inner one
-                if len(parts) >= 3:
-                     clean_text = parts[1]
-                     if clean_text.lower().startswith("json"): clean_text = clean_text[4:]
-                     elif clean_text.lower().startswith("python"): clean_text = clean_text[6:]
-                elif len(parts) == 2:
-                     # Maybe content is after first ```?
-                     clean_text = parts[1]
-            except:
-                pass 
-        
-        clean_text = clean_text.strip()
-        
-        # 2. Extract JSON using raw_decode
-        # This solves "Extra data: line X column Y" by stopping at the end of valid JSON
-        try:
-            # Fast path
-            json.loads(clean_text)
-            return clean_text
-        except json.JSONDecodeError:
-            pass
-            
-        # 3. Locate Start of JSON
-        idx = -1
-        first_brace = clean_text.find('{')
-        first_bracket = clean_text.find('[')
-        
-        if first_brace != -1 and (first_bracket == -1 or first_brace < first_bracket):
-            idx = first_brace
-        elif first_bracket != -1:
-            idx = first_bracket
-            
-        if idx != -1:
-            try:
-                # raw_decode returns (obj, end_index)
-                obj, end = json.JSONDecoder().raw_decode(clean_text[idx:])
-                return clean_text[idx:idx+end]
-            except:
-                pass
-
-        return clean_text
-
-    def generate(self, prompt, temperature=0.7, json_schema=None):
-        """
-        Universal generation method.
-        Returns: String (Text or JSON string)
-        """
-        full_prompt = f"{SYSTEM_FILTER}\n\nUSER REQUEST:\n{prompt}"
-        
-        raw_text = ""
-        if self.backend == "local_gemma" and self.mlx_model:
-            raw_text = self._generate_local(full_prompt, temperature)
-        else:
-            raw_text = self._generate_gemini(full_prompt, temperature, json_schema)
-            
-        if not raw_text: return ""
-        
-        if json_schema:
-            return self._clean_json_output(raw_text)
-        
-        # Legacy Cleaning (Markdown only) for non-JSON requests?
-        # Actually the cleaner handles markdown nicely too, but might strip too much if not JSON?
-        # If not json_schema, we usually want raw text but maybe without markdown blocks?
-        # Let's keep existing logic for non-json to avoid regression.
-        
-        clean_text = raw_text
-        if "```" in clean_text:
-            try:
-                parts = clean_text.split("```")
-                if len(parts) >= 3:
-                     clean_text = parts[1]
-                     if clean_text.startswith("json"): clean_text = clean_text[4:]
-                     elif clean_text.startswith("python"): clean_text = clean_text[6:]
-                else:
-                    clean_text = parts[1]
-            except:
-                pass # Fallback to raw
-        
-        return clean_text.strip()
-
-    def _generate_local(self, prompt, temperature):
-        from mlx_lm import stream_generate
-        import mlx.core as mx
-        
-        # 1. Prepare Inputs
-        messages = [{"role": "user", "content": prompt}]
-        if hasattr(self.mlx_tokenizer, "apply_chat_template"):
-            try:
-                input_text = self.mlx_tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-            except Exception as e:
-                # Fallback for Jinja2 "System role not supported" or similar
-                logging.warning(f"   ⚠️ Chat Template Error: {e}. using Manual Gemma Formatting.")
-                # Manual formatting for Gemma 2
-                input_text = f"<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
-        else:
-            input_text = prompt
-            
-        logging.info("   🧠 Local Inference (Gemma)...")
-        
-        # 2. Define Sampler (Fix for TypeError: 'temperature')
-        # mlx_lm requires a callable sampler if we want to control temp
-        def temp_sampler(logits):
-            if temperature == 0:
-                return mx.argmax(logits, axis=-1)
-            # Apply temp
-            logits = logits / temperature
-            return mx.random.categorical(logits)
-            
-        # 3. Stream Generation with Progress
-        print("   Generating", end="", flush=True)
-        response_text = ""
-        token_count = 0
-        
-        # Use simple args 
-        # Note: generate_step() in mlx_lm usually takes 'temp' if using high-level generate(), 
-        # but here we go direct.
-        try:
-            for response in stream_generate(
-                self.mlx_model, 
-                self.mlx_tokenizer, 
-                prompt=input_text, 
-                max_tokens=8192,
-                sampler=temp_sampler
-            ):
-                text_chunk = response.text
-                response_text += text_chunk
-                token_count += 1
-                
-                # Progress Indicator
-                if token_count % 10 == 0:
-                    print(".", end="", flush=True)
-                if token_count % 100 == 0:
-                    print(f"[{token_count}]", end="", flush=True)
-
-            print(f" ✅ ({token_count} tokens)")
-            return response_text
-            
-        except TypeError as e:
-            # Fallback if sampler arg is also rejected (version chaos)
-            logging.error(f"Generation Error (Args): {e}")
-            logging.warning("Retrying with default greedy options...")
-            return self._generate_local_fallback(input_text)
-            
-    def _generate_local_fallback(self, prompt):
-        from mlx_lm import generate
-        return generate(self.mlx_model, self.mlx_tokenizer, prompt=prompt, verbose=False)
+    def _generate_gemini_legacy(self, prompt, temperature, json_schema):
+         """Fallback for older google-generativeai SDK."""
+         try:
+             # Map 2.0 -> 1.5 if on legacy? No, try 2.0 first.
+             model_name = "gemini-2.0-flash" 
+             model = genai.GenerativeModel(model_name)
+             
+             config = genai.types.GenerationConfig(
+                 temperature=temperature
+             )
+             if json_schema:
+                 config.response_mime_type = "application/json"
+                 
+             response = model.generate_content(prompt, generation_config=config)
+             if response.text:
+                 return response.text
+             return ""
+         except Exception as e:
+             # Retry logic handled by caller? No, we need internal retry or bubble up.
+             # For simplicity, fallback to bubble up -> _generate_gemini loop?
+             # Actually _generate_gemini calls this.
+             if "404" in str(e) or "not found" in str(e).lower():
+                 # Maybe 2.0 not avail on legacy? Fallback to 1.5
+                 try:
+                     logging.info("   ⚠️ Legacy SDK: 2.0 Flash not found. Falling back to 1.5 Pro.")
+                     model = genai.GenerativeModel("gemini-1.5-pro")
+                     response = model.generate_content(prompt, generation_config=config)
+                     return response.text
+                 except:
+                     pass
+             raise e
 
     def _generate_gemini(self, prompt, temperature, json_schema):
         client = self.get_gemini_client()
@@ -383,6 +261,17 @@ class TextEngine:
         
         logging.info("   ☁️  Cloud Inference (Gemini)...")
         
+        # LEGACY BRANCH
+        if IS_LEGACY_SDK or client == "LEGACY_CLIENT":
+            try:
+                return self._generate_gemini_legacy(prompt, temperature, json_schema)
+            except Exception as e:
+                logging.error(f"[-] Gemini Legacy Error: {e}")
+                # Simple retry logic reuse?
+                # For now just fail soft.
+                return ""
+        
+        # V1 BRANCH (Standard)
         config_args = {
             "temperature": temperature,
         }
@@ -390,7 +279,6 @@ class TextEngine:
         # If strict JSON schema provided
         if json_schema:
             config_args["response_mime_type"] = "application/json"
-            # OpenAI/Gemini strict schema support varies, usually prompt engineering is enough with 'response_mime_type'
             
         try:
             response = client.models.generate_content(
@@ -403,15 +291,23 @@ class TextEngine:
             return ""
         except Exception as e:
             logging.error(f"[-] Gemini Gen Error: {e}")
+            
         # Retry Loop for 429
         max_retries = 3
         for attempt in range(max_retries):
-            client = self.get_gemini_client()
+            client = self.get_gemini_client() # Rotates key
             if not client: return ""
             
+            # LEGACY RETRY
+            if IS_LEGACY_SDK or client == "LEGACY_CLIENT":
+                try:
+                    return self._generate_gemini_legacy(prompt, temperature, json_schema)
+                except:
+                    import time
+                    time.sleep(2)
+                    continue
+
             try:
-                # Logging key source? No, secure.
-                
                 response = client.models.generate_content(
                     model="gemini-2.0-flash", # Fast, smart
                     contents=prompt,
@@ -426,16 +322,146 @@ class TextEngine:
                     if not self.using_fallback and self.fallback_cycle:
                         logging.warning("   🔄 Switching to TEXT_KEYS_LIST fallback pool.")
                         self.using_fallback = True
-                        # Retry immediately with new pool
                         continue
                     else:
-                        # Backoff
                         import time
                         time.sleep(2 * (attempt + 1))
                 else:
                     logging.error(f"[-] Gemini Gen Error: {e}")
                     return ""
         return ""
+
+    def _clean_json_output(self, text):
+        """
+        Robustly extracts JSON from text.
+        """
+        clean_text = text
+        if "```" in clean_text:
+            try:
+                parts = clean_text.split("```")
+                if len(parts) >= 3:
+                     clean_text = parts[1]
+                     if clean_text.lower().startswith("json"): clean_text = clean_text[4:]
+                     elif clean_text.lower().startswith("python"): clean_text = clean_text[6:]
+                elif len(parts) == 2:
+                     clean_text = parts[1]
+            except:
+                pass 
+        clean_text = clean_text.strip()
+        import re
+        # Strip special tokens (e.g. <pad>, <end_of_turn>)
+        clean_text = re.sub(r'<[^>]+>', '', clean_text)
+        clean_text = re.sub(r'[\x00-\x1f\x7f]', lambda m: "" if m.group(0) in "\n\r\t" else "", clean_text)
+        try:
+            json.loads(clean_text)
+            return clean_text
+        except:
+            pass
+        idx = -1
+        first_brace = clean_text.find('{')
+        first_bracket = clean_text.find('[')
+        if first_brace != -1 and (first_bracket == -1 or first_brace < first_bracket): idx = first_brace
+        elif first_bracket != -1: idx = first_bracket
+        if idx != -1:
+            try:
+                obj, end = json.JSONDecoder().raw_decode(clean_text[idx:])
+                return clean_text[idx:idx+end]
+            except:
+                pass
+        return clean_text
+
+    def generate(self, prompt, temperature=0.7, json_schema=None):
+        """
+        Universal generation method.
+        """
+        full_prompt = f"{SYSTEM_FILTER}\n\nUSER REQUEST:\n{prompt}"
+        raw_text = ""
+        if self.backend == "local_gemma" and self.mlx_model:
+            raw_text = self._generate_local(full_prompt, temperature)
+        else:
+            raw_text = self._generate_gemini(full_prompt, temperature, json_schema)
+        if not raw_text: return ""
+        if json_schema:
+            return self._clean_json_output(raw_text)
+        clean_text = raw_text
+        if "```" in clean_text:
+            try:
+                parts = clean_text.split("```")
+                if len(parts) >= 3:
+                     clean_text = parts[1]
+                     if clean_text.startswith("json"): clean_text = clean_text[4:]
+                     elif clean_text.startswith("python"): clean_text = clean_text[6:]
+                else:
+                    clean_text = parts[1]
+            except:
+                pass 
+        return clean_text.strip()
+
+    def _generate_local(self, prompt, temperature):
+        self._ensure_loaded()
+        from mlx_lm import stream_generate
+        import mlx.core as mx
+        
+        messages = [{"role": "user", "content": prompt}]
+        if hasattr(self.mlx_tokenizer, "apply_chat_template"):
+            try:
+                input_text = self.mlx_tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            except Exception as e:
+                logging.warning(f"   ⚠️ Chat Template Error: {e}. using Manual Gemma Formatting.")
+                input_text = f"<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
+        else:
+            input_text = prompt
+            
+        logging.info("   🧠 Local Inference (Gemma)...")
+        
+        def temp_sampler(logits):
+            if temperature == 0: return mx.argmax(logits, axis=-1)
+            logits = logits / temperature
+            return mx.random.categorical(logits)
+            
+        print("   Generating", end="", flush=True)
+        response_text = ""
+        token_count = 0
+        
+        try:
+            for response in stream_generate(self.mlx_model, self.mlx_tokenizer, prompt=input_text, max_tokens=8192, sampler=temp_sampler):
+                text_chunk = response.text
+                response_text += text_chunk
+                token_count += 1
+                if token_count % 10 == 0: print(".", end="", flush=True)
+                if token_count % 100 == 0: print(f"[{token_count}]", end="", flush=True)
+                
+            print(f" ✅ ({token_count} tokens)")
+            return response_text
+            
+        except TypeError as e:
+            logging.error(f"Generation Error (Args): {e}")
+            logging.warning("Retrying with default greedy options...")
+            return self._generate_local_fallback(input_text)
+            
+        finally:
+            # MEMORY OPTIMIZATION: Clear Metal Cache
+            try:
+                mx.metal.clear_cache()
+            except:
+                pass
+
+    def _generate_local_fallback(self, prompt):
+        from mlx_lm import generate
+        import mlx.core as mx
+        res = generate(self.mlx_model, self.mlx_tokenizer, prompt=prompt, verbose=False)
+        mx.metal.clear_cache()
+        return res
+
+    def clear_cache(self):
+        """Manually clears backend cache."""
+        if self.backend == "local_gemma" and MLX_AVAILABLE:
+            try:
+                import mlx.core as mx
+                mx.metal.clear_cache()
+                # logging.debug("   🧹 Metal Cache Cleared.")
+            except:
+                pass
 
 # Singleton instance helper
 _ENGINE = None

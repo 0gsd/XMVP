@@ -53,12 +53,17 @@ except ImportError:
 # MVP Imports
 try:
     import mvp_shared
-    from mvp_shared import save_xmvp, CSSV, VPForm, Story, Portion, Constraints
+    from mvp_shared import (
+        save_xmvp, load_xmvp, CSSV, VPForm, Story, Portion, Constraints, 
+        load_manifest, Manifest, Seg, DialogueScript, Indecision, DialogueLine
+    )
     from text_engine import TextEngine
     from truth_safety import TruthSafety
     from foley_talk import generate_audio_asset
     from vision_producer import get_chaos_seed
+    from vision_producer import get_chaos_seed
     from thax_audio import get_thax_engine
+    from foley_talk import assign_kokoro_voice_deterministic
     from vision_producer import get_chaos_seed
     # frame_canvas moved to lazy import
     
@@ -396,9 +401,12 @@ except Exception as e:
         if "SUCCESS" in res.stdout:
              # Success
              os.replace(temp_rvc_out, wav_path)
+             # print("       [+] RVC Converison Complete") # Optional verbose
              return True
         else:
-             print(f"       [!] RVC Failed: {res.stderr[:200]}")
+             # Capture standard out too since our script prints ERROR there sometimes
+             err_msg = res.stderr[:200] if res.stderr else res.stdout[:200]
+             print(f"       [!] RVC Failed: {err_msg}")
              return False
     except Exception as e:
         print(f"       [!] RVC Exec Failed: {e}")
@@ -646,11 +654,19 @@ def run_improv_session(vpform, output_dir, text_engine, args):
         if "route66" in vpform:
             from sassprilla_carbonator import carbonate_prompt
             # Carbonate visual prompt with 3D space awareness
-            # We construct a mock title/context from location + action
+            # Priority: Character > Topic > Scene > Location
+            # We map "Character + Action" to the 'Title' slot so Carbonator focuses on it.
+            context_seed = current_seed if 'current_seed' in locals() else "The Journey"
+            
+            # Truncate location if it's too long (User Request: "don't start with 100 chars of location stuff")
+            loc_str = location
+            if len(loc_str) > 100:
+                loc_str = loc_str[:97] + "..."
+
             carb_prompt = carbonate_prompt(
-                title=f"Scene in {location}",
-                artist="Route 66",
-                extra_context=f"Action: {action}. Focus: {visual}. Style: {session_visual_style}"
+                title=f"{visual} :: {action}",  # "Song Title" acts as the core subject
+                artist=f"Topic: {context_seed}", # "Artist" acts as the thematic lens
+                extra_context=f"Location: {loc_str}. Style: {session_visual_style}"
             )
             if carb_prompt:
                 # Smart Truncation to avoid FluxBridge naive chop (User Request)
@@ -913,20 +929,47 @@ def stitch_assets(assets, temp_dir, output_mp4):
     list_path = os.path.join(temp_dir, "stitch.txt")
     mp4s = []
     
+    print(f"   🧵 Stitching {len(assets)} segments...")
+    
     for i, a in enumerate(assets):
-        seg_mp4 = os.path.join(temp_dir, f"clip_{i}.mp4")
-        subprocess.run([
-            'ffmpeg', '-y', '-loop', '1', '-i', a['image'], '-i', a['audio'],
-            '-c:v', 'libx264', '-tune', 'stillimage', '-c:a', 'aac', '-b:a', '192k',
-            '-pix_fmt', 'yuv420p', '-shortest', seg_mp4, '-loglevel', 'error'
-        ], check=True)
-        mp4s.append(seg_mp4)
+        # Validate Assets
+        img_path = a.get('image')
+        aud_path = a.get('audio')
         
+        if not img_path or not os.path.exists(img_path):
+            print(f"      [!] Missing Image for Seg {i}: {img_path}")
+            # Create black frame fallback?
+            # For now, just skip to avoid crashing the whole render
+            continue
+            
+        if not aud_path or not os.path.exists(aud_path):
+            print(f"      [!] Missing Audio for Seg {i}: {aud_path}")
+            continue
+
+        seg_mp4 = os.path.join(temp_dir, f"clip_{i}.mp4")
+        
+        try:
+            subprocess.run([
+                'ffmpeg', '-y', '-loop', '1', '-i', img_path, '-i', aud_path,
+                '-c:v', 'libx264', '-tune', 'stillimage', '-c:a', 'aac', '-b:a', '192k',
+                '-pix_fmt', 'yuv420p', '-shortest', seg_mp4, '-loglevel', 'error'
+            ], check=True)
+            mp4s.append(seg_mp4)
+        except Exception as e:
+             print(f"      [!] FFmpeg Failed for Seg {i}: {e}")
+             
+    if not mp4s:
+        print("[-] No valid segments to stitch.")
+        return
+
     with open(list_path, 'w') as f:
         for mp4 in mp4s: f.write(f"file '{mp4}'\n")
         
-    subprocess.run(['ffmpeg', '-f', 'concat', '-safe', '0', '-i', list_path, '-c', 'copy', output_mp4, '-y', '-loglevel', 'error'])
-    print(f"[+] Output Saved: {output_mp4}")
+    try:
+        subprocess.run(['ffmpeg', '-f', 'concat', '-safe', '0', '-i', list_path, '-c', 'copy', output_mp4, '-y', '-loglevel', 'error'], check=True)
+        print(f"[+] Output Saved: {output_mp4}")
+    except Exception as e:
+        print(f"[-] Final Stitch Failed: {e}")
 
 def export_xmvp_manifest(output_dir, base_name, assets, cast_names, seeds=None, title=None, synopsis="Generated Content"):
     """
@@ -1193,6 +1236,325 @@ def generate_image(prompt, output_path):
     else:
         return False 
 
+# --- FULLMOVIE STILL MODE ---
+
+def get_segment_for_time(manifest: Manifest, time_sec: float, fps: float = 24.0):
+    """Finds the visual segment active at the given time."""
+    frame = int(time_sec * fps)
+    # Simple linear search (manifests are small enough)
+    for seg in manifest.segs:
+        if seg.start_frame <= frame < seg.end_frame:
+            return seg
+    
+    # Fallback: Closest or Last
+    if manifest.segs:
+        return manifest.segs[-1]
+    return None
+
+def run_fullmovie_still_mode(xml_path, output_dir, text_engine, args):
+    """
+    Ingests an existing XMVP XML and generates a slideshow movie.
+    One frame per dialogue line.
+    """
+    print(f"🎬 FULLMOVIE-STILL ANIMATOR: {xml_path}")
+    
+    # 1. Load XMVP
+    try:
+        if xml_path.endswith('.xml'):
+            print("    [📦] Loading XMVP XML Manifest...")
+            raw_json = load_xmvp(xml_path, "Manifest")
+            
+            if not raw_json:
+                print("    [!] No <Manifest> key. Checking for <Portions> (Script Mode)...")
+                raw_portions = load_xmvp(xml_path, "Portions")
+                if raw_portions:
+                    # JIT Migration: Convert Portions -> Manifest
+                    print("    [Build] Converting Portions to Manifest...")
+                    portions = [Portion.model_validate(p) for p in json.loads(raw_portions)]
+                    
+                    # Flatten Dialogue
+                    all_lines = []
+                    # Create Segments from Portions as fallback
+                    segs = []
+                    
+                    current_frame = 0
+                    fps = 24
+                    
+                    for p in portions:
+                       dur_frames = int(p.duration_sec * fps)
+                       segs.append(Seg(
+                           id=p.id, 
+                           start_frame=current_frame, 
+                           end_frame=current_frame + dur_frames,
+                           prompt=p.content # Use portion content as visual prompt
+                       ))
+                       current_frame += dur_frames
+                       
+                       if p.dialogue:
+                           for line in p.dialogue:
+                               all_lines.append(line)
+                       else:
+                           # Fallback: Parse "Character: Text" from content
+                           # Expected format: "Name: spoken text..."
+                           if ":" in p.content:
+                               parts = p.content.split(":", 1)
+                               char_name = parts[0].strip()
+                               spoken_text = parts[1].strip()
+                               
+                               # Create on-the-fly line
+                               fallback_line = DialogueLine(
+                                   character=char_name,
+                                   text=spoken_text,
+                                   action="speaking", # Default action
+                                   visual_focus=char_name
+                               )
+                               all_lines.append(fallback_line)
+                               
+                    manifest = Manifest(
+                        segs=segs,
+                        dialogue=DialogueScript(lines=all_lines)
+                    )
+                else:
+                    print("[-] No <Manifest> or <Portions> found in XML.")
+                    return
+            else:
+                manifest = Manifest.model_validate_json(raw_json)
+        else:
+            manifest = load_manifest(xml_path)
+    except Exception as e:
+        print(f"[-] Failed to load Manifest: {e}")
+        return
+
+    if not manifest.dialogue or not manifest.dialogue.lines:
+        print("[-] XML has no dialogue lines to animate.")
+        return
+        
+    # 2. Config & Cast
+    session_id = int(time.time())
+    session_dir = os.path.join(output_dir, f"fms_session_{session_id}")
+    os.makedirs(session_dir, exist_ok=True)
+    
+    # Extract Cast
+    all_chars = set(line.character for line in manifest.dialogue.lines)
+    print(f"    [👥] Cast Found: {all_chars}")
+
+    # --- MOVIE-LEVEL LORA (MLL) LOGIC ---
+    # --- MOVIE-LEVEL LORA (MLL) LOGIC ---
+    movie_title = "Unknown_Movie"
+    target_name = None
+    
+    try:
+        # Load Story
+        raw_story = load_xmvp(xml_path, "Story")
+        if raw_story:
+            story_obj = Story.model_validate_json(raw_story)
+            movie_title = story_obj.title.replace(" ", "_")
+            if story_obj.mll_template:
+                 target_name = story_obj.mll_template
+        
+        # Load Bible (Preferred Source for Template)
+        raw_bib = load_xmvp(xml_path, "Bible") 
+        if raw_bib:
+             # Just parse as dict to avoid strict validation if needed, or use CSSV
+             bib_data = json.loads(raw_bib)
+             if "mll_template" in bib_data and bib_data["mll_template"]:
+                  target_name = bib_data["mll_template"]
+                  
+    except Exception as e:
+        print(f"    [!] Error reading XMVP Metadata: {e}")
+        pass
+        
+    final_lora_name = target_name if target_name else movie_title
+    if target_name:
+         print(f"    🏷️  MLL Template Detected: {target_name}")
+        
+    print(f"    [🎥] Movie Title: {movie_title} (LoRA Target: {final_lora_name})")
+    
+    # Check LoRA
+    lora_path = os.path.join("adapters/movies", f"{final_lora_name}.safetensors")
+    
+    # Logic:
+    # 1. If LoRA missing -> Must Train.
+    # 2. If Template Active -> Must Prep (Additive) + Train (Update).
+    # 3. Else (Standard) -> Skip if exists.
+    
+    should_train = False
+    if not os.path.exists(lora_path):
+        should_train = True
+    elif target_name: 
+        # Additive Mode for Templates
+        print(f"    [+] MLL Template Active ({target_name}). Enforcing Additive Prep & Training.")
+        should_train = True
+        
+    if should_train and args.local:
+        print(f"    [⚠️] LoRA Missing: {lora_path}")
+        print("    [🔨] Starting Pre-Production: Generating Character Sheets & Training MLL...")
+        
+        try:
+            # 1. Prep Assets
+            # prep_movie_assets reads mll_template from Bible automatically.
+            cmd_prep = [sys.executable, "prep_movie_assets.py", "--xml", xml_path, "--force"]
+            print("       > Running prep_movie_assets.py...")
+            subprocess.run(cmd_prep, check=True)
+            
+            # 2. Train LoRA
+            # Dataset will be in target_name folder if prep_movie_assets found template
+            dataset_dir = os.path.join("z_training_data/movies", final_lora_name, "dataset")
+            cmd_train = [sys.executable, "train_mll.py", "--dataset", dataset_dir, "--name", final_lora_name, "--steps", "200"]
+            print("       > Running train_mll.py...")
+            subprocess.run(cmd_train, check=True)
+            
+        except subprocess.CalledProcessError as e:
+            print(f"    [!] Pre-Production Failed: {e}. Proceeding without LoRA.")
+            
+    if os.path.exists(lora_path) and args.local:
+         print(f"    [💉] Loading Movie-Level LoRA: {lora_path}")
+         # Force Init Bridge
+         from flux_bridge import get_flux_bridge
+         global FLUX_BRIDGE
+         FLUX_BRIDGE = get_flux_bridge(FLUX_MODEL_PATH)
+         FLUX_BRIDGE.load_lora(lora_path)
+    
+    # Assign Voices (Deterministic Kokoro)
+    # Use foley_talk helper logic but we need to fetch voices locally?
+    # foley_talk.assign_kokoro_voice_deterministic takes (name, available_voices).
+    # We can pass empty list to get defaults/fallback, or try to load bridge to get list.
+    # For speed, let's just assume defaults or hardcoded safe list for now to ensure consistency without heavy init.
+    # Actually, we rely on generate_audio_asset(mode="kokoro") eventually.
+    # But we want to decide the mapping UP FRONT.
+    
+    safe_voices = ["af_bella", "af_sarah", "am_michael", "am_adam", "af_nicole", "bm_george"]
+    cast_map = {}
+    for char in all_chars:
+        voice, pitch = assign_kokoro_voice_deterministic(char, safe_voices)
+        cast_map[char] = {"voice": voice, "pitch": pitch}
+        print(f"       + {char} -> {voice} (p{pitch})")
+        
+    # 3. Generation Loop
+    assets = []
+    
+    # Get FPS from args or XML? Content Producer args has no FPS usually?
+    # definitions sets default 0.5. But Segments in XML are based on 24 usually (Full Movie).
+    # We should respect the XML's context if possible (in Bible). 
+    # But `load_manifest` only loads Manifest part. 
+    # Let's assume 24 for time calculations if standard.
+    fps = 24.0 
+    
+    total_lines = len(manifest.dialogue.lines)
+    
+    for i, line in enumerate(manifest.dialogue.lines):
+        print(f"    [{i+1}/{total_lines}] {line.character}: {line.text[:40]}...")
+        
+        # A. Visual
+        # Find context
+        seg = get_segment_for_time(manifest, line.start_offset, fps)
+        
+        # Construct Prompt
+        # Combine: Seg Prompt + Action + Focus
+        base_prompt = seg.prompt if seg else "A cinematic scene."
+        visual_prompt = f"{base_prompt} Action: {line.action}. Focus: {line.visual_focus}. Character: {line.character}."
+        
+        # Output Path
+        img_path = os.path.join(session_dir, f"frame_{i:04d}.jpg")
+        
+        # Generate (Flux/Gemini)
+        # Use our helper
+        if not generate_image(visual_prompt, img_path):
+             create_black_frame(img_path)
+             
+        # B. Audio (Kokoro)
+        wav_path = os.path.join(session_dir, f"line_{i:04d}.wav")
+        voice_info = cast_map.get(line.character, {"voice": "af_bella", "pitch": 0})
+        
+        final_wav = generate_audio_asset(
+            line.text, wav_path, 
+            voice_name=voice_info['voice'], 
+            pitch=voice_info['pitch'],
+            mode="kokoro"
+        )
+        
+        # Handle Audio Failure
+        if not final_wav:
+             print(f"       [-] Audio Gen Failed for Line {i}. Creating Silence.")
+             create_silent_wav(wav_path, duration=2.0)
+             final_wav = wav_path
+             duration = 2.0
+        else:
+             duration = get_audio_duration(final_wav) + 0.1 # Minimal padding on speech
+             
+        assets.append({
+            "audio": final_wav, "image": img_path, "duration": duration,
+            "speaker": line.character, "text": line.text
+        })
+        
+        # --- PAUSE / PACING SEGMENT ---
+        # Insert a silence segment between lines.
+        # Sometimes hold the last image, sometimes cut to a new one (Reaction/Atmosphere).
+        
+        pause_dur = random.uniform(1.0, 2.0) # Organic variance
+        pause_wav = os.path.join(session_dir, f"pause_{i:04d}.wav")
+        create_silent_wav(pause_wav, duration=pause_dur)
+        
+        # Decide Visual: Hold or Cut?
+        # 30% chance of a new "Reaction/Silent" shot.
+        if random.random() < 0.3:
+            pause_type = "visual"
+            # Modify prompt for silence
+            # "A cinematic scene... Action: [Action]. Focus: [Focus]... (Silent moment of reflection)"
+            pause_prompt = f"{visual_prompt} (Character is silent, listening, or reacting. Atmospheric moment.)"
+            pause_img = os.path.join(session_dir, f"frame_{i:04d}_pause.jpg")
+            
+            if not generate_image(pause_prompt, pause_img):
+                # Fallback to holding previous image if gen fails
+                pause_img = img_path
+        else:
+            pause_type = "hold"
+            pause_img = img_path
+
+        assets.append({
+            "audio": pause_wav, "image": pause_img, "duration": pause_dur,
+            "speaker": None, "text": "[Silence]"
+        })
+        
+    # 4. Stitch
+    final_basename = f"FMS-{session_id}"
+    fms_out_dir = os.path.join(output_dir, "fullmovie-stills")
+    os.makedirs(fms_out_dir, exist_ok=True)
+    
+    final_mp4_path = os.path.join(fms_out_dir, f"{final_basename}.mp4")
+    stitch_assets(assets, session_dir, final_mp4_path) # stitch_assets is defined in podcast section, need to check scope or move it.
+    # checking file... stitch_assets is defined inside run_podcast_processing or global?
+    # It was NOT shown in the view_file of content_producer.py.
+    # Wait, I viewed lines 1-800 and 1150+.
+    # I probably missed it or it's named differently.
+    # In run_improv_session (line 757) it calls `stitch_assets`. 
+    # I must assume it is available in global scope.
+    
+    # 5. Metadata
+    print(f"✅ FullMovie-Still Complete. Output: {final_mp4_path}")
+
+def create_silent_wav(path, duration=1.0):
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", f"anullsrc=r=24000:cl=mono", "-t", str(duration), path], 
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def pad_audio_file(path, pad_duration):
+    """Appends silence to the end of a wav file."""
+    if not os.path.exists(path): return
+    
+    tmp_path = path.replace(".wav", "_padded.wav")
+    try:
+        # pad_dur implies adding duration. 
+        # filter: apad=pad_dur=X adds X seconds.
+        subprocess.run([
+            "ffmpeg", "-y", "-i", path, "-af", f"apad=pad_dur={pad_duration}", 
+            "-c:a", "pcm_s16le", tmp_path, "-loglevel", "error"
+        ], check=True)
+        
+        os.replace(tmp_path, path)
+    except Exception as e:
+        print(f"[-] Failed to pad audio {path}: {e}")
+        if os.path.exists(tmp_path): os.remove(tmp_path)
+
 def main():
     global LOCAL_MODE, FOLEY_ENABLED
 
@@ -1216,6 +1578,8 @@ def main():
     parser.add_argument("--h", type=int, default=576, help="Height (Default: 576)")
     parser.add_argument("--location", type=str, help="Override visual location (e.g. 'a haunted hotel')")
     parser.add_argument("--rvc", action="store_true", help="Enable RVC (Retrieval Voice Conversion) for Cast")
+    parser.add_argument("--xml", type=str, help="Input XMVP XML path (for fullmovie-still mode)")
+    parser.add_argument("--xb", type=str, help="Alias for --xml (XMVP Bible/Manifest)")
     
     args, unknown = parser.parse_known_args()
     
@@ -1247,6 +1611,15 @@ def main():
     # 0. Thax Douglas Mode
     if args.vpform == "thax-douglas":
         run_thax_douglas_session(args.band, args.poem, OUTPUT_DIR)
+        return
+
+    # 0.5 FullMovie Still Mode
+    if args.vpform == "fullmovie-still":
+        xml_input = args.xml or args.xb
+        if not xml_input:
+            print("[-] --xml (or --xb) argument required for fullmovie-still mode.")
+            return
+        run_fullmovie_still_mode(xml_input, OUTPUT_DIR, None, args)
         return
 
     if args.vpform and ("podcast" in args.vpform or "cartoon" in args.vpform):

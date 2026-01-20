@@ -462,18 +462,64 @@ def process(args):
     else:
         # Default to z_test-outputs if no output specified
         # This prevents polluting the root directory
-        base_outputs = Path(__file__).resolve().parent / "z_test-outputs" / "post_prod"
+        base_outputs = Path(__file__).resolve().parent / "z_test-outputs" / "post_production"
         ensure_dir(base_outputs)
         out_root = base_outputs / f"post_prod_{ts}"
         
     if not out_root.exists(): out_root.mkdir(parents=True)
     
+    stage_0_stitched = out_root / "0_stitched"
     stage_1_frames = out_root / "1_extracted"
     stage_2_interpolated = out_root / "2_interpolated"
     stage_3_upscaled = out_root / "3_upscaled"
     
+    # 0. Pre-Stitch (If folder of MP4s)
+    if input_dir:
+        # Check for videos
+        video_files = list(input_dir.glob("*.mp4")) + list(input_dir.glob("*.mov"))
+        if video_files:
+            logging.info(f"📂 Found {len(video_files)} video files. Stitching Mode Activated.")
+            # Sort Alphabetically to ensure order (glob is arbitrary)
+            video_files = sorted(video_files, key=lambda p: p.name)
+            
+            stage_0_stitched.mkdir(exist_ok=True)
+            stitched_input = stage_0_stitched / "stitched_source.mp4"
+            
+            # Create File List
+            list_path = stage_0_stitched / "file_list.txt"
+            with open(list_path, 'w') as f:
+                for vf in video_files:
+                    f.write(f"file '{vf}'\n")
+            
+            # Stitch
+            cmd_stitch = f"ffmpeg -f concat -safe 0 -i '{list_path}' -c copy '{stitched_input}' -y -loglevel error"
+            logging.info(f"   🧵 Stitching videos...")
+            
+            if os.system(cmd_stitch) == 0 and stitched_input.exists():
+                logging.info(f"   ✅ Stitched Source Created: {stitched_input}")
+                input_video = stitched_input # Handover to extraction logic
+                input_dir = None # Disable dir logic
+                
+                # --- AUTO-DISABLE ENHANCEMENTS FOR STITCH MODE ---
+                # Unless the user EXPLICITLY requested them via flags.
+                # Checking sys.argv is a rough heuristic but effective.
+                explicit_x = "-x" in sys.argv
+                explicit_scale = "--scale" in sys.argv
+                
+                if not explicit_x and args.x > 1:
+                    logging.info("   ℹ️  Stitch Mode: Auto-Disabling Interpolation (Defaulting to 1x). Use -x to override.")
+                    args.x = 1
+                
+                if not explicit_scale and args.scale > 1.0:
+                     logging.info("   ℹ️  Stitch Mode: Auto-Disabling Upscale (Defaulting to 1.0x). Use --scale to override.")
+                     args.scale = 1.0
+                # -----------------------------------------------
+            else:
+                 logging.error("   ❌ Stitching failed. Falling back to simple file scan (likely to fail if no images).")
+
     # 1. Extract (if video)
     audio_path = None
+    work_frames = []
     
     if input_video:
         logging.info(f"🎞️ Extracting frames from {input_video}...")
@@ -895,7 +941,10 @@ def stitch_videos(log, output_filename):
 
 def main():
     parser = argparse.ArgumentParser(description="Post Production: The Svelte 2x Machine")
-    parser.add_argument("input", nargs='?', help="Input Video file or Directory of frames")
+    # Support both Positional and Flag input for maximum flexibility
+    parser.add_argument("input_pos", nargs='?', help="Input Video file or Directory of frames (Positional)")
+    parser.add_argument("--input", dest="input_flag", help="Input Video file or Directory of frames (Flag)")
+    
     parser.add_argument("--output", help="Output Directory")
     parser.add_argument("-x", type=int, default=2, help="Frame Expansion Factor (Tweening). Default: 2")
     parser.add_argument("--scale", type=float, default=2.0, help="Upscale Factor. Default: 2.0")
@@ -906,6 +955,9 @@ def main():
     parser.add_argument("--stitch-audio", action="store_true", help="Force-stitch frames to match audio duration (Ignore Delta).")
     
     args = parser.parse_args()
+    
+    # Unified Input
+    args.input = args.input_flag or args.input_pos
     
     if args.input:
         process(args)

@@ -39,6 +39,7 @@ class CSSV(BaseModel):
     scenario: str = Field(..., description="The 'Where' and 'When'")
     situation: str = Field(..., description="The 'What' (Immediate conflict or topic)")
     vision: str = Field(..., description="The 'Vibe' (Style tokens, Artist refs)")
+    mll_template: Optional[str] = None # Show-Level LoRA Template ID (e.g. "GAHD_Template")
 
 class Story(BaseModel):
     """
@@ -48,6 +49,7 @@ class Story(BaseModel):
     synopsis: str
     characters: List[str]
     theme: str
+    mll_template: Optional[str] = None # Show-Level LoRA Template ID
 
 class DialogueLine(BaseModel):
     """
@@ -211,8 +213,41 @@ def save_xmvp(data_models: Dict[str, Any], path: Union[str, Path]):
              
     tree = ET.ElementTree(root)
     # Write manually to ensure pretty print roughly works if we cared, 
-    # but standard write is fine.
+    tree = ET.ElementTree(root)
     tree.write(path, encoding="utf-8", xml_declaration=True)
+
+def safe_save_xmvp(out_path: str, bible_path: str = None, story_path: str = None, manifest_path: str = None, manifest_obj: Any = None, extra_meta: Dict = None):
+    """
+    Robustly compiles available JSON artifacts into a final XMVP XML.
+    Handles missing files gracefully (partial saves).
+    """
+    data_map = {}
+    
+    # 1. Bible
+    if bible_path and os.path.exists(bible_path):
+        with open(bible_path, 'r') as f:
+            data_map["Bible"] = json.load(f)
+            
+    # 2. Story
+    if story_path and os.path.exists(story_path):
+        with open(story_path, 'r') as f:
+            data_map["Story"] = json.load(f)
+            
+    # 3. Manifest (Path OR Object)
+    if manifest_obj:
+        data_map["Manifest"] = manifest_obj
+    elif manifest_path and os.path.exists(manifest_path):
+        with open(manifest_path, 'r') as f:
+            data_map["Manifest"] = json.load(f)
+
+    # 4. Extra Metadata (e.g. SASSPRILLA prompt)
+    if extra_meta:
+        data_map["Meta"] = extra_meta
+
+    if data_map:
+        save_xmvp(data_map, out_path)
+        return True
+    return False
 
 def load_xmvp(path: Union[str, Path], key: str) -> Optional[str]:
     """

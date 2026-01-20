@@ -137,6 +137,7 @@ class VeoDirector:
         headers = { "Content-Type": "application/json" }
         
         # 1. Try with Context (Base64 Image)
+        # 1. Try with Context (Base64 Image)
         if context_uri and os.path.exists(context_uri) and context_type == "image":
              try:
                  logging.info(f"   🎥 Rolling with Context (Base64): {context_uri}...")
@@ -149,6 +150,9 @@ class VeoDirector:
                        "image": { "bytesBase64Encoded": encoded_string, "mimeType": "image/jpeg" } 
                    }]
                  }
+                 
+                 # Debug: Log partial payload (sans huge base64)
+                 # logging.info(f"   🐛 Payload: prompt={prompt[:50]}...")
                  
                  res = requests.post(url, json=payload, headers=headers)
                  if res.status_code == 200:

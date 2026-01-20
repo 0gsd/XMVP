@@ -114,6 +114,28 @@ def git_clone_comfy():
     except subprocess.CalledProcessError as e:
         print(f"    ❌ Git Clone Failed: {e}")
 
+WAN_REPO = "https://github.com/Wan-Video/Wan2.1.git"
+WAN_TARGET = MW_ROOT / "Wan2.1-main"
+
+def git_clone_wan():
+    print(f"\n[*] Processing Wan2.1 Code -> {WAN_TARGET}")
+    if (WAN_TARGET / "generate.py").exists():
+        print("    -> Wan2.1 code seems already present (generate.py found). Skipping clone.")
+        return
+
+    if not WAN_TARGET.exists():
+        WAN_TARGET.mkdir(parents=True, exist_ok=True)
+    
+    # Check if empty
+    if any(WAN_TARGET.iterdir()):
+        print("    [!] Warning: Target directory not empty. Attempting clone anyway (git might fail)...")
+    
+    try:
+        subprocess.run(["git", "clone", WAN_REPO, "."], cwd=WAN_TARGET, check=True)
+        print("    ✅ Cloned Wan2.1 Code.")
+    except subprocess.CalledProcessError as e:
+        print(f"    ❌ Git Clone Failed: {e}")
+
 def main():
     print(f"🚀 XMVP Model Populator")
     print(f"   Root: {MW_ROOT}")
@@ -142,8 +164,9 @@ def main():
         else:
             print("      Skipping login (assuming cached credentials).")
 
-    # 1. ComfyUI
+    # 1. ComfyUI & Wan2.1 Source
     git_clone_comfy()
+    git_clone_wan()
 
     # 2. HF Models
     for name, conf in MODELS.items():

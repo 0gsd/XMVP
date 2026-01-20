@@ -14,7 +14,7 @@ import logging
 
 # --- LEGACY SUPPORT ---
 VIDEO_MODELS = {
-    "L": "veo-3.1-fast-generate-preview", 
+    "L": "veo-2.0-generate-001", 
     "J": "veo-3.1-fast-generate-preview", 
     "K": "veo-3.1-generate-preview",
     "D": "veo-2.0-generate-001"
@@ -208,6 +208,12 @@ FORM_REGISTRY = {
         default_args={},
         description="Direct Parody/Spoof of a Movie (Cloud/Veo)."
     ),
+    "parody-video": VPFormConfig(
+        key="parody-video",
+        aliases=["pv", "music-parody"],
+        default_args={"vm": "L"},
+        description="Music-Synced Parody Video (Veo 2.0 / L-Tier). Treats prompt as Movie Title."
+    ),
 
     # --- CONTENT PRODUCER SPECIFIC ---
     "thax-douglas": VPFormConfig(
@@ -233,6 +239,12 @@ FORM_REGISTRY = {
         aliases=["10", "tech-news"],
         default_args={},
         description="The Vibes Only Who Are You Maybe Cringe Always Topical Totally Random Except Not Chaos Unpacking Podcast"
+    ),
+    "fullmovie-still": VPFormConfig(
+        key="fullmovie-still",
+        aliases=["fms", "slideshow"],
+        default_args={"fps": 0.5, "local": True}, # Low FPS for slideshow
+        description="Ingest XMVP XML and generate a Frame+Audio slideshow (Pre-viz for Wan)."
     ),
     "route66-podcast": VPFormConfig(
         key="route66-podcast",

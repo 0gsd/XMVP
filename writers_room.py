@@ -24,8 +24,22 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
     
     # Batch Configuration
     BATCH_DURATION = 180.0  # Generate 3 minutes at a time
+    
+    # Defaults
     MIN_SCENE_DUR = 2.0
-    MAX_SCENE_DUR = 15.0  # Tighter constraint for "Micro-Scenes"
+    MAX_SCENE_DUR = 15.0
+    
+    # Strict Length Logic (e.g. for Parody Video / Music Video where beats matter)
+    target_seg_len = cssv.constraints.target_segment_length
+    is_strict_pacing = False
+    
+    # Heuristic: If target is significantly different from default 4.0 (e.g. 8.0 for Veo), 
+    # OR if we are in a mode that implies structure, we assume user wants that specific pacing.
+    if target_seg_len and target_seg_len > 0 and target_seg_len != 4.0:
+        logging.info(f"   📏 Strict Pacing Detected: Target {target_seg_len}s per scene.")
+        MIN_SCENE_DUR = max(1.0, target_seg_len - 0.5)
+        MAX_SCENE_DUR = target_seg_len + 0.5
+        is_strict_pacing = True
     
     current_total_duration = 0.0
     all_portions = []
@@ -41,7 +55,7 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
         current_batch_target = min(BATCH_DURATION, remaining_time)
         
         # Stop if we are close enough (within 10s margin or less than a minimal scene)
-        if remaining_time < 5.0:
+        if remaining_time < MIN_SCENE_DUR:
             logging.info("   🛑 Reached target duration.")
             break
             
@@ -54,6 +68,10 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
             tail = all_portions[-3:]
             last_scenes_context = "\n".join([f"- Scene {p.id}: {p.content} ({p.duration_sec}s)" for p in tail])
         
+        pacing_instruction = f"- SCENE DURATION: Keep scenes short ({MIN_SCENE_DUR}s - {MAX_SCENE_DUR}s) for dynamic pacing."
+        if is_strict_pacing:
+             pacing_instruction = f"- STRICT PACING: You MUST aim for exactly {target_seg_len}s per scene. We are syncing to a beat."
+
         prompt = f"""
         CONTEXT: You are a Screenwriter writing a long-form movie script, chunk by chunk.
         
@@ -70,8 +88,8 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
         Write the NEXT {current_batch_target} seconds of the movie.
         - Create a sequence of "Micro-Scenes" (Fast cuts, dialogue bits, action beats).
         - Focus ONLY on the immediate next segment of the plot. Do not rush to the ending unless we are near {total_duration_target}s.
-        - SCENE DURATION: Keep scenes short ({MIN_SCENE_DUR}s - {MAX_SCENE_DUR}s) for dynamic pacing.
-        - TARGET QUANTITY: You need roughly {int(current_batch_target / 5)} scenes for this batch.
+        {pacing_instruction}
+        - TARGET QUANTITY: You need roughly {int(current_batch_target / (target_seg_len if is_strict_pacing else 5))} scenes for this batch.
         
         OUTPUT FORMAT (JSON List):
         [
@@ -101,8 +119,17 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
                 
                 for i, item in enumerate(data):
                     dur = float(item.get('duration', 5.0))
-                    # Clamp
-                    dur = max(MIN_SCENE_DUR, min(MAX_SCENE_DUR, dur))
+                    
+                    if is_strict_pacing:
+                        dur = target_seg_len # FORCE alignment
+                    else:
+                        # Clamp
+                        dur = max(MIN_SCENE_DUR, min(MAX_SCENE_DUR, dur))
+                    
+                    # Prevent overshooting Total Duration aggressively
+                    if (current_total_duration + batch_dur + dur) > (total_duration_target + (MAX_SCENE_DUR * 0.5)):
+                         logging.info("      ✂️ Truncating batch to prevent overshoot.")
+                         break
                     
                     dialogue_list = []
                     if 'dialogue' in item:

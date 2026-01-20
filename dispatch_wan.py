@@ -38,7 +38,7 @@ def run_wan_pipeline(manifest_path, out_path, staging_dir, args):
     logging.info(f"📹 Starting Wan Dispatch: {manifest_path}")
     
     manifest = load_json(manifest_path)
-    portions = manifest.get("portions", [])
+    portions = manifest.get("portions", manifest.get("segs", []))
     
     # Ensure Staging
     staging_dir = Path(staging_dir)
@@ -64,9 +64,22 @@ def run_wan_pipeline(manifest_path, out_path, staging_dir, args):
     updated_portions = []
     
     for i, portion in enumerate(portions):
-        pid = portion['id']
-        text = portion['content']
-        duration = portion.get('duration', 4.0)
+        pid = portion.get('id', i+1)
+        # Handle 'segs' vs 'portions' format differences
+        text = portion.get('content', portion.get('prompt', ''))
+        
+        # Duration: 'duration' (sec) vs 'end_frame' - 'start_frame' (frames)
+        if 'duration' in portion:
+             duration = float(portion['duration'])
+        elif 'end_frame' in portion and 'start_frame' in portion:
+             # Assume 24fps if not specified? Or pass args?
+             # args is passed to run_wan_pipeline? No, args is 4th param.
+             # But run_wan_pipeline calls usually pass args.
+             fps = 24.0 # Default
+             frames = portion['end_frame'] - portion['start_frame']
+             duration = frames / fps
+        else:
+             duration = 4.0
         
         logging.info(f"\n🎬 Processing Clip {pid}: {text[:40]}...")
         
@@ -92,7 +105,9 @@ def run_wan_pipeline(manifest_path, out_path, staging_dir, args):
             # Fallback: Generate TTS using Kokoro Bridge if available
             try:
                 from kokoro_bridge import get_kokoro_bridge
-                kokoro = get_kokoro_bridge()
+                k_conf = definitions.MODAL_REGISTRY[Modality.SPOKEN_TTS].get("kokoro-v1")
+                kokoro_path = k_conf.path if k_conf else "/Volumes/XMVPX/mw/kokoro-root/kokoro-v0_19.onnx"
+                kokoro = get_kokoro_bridge(kokoro_path)
                 
                 # Default Voice? Bella, or random?
                 # Let's use 'af_bella' as standard default

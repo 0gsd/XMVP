@@ -85,6 +85,24 @@ class FluxBridge:
             logging.error(f"   ❌ Failed to load Flux: {e}")
             self.pipeline = None
 
+    def load_lora(self, lora_path, adapter_name="default", scale=1.0):
+        """Loads a LoRA adapter."""
+        if not self.pipeline: return False
+        
+        logging.info(f"   💉 Loading LoRA: {lora_path} (Scale: {scale})")
+        try:
+            self.pipeline.load_lora_weights(lora_path, adapter_name=adapter_name)
+            # FluxPipeline supports set_adapters or fuse_lora?
+            # Diffusers unified LoRA support:
+            self.pipeline.fuse_lora(lora_scale=scale) # Fuse for speed? Or keep separate?
+            # Note: fuse_lora merges weights. If we want to switch movies, we should unfuse first?
+            # For simplicity in this script (one run per movie), fusing is fine and faster.
+            logging.info("   ✅ LoRA Fused.")
+            return True
+        except Exception as e:
+            logging.error(f"   ❌ LoRA Load Failed: {e}")
+            return False
+
     def generate(self, prompt, width=1024, height=1024, steps=4, seed=None):
         if not self.pipeline:
             logging.error("   ❌ Flux Pipeline not initialized.")
@@ -207,6 +225,23 @@ class FluxBridge:
         except Exception as e:
              logging.error(f"   ❌ Flux Img2Img Error: {e}")
              return None
+
+    def unload(self):
+        """Unload Flux pipelines."""
+        if self.pipeline:
+             logging.info("   🗑️  Unloading Flux Engine...")
+             del self.pipeline
+             self.pipeline = None
+             
+        if self.img2img_pipeline:
+             del self.img2img_pipeline
+             self.img2img_pipeline = None
+             
+        import gc
+        gc.collect()
+        if self.device == "mps":
+             torch.mps.empty_cache()
+        logging.info("   ✅ Flux Engine Unloaded.")
 
 
 # Singleton Pattern for specific use cases

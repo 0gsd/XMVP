@@ -54,7 +54,7 @@ def main():
 
     parser.add_argument("--cf", type=str, default=None, help="Cameo Feature: Wikipedia URL or Search Query")
     parser.add_argument("--mu", type=str, default=None, help="Music Track (for music-video vpform)")
-    parser.add_argument("--vm", type=str, default="K", help="Video Model Tier (L, J, K)")
+    parser.add_argument("--vm", type=str, default="L", help="Video Model Tier (L, J, K)")
     parser.add_argument("--pg", action="store_true", help="Enable PG Mode (Relaxed Celebrity/Strict Child Safety)")
     
     # Ops Args
@@ -64,10 +64,16 @@ def main():
     parser.add_argument("--out", type=str, default=None, help="Override output directory")
     parser.add_argument("--local", action="store_true", help="Run Locally (Gemma + LTX-Video)")
     
+    parser.add_argument("--retcon", action="store_true", help="Force Text-Only Expansion (Implies --local, Skips Video)")
     parser.add_argument("--prompt", type=str, help="Alias for concept (the prompt)")
     
     args, unknown = parser.parse_known_args()
     
+    # Retcon Force Logic
+    if args.retcon:
+        logging.info("🔄 Retcon Mode Enabled: Forcing Local Mode + Text Only.")
+        args.local = True
+
     # --- Smart Argument Resolution via Definitions ---
     # 1. Resolve VPForm from cli_args
     resolved_form = definitions.parse_global_vpform(args, current_default=args.vpform)
@@ -132,21 +138,39 @@ def main():
             args.vpform = "music-video"
             
         if args.vpform == "full-movie":
-            logging.info("🏠 Local Mode Enabled: Switching models to Local Gemma (Text) and Wan 2.1 (Video).")
+             pass
+
+    # --- APPLY FORM DEFAULTS (Late Binding via Definitions) ---
+    try:
+        import definitions
+        if args.vpform in definitions.FORM_REGISTRY:
+            form_conf = definitions.FORM_REGISTRY[args.vpform]
+            
+            # Apply VM default if currently at global default "L"
+            if "vm" in form_conf.default_args:
+                target_vm = form_conf.default_args["vm"]
+                if args.vm == "L": # Global Default
+                    logging.info(f"✨ Auto-Switching VM to '{target_vm}' (VPForm Default)")
+                    args.vm = target_vm
+    except Exception as e:
+        logging.warning(f"⚠️ Failed to apply form defaults: {e}")
+
+    # Local Mode Configuration
+    if args.local:
+        if args.vm == "W":
+             logging.info("🏠 Local Mode Enabled: Switching models to Local Gemma (Text) and Wan 2.1 (Video).")
         else:
-            logging.info("🏠 Local Mode Enabled: Switching models to Local Gemma (Text) and LTX (Video).")
+             logging.info("🏠 Local Mode Enabled: Switching models to Local Gemma (Text) and LTX (Video).")
 
         # Explicitly Enforce Local Text Engine
         os.environ["TEXT_ENGINE"] = "local_gemma"
         
         # ⚠️ CRITICAL: Reset TextEngine Singleton
-        # If any module (e.g. sassprilla/carbonator) initialized the engine early,
-        # it would have picked up the default (Gemini). We must force a re-init.
         try:
              import text_engine
              text_engine._ENGINE = None
-             logging.info("   ♻️  TextEngine Singleton Reset (Forcing Local Re-Init).")
-        except ImportError:
+             logging.info("   🔄 TextEngine Singleton Reset for Local Mode.")
+        except:
              pass
 
         # Resolve Local Model Path using Definitions (Global for ALL local modes)
@@ -170,23 +194,40 @@ def main():
              pass
         
     # Cloud Movie Overrides (Veo Constraints)
-    if args.vpform in ["movies-movie", "parody-movie"]:
+    if args.vpform in ["movies-movie", "parody-movie", "parody-video"]:
         if not args.local:
              logging.info(f"🌩️ Cloud Movie Mode ({args.vpform}): Enforcing Veo Constraints.")
              if args.l != 8.0:
                  logging.warning(f"   ⚠️ Overriding segment length {args.l}s -> 8.0s (Veo Requirement)")
                  args.l = 8.0
              
-             # Default to K (Veo 3.1) unless Fast is specified
-             if not args.fast and not args.vfast and args.vm == "K": # K is default
-                 # Ensure it stays K or upgrade? It's fine.
-                 pass
-             elif args.vm != "K" and not args.fast and not args.vfast:
-                 logging.info(f"   🎥 Switching Video Model to 'K' (Veo 3.1) for best results.")
-                 args.vm = "K"
+             # Default to K (Veo 3.1) unless Fast is specified (Legacy logic removed to allow L tier)
+             # if not args.fast and not args.vfast and args.vm == "K": 
+             #     pass
+             # elif args.vm != "K" and not args.fast and not args.vfast:
+             #     logging.info(f"   🎥 Switching Video Model to 'K' (Veo 3.1) for best results.")
+             #     args.vm = "K"
         
         # Force Local Text Engine via Env Var (Captured by text_engine.py)
+        # Use Local Gemma (Director Adapter) for Hollywood Accuracy
         os.environ["TEXT_ENGINE"] = "local_gemma"
+        
+        # Resolve Local Model Path using Definitions (Same as Local Mode)
+        try:
+            import definitions
+            gemma_config = definitions.MODAL_REGISTRY[definitions.Modality.TEXT].get("gemma-2-9b-it-director")
+            if not gemma_config: 
+                 gemma_config = definitions.MODAL_REGISTRY[definitions.Modality.TEXT].get("gemma-2-9b-it")
+            
+            if gemma_config and gemma_config.path:
+                 os.environ["LOCAL_MODEL_PATH"] = gemma_config.path
+                 logging.info(f"   📍 Local Text Model Path: {gemma_config.path}")
+                 
+                 if gemma_config.adapter_path:
+                      os.environ["LOCAL_ADAPTER_PATH"] = gemma_config.adapter_path
+                      logging.info(f"   🧩 Local Adapter Path: {gemma_config.adapter_path}")
+        except ImportError:
+             pass
         
         # Log Safety/Quality Status
         safety_status = "ON (Reasonable)" if args.pg else "OFF (Uncensored)"
@@ -236,7 +277,7 @@ def main():
 
     # Auto-Carbonation for Short Titles (The "Sassprilla" Hook)
     # DISABLE for Cloud Movies (they are exact remakes)
-    if args.vpform in ["movies-movie", "parody-movie"]:
+    if args.vpform in ["movies-movie", "parody-movie", "parody-video"]:
         logging.info("🚫 Cloud Movie Mode: Auto-Carbonation Disabled (Preserving Exact Title).")
     elif args.concept and len(args.concept.split()) < 10 and "." not in args.concept and is_clean_run:
         logging.info(f"🫧 Auto-Carbonating detected Title: '{args.concept}'")
@@ -278,18 +319,50 @@ def main():
         with open(p_bible, "w") as f:
             f.write(bible_content)
         logging.info("   -> Skipped Vision Producer (Loaded from XML).")
-        
+
+        # DURATION RETCON LOGIC
+        # If the user asks for a new --slength while using --xb, we must:
+        # 1. Update the Bible with the new constraints.
+        # 2. Force Writers Room to re-run (by nuking downstream JSONs).
+        if args.slength and args.slength > 0:
+            logging.info(f"⏱️  Duration Retcon Detected: New Target {args.slength}s (Old XML ignored)")
+            
+            # Read loaded bible
+            import json
+            with open(p_bible, 'r') as f:
+                bible_data = json.load(f)
+            
+            # Update Constraints
+            if "constraints" in bible_data:
+                bible_data["constraints"]["max_duration_sec"] = args.slength
+                # Recalculate segments just for safety
+                bible_data["constraints"]["max_segments"] = int(args.slength / args.l)
+            
+            # Save updated Bible
+            with open(p_bible, 'w') as f:
+                json.dump(bible_data, f, indent=2)
+            logging.info("   ✅ Bible constraints updated.")
+            
+            # Invalidate downstream artifacts to force re-generation
+            # We keep 'story.json' (The Plot) but nuke 'portions.json' (The Scenes)
+            if os.path.exists(p_portions):
+                logging.info("   💥 Invalidating old Portions (forcing writers room re-run)...")
+                os.remove(p_portions)
+            if os.path.exists(p_manifest):
+                os.remove(p_manifest)
+                
     else:
 
         # Logic: slength > 0 overrides seg
         if args.slength > 0:
-            import math
             logging.info(f"⏱️  Target Duration (SLENGTH): {args.slength}s")
             args.seg = math.ceil(args.slength / args.l)
             total_length = args.slength
         else:
             # Calculate Total Length
-            if args.vpform in ["music-video", "full-movie"] and args.mu and os.path.exists(args.mu):
+            # Calculate Total Length
+            # Generalize: If Audio is provided, it always drives duration (overriding --seg)
+            if args.mu and os.path.exists(args.mu):
                 audio_len = get_audio_duration(args.mu)
                 if audio_len > 0:
                     logging.info(f"🎵 Audio Driven Duration: {audio_len:.1f}s")
@@ -334,9 +407,42 @@ def main():
         out_path=p_manifest
     )
     if not success: sys.exit(1)
+    if not success: sys.exit(1)
+    logging.info(f"✅ Manifest ready: {p_manifest}")
+
+    # 4.1 CHECKPOINT SAVE (The Safety Net)
+    # Save partial XMVP now in case Video Generation crashes
+    from mvp_shared import safe_save_xmvp
+    
+    meta_data = {
+        "concept": args.concept, 
+        "slength": args.slength, 
+        "vpform": args.vpform,
+        "local_mode": args.local
+    }
+    
+    # Save to "SESSION_CHECKPOINT.xml"
+    chk_path = os.path.join(OUT_DIR, "SESSION_CHECKPOINT.xml")
+    safe_save_xmvp(chk_path, p_bible, p_story, p_manifest, extra_meta=meta_data)
+    logging.info(f"💾 Checkpoint Saved: {chk_path}")
+
+    # 4.5 MEMORY CLEANUP (Drop the Mic)
+    # ... (existing cleanup code) ...
+    if args.local:
+         try:
+             import text_engine
+             logging.info("📉 Memory Optimization: Unloading Text Engine before Video Dispatch...")
+             text_engine.get_engine().unload()
+         except Exception as e:
+             logging.warning(f"   ⚠️ Failed to unload Text Engine: {e}")
 
     # 5. Dispatch Director (The Director)
-    if args.vpform in ["draft-animatic", "music-video"]:
+    if args.retcon:
+        logging.info("🛑 Retcon Mode: Stopping before Video Dispatch (Text-Only Complete).")
+        # Ensure we set success=True to proceed to cleanup/save if needed, though usually save happens after dispatch.
+        # Actually, lines 456+ do final save. We want to skip dispatch but do final save.
+        success = True
+    elif args.vpform in ["draft-animatic", "music-video"]:
         # FLUX ANIMATIC ENGINE
         logging.info(f"🎬 Mode: {args.vpform} (Flux Animatic Engine)")
         import dispatch_animatic
@@ -363,6 +469,7 @@ def main():
         )
     else:
         # Default Director (Legacy / Standard)
+        import dispatch_director
         success = dispatch_director.run_dispatch(
             manifest_path=p_manifest,
             mode="video",
@@ -376,9 +483,17 @@ def main():
     if not success: sys.exit(1)
 
     # 6. Post-Production (The Editor)
-    from mvp_shared import load_manifest, save_xmvp
-    manifest = load_manifest(p_manifest_updated)
+    from mvp_shared import load_manifest, safe_save_xmvp
+    # Use the UPDATED manifest (with file paths) if available, otherwise original (Retcon mode)
+    final_manifest_path = p_manifest_updated if os.path.exists(p_manifest_updated) else p_manifest
+    manifest = load_manifest(final_manifest_path)
     
+    # FINAL SAVE (The Golden Master)
+    
+    final_xmvp_path = os.path.join(DIR_FINAL, f"MVP_SESSION_{ts}.xml")
+    safe_save_xmvp(final_xmvp_path, p_bible, p_story, final_manifest_path, extra_meta=meta_data)
+    logging.info(f"🏆 Final XMVP Saved: {final_xmvp_path}")
+
     sorted_segs = sorted(manifest.segs, key=lambda s: s.id)
     
     stitch_list = []
@@ -438,24 +553,12 @@ def main():
     else:
         logging.error("❌ No clips to stitch.")
 
-    # 7. XMVP Archival
-    logging.info("💾 Archiving Run to XMVP...")
+    # 7. XMVP Archival (Redundant but keeps legacy file structure if needed)
+    # Actually, let's just rely on the GOLDEN MASTER above.
+    logging.info("💾 (Legacy Archive step skipped, rely on Final XMVP above)")
+    # We remove the failing save_xmvp call entirely since safe_save_xmvp already did it.
     
-    def read_json_safe(path):
-        if os.path.exists(path):
-            with open(path, 'r') as f: return f.read()
-        return "{}"
-
-    xmvp_data = {
-        "Bible": read_json_safe(p_bible),
-        "Story": read_json_safe(p_story),
-        "Portions": read_json_safe(p_portions),
-        "Manifest": read_json_safe(p_manifest_updated)
-    }
-    
-    xmvp_filename = os.path.join(DIR_FINAL, f"run_{ts}.xml")
-    save_xmvp(xmvp_data, xmvp_filename)
-    logging.info(f"✅ XMVP Saved: {xmvp_filename}")
+    # 8. Cleanup
     
     # 8. Cleanup
     logging.info("🧹 Cleaning up component parts...")

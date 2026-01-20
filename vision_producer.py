@@ -60,6 +60,12 @@ VP_FORMS = {
         mime_type="video/mp4",
         description="A music video synchronized to an audio track."
     ),
+    "parody-video": VPForm(
+        name="parody-video",
+        fps=24,
+        mime_type="video/mp4",
+        description="A music-synced parody video (Veo)."
+    ),
     "draft-animatic": VPForm(
         name="draft-animatic",
         fps=24,
@@ -71,6 +77,24 @@ VP_FORMS = {
         fps=24,
         mime_type="video/mp4",
         description="A full-length feature film animatic."
+    ),
+    "gahd-podcast": VPForm(
+        name="gahd-podcast",
+        fps=1,
+        mime_type="audio/mp3",
+        description="Great Moments in History Podcast."
+    ),
+    "24-podcast": VPForm(
+        name="24-podcast",
+        fps=1,
+        mime_type="audio/mp3",
+        description="24 Hours Real-Time Podcast."
+    ),
+    "route66-podcast": VPForm(
+        name="route66-podcast",
+        fps=1,
+        mime_type="audio/mp3",
+        description="Route 66 Travelogue Podcast."
     )
 }
 
@@ -123,6 +147,13 @@ def get_default_vision(form_name: str, seg_count: int = 0) -> str:
                 "INSPIRATION: Scary Movie, Don't Be a Menace, Spy Hard. "
                 "GOAL: To relentlessly mock the specific scene or concept provided."
             )
+    elif form_name == "parody-video":
+         return (
+                "STYLE: Music Video Parody / Movie Montage set to Music. "
+                "AESTHETIC: High-end cinematic parody. Visually matching the prompt (movie title) but edited to the beat of the music. "
+                "CONTENT: A sequence of iconic scenes from the movie, but slightly 'off' or exaggerated."
+                "PACING: Rhythmic, musical, montage-style."
+         )
     elif form_name == "music-video":
         return (
             "CONTENT: Visual metaphors, performance shots (if band mentioned), or pure narrative storytelling."
@@ -275,8 +306,8 @@ def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: 
     fps = form.fps
     
     # Duration Logic
-    # OVERRIDE: Music Video Duration
-    if vpform_name == "music-video" and audio_path and Path(audio_path).exists():
+    # OVERRIDE: Music Video Duration (and Parody Video)
+    if (vpform_name == "music-video" or vpform_name == "parody-video") and audio_path and Path(audio_path).exists():
         logging.info(f"   🎵 Analyzing Audio: {audio_path}")
         duration_sec, bpm = analyze_audio(audio_path)
         slength = duration_sec # Override the argument
@@ -295,6 +326,15 @@ def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: 
     # 4. Construct CSSV
     seg_count = int(total_frames / (fps * seg_len)) if flength > 0 else int(slength / seg_len)
     
+    # MLL Template Logic
+    template_id = None
+    if vpform_name == "gahd-podcast":
+         template_id = "GAHD_Template"
+    elif vpform_name == "24-podcast":
+         template_id = "24_Template"
+    elif vpform_name == "route66-podcast":
+         template_id = "Route66_Template"
+
     cssv = CSSV(
         constraints=Constraints(
             width=768, 
@@ -307,7 +347,8 @@ def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: 
         ),
         scenario=f"A {duration_sec:.1f}-second {form.description}",
         situation=situation_text,
-        vision=get_default_vision(form.name, seg_count=seg_count)
+        vision=get_default_vision(form.name, seg_count=seg_count),
+        mll_template=template_id
     )
 
     # DRAFT ANIMATIC OVERRIDE

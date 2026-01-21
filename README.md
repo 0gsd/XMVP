@@ -156,7 +156,6 @@ python3 movie_producer.py "The Odyssey" --vpform full-movie --local --slength 60
 ```
 
 This will trigger the iterative writer, generating scenes in 180s chunks until the 600s target is reached.
-```
 
 ---
 
@@ -265,7 +264,7 @@ python3 stub_reification.py --bible bible.json --out story.json
 
 ---
 
-## New in v2.69
+## New in v2.80
 
 ### 🫧 SASSPRILLA Carbonator
 Auto-expands title-style prompts into dense, genre-appropriate visual concepts:
@@ -338,7 +337,7 @@ Every run exports to the open XMVP XML format:
 
 ```xml
 <?xml version='1.0' encoding='utf-8'?>
-<XMVP version="2.69">
+<XMVP version="2.80">
   <Bible>{"constraints": {...}, "scenario": "...", "situation": "...", "vision": "..."}</Bible>
   <Story>{"title": "...", "synopsis": "...", "characters": [...]}</Story>
   <Manifest>{"segs": [...], "files": {...}}</Manifest>
@@ -384,7 +383,7 @@ Without `--pg` in local mode: **No filters applied.** Full artistic freedom.
 |------|-------|----------|
 | `K` | veo-3.1-generate-preview | Cinematic 4K (highest quality) |
 | `J` | veo-3.1-fast-generate-preview | Balanced speed/quality |
-| `L` | veo-3.1-fast-generate-preview | Light/fast |
+| `L` | veo-2.0-generate-001 | Light/fast |
 | `D` | veo-2.0-generate-001 | Legacy Veo 2.0 |
 
 ---
@@ -420,7 +419,7 @@ Without `--pg` in local mode: **No filters applied.** Full artistic freedom.
 
 ## Training Data & Voice Models
 
-XMVP v2.70 includes:
+XMVP v2.80 includes:
 
 - **Thax Douglas Voice Model** (`z_training_data/thax_voice/`) — RVC model for the Chicago poet, shared with his permission
 - **Screenplay Corpus** (`z_training_data/parsed_scripts/`) — Parsed scripts for dialogue refinement (not included in public repo)
@@ -443,6 +442,167 @@ XMVP is a personal project that I'm sharing because I think the "modular vision 
 Free and open for use by all. You'll need your own API keys for cloud mode, or your own hardware for local mode.
 
 The included Thax Douglas voice model is shared with permission for creative use.
+
+---
+
+## Getting Started
+
+Once you have XMVP installed, your external drive (`/Volumes/XMVPX/mw/`) populated with model weights, and your `env_vars.yaml` configured with API keys (16 `ACTION_KEYS_LIST` for video/image generation, 8 `TEXT_KEYS_LIST` for text operations), you're ready to start creating.
+
+Below are example commands for common workflows. Replace paths and parameters as needed for your setup.
+
+---
+
+### Converting Text to Video
+
+**To create a parody movie from a text file you already have:**
+
+```bash
+python3 xmvp_converter.py /Volumes/XMVPX/mw/your-project/processed_text/Your_Script.txt \
+    --vpform parody-movie \
+    --slength 5820
+```
+
+This converts a pre-processed text file into a ~97-minute parody-format video.
+
+---
+
+### Post-Production: Stitching Audio to Video
+
+**To add music or narration to an existing video sequence (folder of segments):**
+
+```bash
+python3 post_production.py \
+    --input /path/to/your/video-segments-folder \
+    --mu /path/to/your/audio/soundtrack.aif \
+    --stitch-audio
+```
+
+The `--stitch-audio` flag syncs and combines your audio track with the video output.
+
+**To process a single video file:**
+
+```bash
+python3 post_production.py video.mp4 --mu soundtrack.mp3 --stitch-audio
+```
+
+**To process a folder of numbered frame images:**
+
+```bash
+python3 post_production.py /path/to/frames/ --mu audio.aif --stitch-audio
+```
+
+---
+
+### Cloud Mode: Quick Movie from a Prompt
+
+**To create a segmented movie using cloud APIs (Gemini + Veo):**
+
+```bash
+python3 movie_producer.py "Your Movie Title (Year)" \
+    --vpform parody-movie \
+    --pg \
+    --vm L \
+    --seg 12
+```
+
+- `--pg` enables PG-safe content filtering
+- `--vm L` selects the "Light/Fast" video model tier
+- `--seg 12` creates 12 segments
+
+---
+
+### Local Mode: Full-Length Movie (Uncensored)
+
+**To create a full-length movie running entirely on your Mac:**
+
+```bash
+python3 movie_producer.py "Your Creative Movie Title" \
+    --vpform full-movie \
+    --local \
+    --slength 3000
+```
+
+- `--local` uses Gemma for text and Wan 2.1/LTX for video (no API costs, no content filters)
+- `--slength 3000` targets a 50-minute runtime
+
+---
+
+### Podcast Content: Route 66 Format
+
+**To create a Route 66-style podcast episode with RVC voice conversion:**
+
+```bash
+python3 content_producer.py \
+    --vpform route66-podcast \
+    --rvc \
+    --local \
+    --slength 3960 \
+    --ep 301 \
+    --location "The Roadside Diner"
+```
+
+- `--rvc` enables Real Voice Cloning
+- `--ep 301` sets episode number (Season 3, Episode 1)
+- `--location` sets the narrative location
+
+---
+
+### Podcast Content: GAHD Format
+
+**To create a Great Moments in History podcast episode:**
+
+```bash
+python3 content_producer.py \
+    --vpform gahd-podcast \
+    --slength 3200 \
+    --ep 207 \
+    --local \
+    --location "The Colosseum at Dawn"
+```
+
+Replace the location with your preferred setting.
+
+---
+
+### Podcast Content: 24-Minute Improv Special
+
+**To create a 24-minute 4-person improv podcast:**
+
+```bash
+python3 content_producer.py \
+    --vpform 24-podcast \
+    --local \
+    --slength 1440
+```
+
+The `--slength 1440` sets the target duration to 24 minutes (1440 seconds).
+
+---
+
+### Quick Reference: VP Forms
+
+| Form | Alias | Description |
+|------|-------|-------------|
+| `parody-movie` | `pm` | Parody-style movie content |
+| `full-movie` | `fm`, `feature`, `movie` | Full-length feature (uses micro-batching) |
+| `music-video` | `mv`, `music-agency` | Music video synced to audio |
+| `tech-movie` | `tm`, `tech` | Technology-themed content |
+| `route66-podcast` | `r66`, `route66` | Route 66 travel podcast format |
+| `gahd-podcast` | `gahd`, `god`, `history` | Great Moments in History podcast |
+| `24-podcast` | `24`, `news` | 24-minute improv special |
+| `thax-douglas` | `thax`, `td` | Thax Douglas spoken word |
+| `draft-animatic` | `animatic`, `draft` | Static storyboard mode |
+
+---
+
+### Tips for New Users
+
+1. **Start small**: Try `--seg 2` or `--slength 120` for quick test runs
+2. **Check model status**: Run `python3 model_scout.py --status` to verify your local models are configured
+3. **Watch your keys**: Rotate through `ACTION_KEYS_LIST` keys to avoid rate limits on cloud mode
+4. **Local = uncensored**: `--local` mode has no content filters unless you add `--pg`
+5. **Output location**: Videos appear in `z_test-outputs/movies/finalcuts/` by default
 
 ---
 

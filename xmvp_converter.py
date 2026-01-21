@@ -219,39 +219,129 @@ def setup_gemma_director():
     engine._init_local_model()
     return engine
 
-def process_file(input_path, args):
-    filename = Path(input_path).name
-    logging.info(f"📄 Ingesting: {filename}")
+# --- GENESIS HELPERS ---
+
+def load_random_inspiration():
+    """Returns (ATU_Theme, TLP_Axiom)"""
+    atu_theme = "ATU 300: The Dragon Slayer"
+    tlp_axiom = "The world is everything that is the case."
     
-    # 1. Read Text
-    try:
-        content = Path(input_path).read_text(encoding='utf-8', errors='ignore')
-    except Exception as e:
-        logging.error(f"Failed to read file: {e}")
-        return
+    # Load ATU
+    atu_path = MV_ROOT / "atui_235.md"
+    if atu_path.exists():
+        try:
+            full = atu_path.read_text(encoding='utf-8')
+            lines = [l.strip() for l in full.split('\n') if "* **ATU" in l]
+            if lines: atu_theme = random.choice(lines).replace("* **", "").replace("**", "")
+        except: pass
+        
+    # Load TLP
+    tlp_path = MV_ROOT / "tlp.md"
+    if tlp_path.exists():
+        try:
+            full = tlp_path.read_text(encoding='utf-8')
+            # Paragraphs in TLP are separated by blank lines. We want a juicy one.
+            paras = [p.strip() for p in full.split('\n\n') if len(p) > 20 and not p[0].isdigit()]
+            if paras: tlp_axiom = random.choice(paras)
+        except: pass
+            
+    return atu_theme, tlp_axiom
+
+def process_file(input_path, args):
+    # GENESIS MODE CHECK
+    genesis_mode = False
+    content = ""
+    filename = "Ex_Nihilo_Project"
+    
+    if not input_path or input_path == "GENERATE":
+        genesis_mode = True
+        logging.info("✨✨✨ GENESIS MODE ACTIVATED ✨✨✨")
+        atu, tlp = load_random_inspiration()
+        logging.info(f"   📚 Theme: {atu}")
+        logging.info(f"   🧠 Philosophy: {tlp}")
+        
+        # Default duration 1h 40m if not set
+        if not args.slength: args.slength = 6000
+    else:
+        filename = Path(input_path).name
+        logging.info(f"📄 Ingesting: {filename}")
+        try:
+            content = Path(input_path).read_text(encoding='utf-8', errors='ignore')
+        except Exception as e:
+            logging.error(f"Failed to read file: {e}")
+            return
 
     # 2. Config Engines
-    if args.vpform in ["parody-movie", "movies-movie"] or args.local:
+    if args.vpform in ["parody-movie", "comedy", "thriller", "movies-movie"] or args.local or genesis_mode:
         logging.info("   🧠 Initializing GemmaW (Director Mode)...")
         engine = setup_gemma_director()
     else:
         engine = get_engine()
 
-    # 3. Analyze / Parody Concept
-    parody_mode = (args.vpform == "parody-movie")
+    # 3. Analyze / Genre Concept
+    rewrite_target = None
+    if args.vpform in ["parody-movie", "comedy", "thriller"]:
+        rewrite_target = args.vpform
+    # In Genesis mode, if no vpform specified, default to "Drama" or use args.vpform
+    if genesis_mode and not rewrite_target:
+        rewrite_target = args.vpform if args.vpform != "standard" else "Cinematic Drama"
+        
     mapping = {}
     title = filename.replace(".txt","").replace("_", " ").title()
     logline = f"The story of {title}."
     
-    if parody_mode:
-        logging.info("   🎭 Generating Parody Concept...")
-        # (Simplified Logic from parody_factory)
+    if genesis_mode:
+        # GENESIS CONCEPT
+        title = "Untitled Genesis Project"
+        genre_display = rewrite_target.replace("-", " ").title()
+        
+        logging.info(f"   ⚛️  Synthesizing Concept ({genre_display})...")
         prompt = f"""
-        Analyze this script snippet and create a Parody Concept.
+        CREATE A MOVIE CONCEPT from scratch.
+        Genre: {genre_display}
+        Core Theme (Aarne-Thompson-Uther): {atu}
+        Philosophical Undertone (Wittgenstein): "{tlp}"
+        
+        Task:
+        1. Invent a Title.
+        2. Write a Logline.
+        3. Create a Cast of Characters (Names & Roles).
+        
+        OUTPUT JSON: {{ "new_title": "...", "logline": "...", "characters": ["Name (Role)", ...] }}
+        """
+        try:
+            raw = engine.generate(prompt, json_schema=True)
+            data = json.loads(engine._clean_json_output(raw))
+            if isinstance(data, list) and data: data = data[0]
+            
+            title = data.get("new_title", "Genesis Movie")
+            logline = data.get("logline", "A movie created from nothing.")
+            mapping = {c.split('(')[0].strip(): c for c in data.get("characters", [])}
+            logging.info(f"      📽️  Title: {title}")
+            logging.info(f"      📝 Logline: {logline}")
+        except Exception as e:
+            logging.warning(f"   ⚠️ Genesis Concept Failed: {e}")
+            
+    elif rewrite_target:
+        # REWRITE CONCEPT (Existing Logic)
+        genre_display = rewrite_target.replace("-", " ").title()
+        if rewrite_target == "parody-movie": genre_display = "Comedic Parody"
+        
+        logging.info(f"   🎭 Generating {genre_display} Concept...")
+        
+        rename_instruction = "Create unique, creative names for ALL characters and Major Locations to fit the new genre."
+        
+        prompt = f"""
+        Analyze this script snippet and create a concept for a {genre_display} version.
         Original Title: {title}
         Snippet: {content[:4000]}
         
-        OUTPUT JSON: {{ "parody_title": "...", "logline": "...", "mapping": {{ "OldName": "NewName" }} }}
+        Task: 
+        1. Create a new Title.
+        2. Create a Logline that shifts the genre to {genre_display}.
+        3. {rename_instruction}
+        
+        OUTPUT JSON: {{ "new_title": "...", "logline": "...", "mapping": {{ "OldName": "NewName", "OldLocation": "NewLocation" }} }}
         """
         try:
             raw = engine.generate(prompt, json_schema=True)
@@ -259,7 +349,7 @@ def process_file(input_path, args):
             # Handle list wrapper if any
             if isinstance(data, list) and data: data = data[0]
             
-            title = data.get("parody_title", f"Parody of {title}")
+            title = data.get("new_title", data.get("parody_title", f"{genre_display} of {title}"))
             logline = data.get("logline", logline)
             mapping = data.get("mapping", {})
             logging.info(f"      start -> {title}")
@@ -269,7 +359,11 @@ def process_file(input_path, args):
     # 4. Chunk into 24 Beats
     logging.info("   🔪 Chunking into 24 Hero's Journey Beats...")
     beats_def = load_hj24()
-    chunks = smart_chunk_script(content, num_chunks=24)
+    
+    if genesis_mode:
+        chunks = [""] * 24 # Empty chunks, we will generate content
+    else:
+        chunks = smart_chunk_script(content, num_chunks=24)
     
     processed_segs = []
     
@@ -277,25 +371,58 @@ def process_file(input_path, args):
     for i, chunk in enumerate(chunks):
         beat_info = beats_def[i] if i < len(beats_def) else {"name": f"Beat {i+1}", "desc": ""}
         
-        if not chunk.strip():
+        if genesis_mode:
+            # GENESIS WRITING
+            logging.info(f"      ✍️  Writing Beat {i+1}: {beat_info['name']}...")
+            
+            # Context for continuity (simplified)
+            prev_context = ""
+            if processed_segs:
+                prev_context = f"PREVIOUSLY: {processed_segs[-1]['script_content'][-500:]}"
+            
+            prompt = f"""
+            WRITE A SCENE for the movie "{title}".
+            Genre: {genre_display if 'genre_display' in locals() else args.vpform}
+            Beat Function: {beat_info['name']} ({beat_info['desc']})
+            Characters: {list(mapping.values())}
+            
+            Philosophical Constraint: Influence the dialogue/structure with: "{tlp}"
+            
+            {prev_context}
+            
+            Action: Write the script for this scene. 
+            Format: Standard Screenplay.
+            """
+            script_text = engine.generate(prompt, temperature=0.85)
+            
+        elif not chunk.strip():
             logging.warning(f"      Beat {i+1} empty. Padding.")
             script_text = "(Action)\nTime passes..."
         else:
-            if parody_mode:
+            if rewrite_target:
                 # Rewrite
                 logging.info(f"      Rewriting Beat {i+1}: {beat_info['name']}...")
-                prompt = f"""
-                Rewrite this scene to be a COMEDIC PARODY.
-                Parody Title: {title}
-                Function: {beat_info['name']} ({beat_info['desc']})
-                Mappings: {mapping}
                 
-                Content:
+                # Dynamic Instruction
+                if rewrite_target == "comedy":
+                    mode_instr = "Rewrite this scene to be a HILARIOUS COMEDY. If it's already funny, make it funnier."
+                elif rewrite_target == "thriller":
+                    mode_instr = "Rewrite this scene to be a HIGH-STAKES THRILLER. Increase tension, suspense, and danger."
+                else:
+                    mode_instr = "Rewrite this scene to be a COMEDIC PARODY."
+
+                prompt = f"""
+                {mode_instr}
+                New Title: {title}
+                Function: {beat_info['name']} ({beat_info['desc']})
+                Mappings: {mapping} (Use these new names/locations consistently)
+                
+                Original Content:
                 {chunk[:12000]}
                 
                 OUTPUT: Standard Screenplay Format Only.
                 """
-                script_text = engine.generate(prompt, temperature=0.9)
+                script_text = engine.generate(prompt, temperature=0.9 if rewrite_target == "comedy" else 0.8)
             else:
                 # Standard formatting/cleanup could go here, but raw is fine for 'ingest' 
                 # unless we want to convert purely to dialogue lines?
@@ -305,7 +432,7 @@ def process_file(input_path, args):
                 # For now, pass raw chunk as the script content.
                 script_text = chunk
 
-            # MEMORY OPTIMIZATION: Aggressive Cleanup
+        # MEMORY OPTIMIZATION: Aggressive Cleanup
         if hasattr(engine, "clear_cache"):
              # Double Tap: Clear Metal Cache then Python GC
              engine.clear_cache()
@@ -337,7 +464,7 @@ def process_file(input_path, args):
     story = {
         "title": title,
         "synopsis": logline,
-        "characters": list(mapping.values()) if parody_mode else ["Protagonist"],
+        "characters": list(mapping.values()) if (rewrite_target or genesis_mode) else ["Protagonist"],
         "theme": "Hero's Journey"
     }
     
@@ -400,12 +527,18 @@ def process_file(input_path, args):
     meta = {
         "source_file": str(filename),
         "hj24_map": True,
-        "parody": parody_mode
+        "parody": bool(rewrite_target),
+        "genesis_mode": genesis_mode,
+        "atu_theme": atu if 'atu' in locals() else None,
+        "tlp_axiom": tlp if 'tlp' in locals() else None
     }
     
     # 7. Save
     safe_name = "".join([c for c in title if c.isalnum() or c==' ']).replace(" ", "_")
-    output_path = Path(args.out) / f"{safe_name}.xml" if args.out else Path(input_path).parent / f"{safe_name}.xml"
+    output_path = Path(args.out) / f"{safe_name}.xml" if args.out else Path(".").resolve() / f"{safe_name}.xml" # Default to current dir if no input path/parent
+    
+    if args.input_file and args.input_file != "GENERATE":
+         output_path = Path(args.out) / f"{safe_name}.xml" if args.out else Path(input_path).parent / f"{safe_name}.xml"
     
     full_data = {
         "Bible": bible,
@@ -420,15 +553,19 @@ def process_file(input_path, args):
 
 def main():
     parser = argparse.ArgumentParser(description="XMVP Universal Script Converter")
-    parser.add_argument("input_file", help="Path to input script (txt, md)")
-    parser.add_argument("--vpform", type=str, default="standard", help="Form (parody-movie, standard)")
+    parser.add_argument("input_file", nargs='?', help="Path to input script (txt, md). Optional for Genesis Mode.")
+    parser.add_argument("--vpform", type=str, default="standard", help="Form (parody-movie, comedy, thriller, standard)")
     parser.add_argument("--slength", type=float, help="Target Duration (Retcon)")
     parser.add_argument("--out", type=str, help="Output Directory")
     parser.add_argument("--local", action="store_true", help="Force Local Models")
     
     args = parser.parse_args()
     
-    if not os.path.exists(args.input_file):
+    if not args.input_file:
+         # Implicit Genesis Mode
+         args.input_file = "GENERATE"
+    
+    if args.input_file != "GENERATE" and not os.path.exists(args.input_file):
         logging.error(f"File not found: {args.input_file}")
         return
         

@@ -159,16 +159,17 @@ class TruthSafety:
              logging.error(f"   ❌ Failed to save image: {e}")
              return original_path
 
-    def refine_prompt(self, prompt, context_dict=None, pg_mode=False, local_mode=False):
+    def refine_prompt(self, prompt, context_dict=None, pg_mode=False, local_mode=False, parody_safe_mode=False):
         """
         The Core Truth & Safety Logic.
         1. TRUTH: Checks for physical coherence, logic, and style alignment.
         1b. FATTENING: If local_mode is True, adds hyper-detail instructions.
         2. SAFETY: Enforces safety guidelines (Standard or PG).
            - If local_mode is True AND pg_mode is False, SKIP Safety.
+        3. PARODY SAFE: If parody_safe_mode is True, rewrites as G-rated euphemism.
         Returns the refined prompt.
         """
-        logging.info(f"   ⚖️  Truth & Safety Audit (PG: {pg_mode}, Local: {local_mode})...")
+        logging.info(f"   ⚖️  Truth & Safety Audit (PG: {pg_mode}, Local: {local_mode}, ParodySafe: {parody_safe_mode})...")
         
         # Build Context String
         ctx_str = ""
@@ -203,30 +204,46 @@ class TruthSafety:
         # Safety Instructions (From soften_prompt)
         safety_instruction = ""
         
-        # If Local Mode AND NOT PG -> SKIP SAFETY
-        skip_safety = local_mode and not pg_mode
-        
-        if not skip_safety:
-            if pg_mode:
-                # RELAXED / PG MODE
-                safety_instruction = (
-                    "PHASE 3: PG SAFETY GUIDELINES\n"
-                    "1. Remove any mention of children. Replace 'boy', 'girl', 'child' with 'adult man' or 'adult woman'. "
-                    "2. Remove violence, gore, or nudity. "
-                    "3. CELEBRITY HANDLING: If a specific celebrity is named, replace their name with their Profession + Initials. "
-                    "   Example: 'Nicolas Cage' -> 'actor N.C.', 'Taylor Swift' -> 'singer T.S.'. "
-                )
-            else:
-                # STANDARD / SAFE MODE
-                safety_instruction = (
-                    "PHASE 3: STRICT SAFETY GUIDELINES\n"
-                    "1. Remove any mention of children, public figures, violence, or gore. "
-                    "2. CELEBRITY HANDLING: If a specific celebrity or public figure is named, RETAIN the name but explicitly phrase it as 'an impersonator performing in character as [Name]'. "
-                    "   Example: 'Tom Cruise jumping' -> 'an impersonator performing in character as Tom Cruise jumping'. "
-                    "3. For non-celebrity people (e.g. 'a boy', 'a girl'), change them to 'an adult man' or 'an adult woman'. "
-                )
+        # Parody Safe Mode (The Euphemism Protocol) overrides standard safety
+        if parody_safe_mode:
+             safety_instruction = (
+                 "PHASE 3: PARODY SAFE PROTOCOL (EUPHEMISM MODE)\n"
+                 "🚨 CRITICAL: The original prompt triggered safety blocks. You MUST rewrite it to be purely G-RATED.\n"
+                 "1. EUPHEMIZE: Replace all violence, weapons, drugs, or sexual themes with ABSURD, WHOLESOME SUBSTITUTES.\n"
+                 "   - Guns -> Bananas, Walkie-Talkies, or pointing fingers.\n"
+                 "   - Blood -> Confetti, Ketchup, or Sparkles.\n"
+                 "   - Drugs -> Candy, Baseball Cards, or Bubbles.\n"
+                 "   - Fight/Punch -> Pillow fight, tickle fight, or slapstick hug.\n"
+                 "2. PRESERVE MOOD: Keep the lighting (e.g. noir, gritty) and camera angles of the original reference, but change the *action* to be a ridiculous parody.\n"
+                 "3. EXAMPLE: If 'Taxi Driver Travis holds a gun to his head', rewrite as 'Travis holds a banana to his ear like a phone, looking intense in a noir mirror'.\n"
+                 "4. TARGET: A funny, non-offensive, surreal version of the scene.\n"
+             )
         else:
-             safety_instruction = "PHASE 3: SAFETY\n- NO CENSORSHIP. RETAIN ALL ARTISTIC INTENT. DO NOT FILTER.\n"
+             # Standard Safety Logic
+             # If Local Mode AND NOT PG -> SKIP SAFETY
+             skip_safety = local_mode and not pg_mode
+             
+             if not skip_safety:
+                 if pg_mode:
+                     # RELAXED / PG MODE
+                     safety_instruction = (
+                         "PHASE 3: PG SAFETY GUIDELINES\n"
+                         "1. Remove any mention of children. Replace 'boy', 'girl', 'child' with 'adult man' or 'adult woman'. "
+                         "2. Remove violence, gore, or nudity. "
+                         "3. CELEBRITY HANDLING: If a specific celebrity is named, replace their name with their Profession + Initials. "
+                         "   Example: 'Nicolas Cage' -> 'actor N.C.', 'Taylor Swift' -> 'singer T.S.'. "
+                     )
+                 else:
+                     # STANDARD / SAFE MODE
+                     safety_instruction = (
+                         "PHASE 3: STRICT SAFETY GUIDELINES\n"
+                         "1. Remove any mention of children, public figures, violence, or gore. "
+                         "2. CELEBRITY HANDLING: If a specific celebrity or public figure is named, RETAIN the name but explicitly phrase it as 'an impersonator performing in character as [Name]'. "
+                         "   Example: 'Tom Cruise jumping' -> 'an impersonator performing in character as Tom Cruise jumping'. "
+                         "3. For non-celebrity people (e.g. 'a boy', 'a girl'), change them to 'an adult man' or 'an adult woman'. "
+                     )
+             else:
+                  safety_instruction = "PHASE 3: SAFETY\n- NO CENSORSHIP. RETAIN ALL ARTISTIC INTENT. DO NOT FILTER.\n"
             
         final_instruction = (
             "OUTPUT INSTRUCTION:\n"

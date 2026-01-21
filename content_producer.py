@@ -788,6 +788,15 @@ def run_improv_session(vpform, output_dir, text_engine, args):
     # Helper: xml_path = os.path.join(output_dir, f"{base_name}_manifest.xml")
     # I'll stick to that convention for now, close enough.
     
+    # Determine Template Name based on vpform
+    target_template = None
+    if "gahd" in vpform: 
+        target_template = "GAHD_Template"
+    elif "route66" in vpform:
+        target_template = "Route66_Template"
+    elif "24-" in vpform:
+        target_template = "24_Template"
+
     export_xmvp_manifest(
         gahd_out_dir,
         final_basename,
@@ -795,7 +804,8 @@ def run_improv_session(vpform, output_dir, text_engine, args):
         cast_names,
         seeds=seeds,
         title=f"Improv Session {session_id} (Ep {args.ep})",
-        synopsis="A generated improv comedy set."
+        synopsis="A generated improv comedy set.",
+        mll_template=target_template
     )
     
     print(f"✅ GAHD Session Complete. Output: {final_mp4_path}")
@@ -971,7 +981,7 @@ def stitch_assets(assets, temp_dir, output_mp4):
     except Exception as e:
         print(f"[-] Final Stitch Failed: {e}")
 
-def export_xmvp_manifest(output_dir, base_name, assets, cast_names, seeds=None, title=None, synopsis="Generated Content"):
+def export_xmvp_manifest(output_dir, base_name, assets, cast_names, seeds=None, title=None, synopsis="Generated Content", mll_template=None):
     """
     Generates and saves the XMVP XML manifest.
     """
@@ -988,14 +998,16 @@ def export_xmvp_manifest(output_dir, base_name, assets, cast_names, seeds=None, 
             constraints=Constraints(width=1024, height=1024, fps=24),
             scenario=f"Content based on {base_name}",
             situation=synopsis,
-            vision="Cinematic/Generated"
+            vision="Cinematic/Generated",
+            mll_template=mll_template
         )
         
         story = Story(
             title=title if title else base_name,
             synopsis=synopsis,
             characters=cast_names,
-            theme="Improv/Podcast"
+            theme="Improv/Podcast",
+            mll_template=mll_template
         )
         
         portions = []
@@ -1230,8 +1242,14 @@ def generate_image(prompt, output_path):
         print(f"   🎨 [Flux] {prompt[:40]}... ({w}x{h})")
         img = FLUX_BRIDGE.generate(prompt, width=w, height=h, steps=4)
         if img:
-            img.save(output_path)
-            return True
+            try:
+                # Ensure dir exists (Defensive Check)
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                img.save(output_path)
+                return True
+            except Exception as e:
+                print(f"   [!] Image Save Failed: {e}")
+                return False
         return False
     else:
         return False 

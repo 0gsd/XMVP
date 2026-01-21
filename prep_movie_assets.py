@@ -190,8 +190,16 @@ def main():
     
     # MLL Template Logic
     target_name = movie_title
+    
+    # Check Story first (since we just loaded it as dict)
+    if isinstance(story, dict) and story.get("mll_template"):
+        target_name = story.get("mll_template")
+        
+    # Check Bible (Override or Primary?)
     if bible and bible.mll_template:
         target_name = bible.mll_template
+        
+    if target_name != movie_title:
         print(f"    🏷️  MLL Template Active: {target_name}")
         
     print(f"    🎨 Style Core: {style_core[:50]}...")

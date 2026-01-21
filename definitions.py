@@ -246,6 +246,12 @@ FORM_REGISTRY = {
         default_args={"fps": 0.5, "local": True}, # Low FPS for slideshow
         description="Ingest XMVP XML and generate a Frame+Audio slideshow (Pre-viz for Wan)."
     ),
+    "cartoon-video": VPFormConfig(
+        key="cartoon-video",
+        aliases=["cv", "vid2vid", "rotoscope"],
+        default_args={"fps": 4, "vspeed": 4, "local": True}, # Default to local for Img2Img control
+        description="Frame-by-Frame Video Restyling (Img2Img) @ 4FPS. Ingests video, restyles frames, muxes audio."
+    ),
     "route66-podcast": VPFormConfig(
         key="route66-podcast",
         aliases=["r66", "route66"],

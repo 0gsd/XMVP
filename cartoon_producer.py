@@ -520,7 +520,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
     
     # Bypass for Creative Agency / XB
     # Bypass for Creative Agency / XB / Music Visualizer / Music Agency
-    if args.vpform in ["creative-agency", "music-visualizer", "music-video"] or args.xb:
+    if args.vpform in ["creative-agency", "music-visualizer", "music-video", "cartoon-video"] or args.xb:
         descriptions = ["Placeholder"] # Will be overwritten by logic below
     else:    
         with open(analysis_file, 'r') as f:
@@ -769,6 +769,115 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
              
              raw_desc = source_content[beat_idx]
              prompts.append(f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames})")
+
+    elif args.vpform == "cartoon-video":
+        # CARTOON VIDEO (Img2Img Video Redraw)
+        if not args.mu or not os.path.exists(args.mu):
+             logging.error("❌ cartoon-video requires input video (pass as arg or --mu)")
+             return
+
+        # 1. Setup
+        project_fps = args.fps # Default 4
+        logging.info(f"   🎞️  Cartoon Video: Redrawing {Path(args.mu).name} @ {project_fps} FPS...")
+        
+        frames_dir = project_dir / "frames"
+        ensure_dir(frames_dir)
+        
+        # 2. Extract Audio
+        audio_path = project_dir / "extracted_audio.wav"
+        cmd_a = ['ffmpeg', '-y', '-i', args.mu, '-vn', '-acodec', 'pcm_s16le', '-ar', '44100', '-ac', '2', str(audio_path)]
+        subprocess.run(cmd_a, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # 3. Extract Frames
+        # Calculate vspeed step or just let ffmpeg handle fps
+        logging.info("   🎞️  Extracting Source Frames...")
+        cmd_f = ['ffmpeg', '-y', '-i', args.mu, '-vf', f'fps={project_fps}', str(frames_dir / 'source_%04d.png')]
+        subprocess.run(cmd_f, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        source_frames = sorted(list(frames_dir.glob("source_*.png")))
+        logging.info(f"   found {len(source_frames)} source frames.")
+        
+        # 4. Img2Img Loop
+        from flux_bridge import get_flux_bridge
+        # Robust Flux Loading
+        try:
+             flux_path = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE]["flux-schnell"].path
+        except:
+             flux_path = "/Volumes/XMVPX/mw/flux-root"
+        bridge = get_flux_bridge(flux_path)
+        
+        prompt = "exactly precise reproduction of this image in terms of content and image/scene structure, but improved to a different asethetic style and standard, like an uncanny Octane Render Unreal Engine 3D real-life photorealistic artistic reimagining. 8k, highly detailed."
+        if args.prompt: prompt = args.prompt
+        
+        from PIL import Image
+        
+        # Scaling Logic (50% Default)
+        target_w = args.w
+        target_h = args.h
+        
+        if not target_w and source_frames:
+             try:
+                 with Image.open(source_frames[0]) as probe:
+                     w, h = probe.size
+                     # Default to 50% scale
+                     target_w = int(w * 0.5)
+                     target_h = int(h * 0.5)
+                     logging.info(f"   📉 Auto-Scaling: {w}x{h} -> {target_w}x{target_h} (50%)")
+             except Exception as e:
+                 logging.warning(f"   ⚠️ Could not probe first frame: {e}")
+                 target_w = 1024
+                 target_h = 576
+        
+        # Enforce 16-pixel alignment (Crucial for Flux VAE)
+        if target_w and target_h:
+            orig_w, orig_h = target_w, target_h
+            target_w = (target_w // 16) * 16
+            target_h = (target_h // 16) * 16
+            if target_w != orig_w or target_h != orig_h:
+                 logging.warning(f"   ⚠️ Snapping resolution to 16px grid: {orig_w}x{orig_h} -> {target_w}x{target_h}")
+
+        for i, src in enumerate(source_frames):
+            idx = i + 1
+            dst = frames_dir / f"frame_{idx:04d}.png"
+            
+            if dst.exists(): 
+                continue
+                
+            logging.info(f"   🎨 Redrawing Frame {idx}/{len(source_frames)}...")
+            try:
+                src_img = Image.open(src).convert("RGB")
+                
+                out_img = bridge.generate_img2img(
+                    prompt=prompt,
+                    image=src_img,
+                    strength=0.65, 
+                    width=target_w,
+                    height=target_h,
+                    seed=42 + i
+                )
+                
+                if out_img:
+                    out_img.save(dst)
+            except Exception as e:
+                logging.error(f"Frame {idx} fail: {e}")
+                
+        # 5. Stitch
+        logging.info("   🧵 Stitching...")
+        out_vid = project_dir / "final_output.mp4"
+        # use existing stitch logic or ffmpeg direct
+        # Pattern frame_%04d.png
+        cmd_s = [
+            'ffmpeg', '-y', '-framerate', str(project_fps),
+            '-i', str(frames_dir / 'frame_%04d.png'),
+            '-i', str(audio_path),
+            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18',
+            '-c:a', 'aac', '-b:a', '192k',
+            '-shortest',
+            str(out_vid)
+        ]
+        subprocess.run(cmd_s, check=True)
+        logging.info(f"   ✅ Done: {out_vid}")
+        return
 
     elif args.vpform == "creative-agency" or args.xb:
         # CREATIVE AGENCY MODE / RE-RENDER MODE
@@ -1732,6 +1841,14 @@ def main():
     
     args, unknown = parser.parse_known_args()
 
+    # Sniff for positional video file (cartoon-video)
+    if not args.mu:
+        for u in unknown:
+            if u.lower().endswith(('.mp4', '.mov', '.avi')):
+                args.mu = u
+                logging.info(f"   🎥 Found input video in args: {args.mu}")
+                break
+
     # Handle 'run' in unknown if not captured by cli_args
     for u in unknown:
         if u.lower() == "run":
@@ -1855,7 +1972,7 @@ def main():
     logging.info(f"   Model: {model}")
     
     # Scan (Only needed for legacy FBF/Transcript mode)
-    if args.vpform in ["creative-agency", "music-visualizer", "music-agency", "music-video", "full-movie"] or args.xb:
+    if args.vpform in ["creative-agency", "music-visualizer", "music-agency", "music-video", "full-movie", "cartoon-video"] or args.xb:
         # Virtual Project
         try:
              args.model = model

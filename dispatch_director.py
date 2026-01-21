@@ -224,7 +224,7 @@ class VeoDirector:
                 if 'done' in data and data['done']:
                     if 'error' in data:
                         logging.error(f"   x Cut! Error: {data['error']}")
-                        return None
+                        return {'error': data['error']}
                     
                     logging.info("   > Cut! (Success)")
                     try:
@@ -399,6 +399,38 @@ class VideoDirectorAdapter:
                     
                 # 2. Wait
                 result = director.wait_for_lro(op_name)
+
+                # Check for Safety Violation explicitly
+                if isinstance(result, dict) and 'error' in result:
+                    err = result['error']
+                    # Code 3 = INVALID_ARGUMENT (Often Safety) or 400/429
+                    # "prompt contains words that violate"
+                    if err.get('code') == 3 or "violate" in err.get('message', '').lower():
+                         logging.warning(f"   🚨 SAFETY VIOLATION DETECTED: {err.get('message')}")
+                         
+                         # Trigger SASSPRILLA PROTOCOL
+                         logging.info(f"   🛡️ Initiating Sassprilla Protocol (Parody Euphemisms)...")
+                         try:
+                             sanitizer_key = next(self.key_cycle)
+                             cleaner = TruthSafety(api_key=sanitizer_key)
+                             safe_prompt = cleaner.refine_prompt(
+                                 prompt, 
+                                 context_dict={"Task": f"Video", "Model": self.model_name}, 
+                                 parody_safe_mode=True
+                             )
+                             
+                             if safe_prompt != prompt:
+                                 logging.info(f"   ✨ Sassprilla Prompt: {safe_prompt[:60]}...")
+                                 prompt = safe_prompt # Update prompt for next retry
+                                 continue # Retry immediately with new prompt
+                             else:
+                                 logging.warning("   ⚠️ Sassprilla returned identical prompt. Likely failing safe.")
+                         except Exception as e_safe:
+                             logging.error(f"   ❌ Sassprilla Failed: {e_safe}")
+
+                    logging.warning(f"   ⚠️ LRO Error: {err}. Retrying...")
+                    continue
+                
                 if not result:
                     logging.warning("   ⚠️ LRO failed or timed out. Retrying...")
                     continue

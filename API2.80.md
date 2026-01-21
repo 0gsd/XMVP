@@ -10,30 +10,34 @@
    - [cartoon_producer.py](#cartoon_producerpy)
    - [content_producer.py](#content_producerpy)
    - [post_production.py](#post_productionpy)
+   - [xmvp_converter.py](#xmvp_converterpy)
 2. [Pipeline Modules (Internal)](#pipeline-modules)
    - [vision_producer.py](#vision_producerpy)
    - [stub_reification.py](#stub_reificationpy)
    - [writers_room.py](#writers_roompy)
    - [portion_control.py](#portion_controlpy)
    - [dispatch_director.py](#dispatch_directorpy)
-   - [dispatch_animatic.py](#dispatch_animaticpy) *(New)*
-   - [dispatch_wan.py](#dispatch_wanpy) *(New)*
+   - [dispatch_animatic.py](#dispatch_animaticpy)
+   - [dispatch_wan.py](#dispatch_wanpy)
 3. [Audio & Speech Modules](#audio--speech-modules)
    - [foley_talk.py](#foley_talkpy)
-   - [thax_audio.py](#thax_audiopy) *(New)*
+   - [thax_audio.py](#thax_audiopy)
 4. [Utility & Management Modules](#utility--management-modules)
    - [model_scout.py](#model_scoutpy)
    - [populate_models_xmvp.py](#populate_models_xmvppy)
-   - [sassprilla_carbonator.py](#sassprilla_carbonatorpy) *(New)*
-   - [dialogue_critic.py](#dialogue_criticpy) *(New)*
-   - [convert_voices.py](#convert_voicespy) *(New)*
-   - [test_gen_capabilities.py](#test_gen_capabilitiespy) *(New)*
+   - [sassprilla_carbonator.py](#sassprilla_carbonatorpy)
+   - [dialogue_critic.py](#dialogue_criticpy)
+   - [convert_voices.py](#convert_voicespy)
+   - [rescue_session.py](#rescue_sessionpy)
+   - [prep_movie_assets.py](#prep_movie_assetspy)
+   - [still_life.py](#still_lifepy)
+   - [test_gen_capabilities.py](#test_gen_capabilitiespy)
 5. [Bridge Modules (Local Inference)](#bridge-modules)
    - [flux_bridge.py](#flux_bridgepy)
    - [ltx_bridge.py](#ltx_bridgepy)
    - [kokoro_bridge.py](#kokoro_bridgepy)
    - [hunyuan_foley_bridge.py](#hunyuan_foley_bridgepy)
-   - [wan_bridge.py](#wan_bridgepy) *(New)*
+   - [wan_bridge.py](#wan_bridgepy)
 6. [Core Libraries](#core-libraries)
    - [text_engine.py](#text_enginepy)
    - [truth_safety.py](#truth_safetypy)
@@ -41,7 +45,8 @@
    - [mvp_shared.py](#mvp_sharedpy)
    - [frame_canvas.py](#frame_canvaspy)
 7. [Data Models & Schemas](#data-models--schemas)
-8. [Training Data & Voice Models](#training-data--voice-models) *(New)*
+8. [Configuration Files](#configuration-files)
+9. [Training & Voice Models](#training--voice-models)
 
 ---
 
@@ -49,12 +54,12 @@
 
 ## movie_producer.py
 
-**The Showrunner** - Orchestrates the entire 7-stage pipeline to create structured video content from a single prompt. Now with auto-carbonation for title-style prompts.
+**The Showrunner** — Orchestrates the entire 7-stage pipeline to create structured video content from a single prompt. Features auto-carbonation for title-style prompts.
 
 ### Usage
 ```bash
 python3 movie_producer.py "Your concept here" [OPTIONS]
-# Or using the new positional syntax:
+# Or using positional VPForm syntax:
 python3 movie_producer.py tech-movie "Your concept here"
 ```
 
@@ -62,7 +67,7 @@ python3 movie_producer.py tech-movie "Your concept here"
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
-| `concept` | positional (optional) | - | The concept text (quoted string). Required unless `--xb` is provided. |
+| `concept` | positional | - | The concept text (quoted string). Required unless `--xb` provided. |
 | `cli_args` | positional | - | Global positional args (VPForm alias, commands) |
 
 ### Options
@@ -71,13 +76,13 @@ python3 movie_producer.py tech-movie "Your concept here"
 | Option | Type | Default | Values/Range | Description |
 |--------|------|---------|--------------|-------------|
 | `--seg` | int | `3` | 1-∞ | Number of video segments to generate |
-| `--slength` | float | `None` | 1-∞ | Target total duration in seconds (Overrides --seg) |
+| `--slength` | float | `0.0` | 1-∞ | Target total duration in seconds (overrides --seg) |
 | `--l` | float | `8.0` | 1.0-60.0 | Length of each segment in seconds |
 | `--vpform` | str | `None` | See VPForm Registry | Vision Platonic Form (genre template) |
-| `--cs` | int | `0` | 0, 2, 3, 4, 5, 6 | Chaos Seeds level (Wikipedia concept injection) |
-| `--cf` | str | `None` | Wikipedia URL or search query | Cameo Feature: Inject specific concept |
-| `--mu` | str | `None` | Path to audio file | Music track for music-video mode |
-| `--vm` | str | `"K"` | `L`, `J`, `K`, `V2`, `D` | Video Model Tier |
+| `--cs` | int | `0` | 0, 2-6 | Chaos Seeds level (Wikipedia concept injection) |
+| `--cf` | str | `None` | URL or query | Cameo Feature: Inject specific concept |
+| `--mu` | str | `None` | Path | Music track for music-video mode |
+| `--vm` | str | `"L"` | `L`, `J`, `K`, `D`, `V2` | Video Model Tier |
 | `--pg` | flag | `False` | - | Enable PG Mode (relaxed celebrity, strict child safety) |
 | `--prompt` | str | `None` | - | Alias for concept |
 
@@ -85,27 +90,17 @@ python3 movie_producer.py tech-movie "Your concept here"
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `--xb` | str | `"clean"` | XMVP re-hydration path OR 'clean' (default) |
-| `-f`, `--fast` | flag | `False` | Use faster/cheaper model tier (overrides `--vm` to J) |
-| `--vfast` | flag | `False` | Use legacy Veo 2.0 (fastest, overrides `--vm` to V2) |
+| `-f`, `--fast` | flag | `False` | Use faster/cheaper model tier (sets --vm to J) |
+| `--vfast` | flag | `False` | Use legacy Veo 2.0 (sets --vm to V2) |
 | `--out` | str | `None` | Override output directory |
 | `--local` | flag | `False` | Run 100% locally (Gemma + LTX-Video) |
-
-### Auto-Carbonation
-
-When you provide a title-style prompt (Title Case, under 80 characters, no periods), XMVP automatically expands it using the SASSPRILLA Carbonator:
-
-```bash
-# This title-style input...
-python3 movie_producer.py "Midnight Train To Georgia"
-
-# ...gets auto-carbonated into a dense visual concept
-```
+| `--retcon` | flag | `False` | Force text-only expansion (implies --local, skips video) |
 
 ### Video Model Tiers
 
 | Tier | Model | Description |
 |------|-------|-------------|
-| `L` | veo-3.1-fast-generate-preview | Light (fast, lower quality) |
+| `L` | veo-2.0-generate-001 | Light (fast, lower quality) |
 | `J` | veo-3.1-fast-generate-preview | Just Right (balanced) |
 | `K` | veo-3.1-generate-preview | Killer (cinematic 4K) |
 | `D` | veo-2.0-generate-001 | Default legacy |
@@ -122,11 +117,11 @@ python3 movie_producer.py "Cyberpunk rebellion" --local --seg 8
 # Music video with audio sync
 python3 movie_producer.py "Electronic dance" --vpform music-video --mu track.mp3
 
+# Long-form movie (Micro-Batching)
+python3 movie_producer.py "Epic Space Opera" --vpform full-movie --local --slength 3000
+
 # Re-render from existing XMVP manifest
 python3 movie_producer.py --xb previous_run.xml --vm J
-
-# Draft animatic (10 minutes default)
-python3 movie_producer.py draft-animatic "Space Opera Epic"
 
 # Using positional VPForm alias
 python3 movie_producer.py tech-movie "AI Awakening"
@@ -136,7 +131,7 @@ python3 movie_producer.py tech-movie "AI Awakening"
 
 ## cartoon_producer.py
 
-**The Animator** - Specialized pipeline for frame-by-frame animation, music video syncing, and creative agency work.
+**The Animator** — Specialized pipeline for frame-by-frame animation, music video syncing, and creative agency work.
 
 ### Usage
 ```bash
@@ -159,7 +154,7 @@ python3 cartoon_producer.py [OPTIONS]
 #### Source Options
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--tf` | Path | `/Users/0gs/METMcloud/METMroot/tools/fmv/fbf_data` | Transcript folder (source) |
+| `--tf` | Path | Default path | Transcript folder (source) |
 | `--vf` | Path | `/Volumes/XMVPX/fmv_corpus` | Video folder (corpus) |
 | `--xb` | str | `None` | Path to XMVP XML manifest for re-rendering |
 | `--mu` | str | `None` | Path to music/audio file for sync |
@@ -169,32 +164,15 @@ python3 cartoon_producer.py [OPTIONS]
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `--delay` | float | `5.0` | Delay between API requests in seconds |
-| `--limit` | int | `0` | Limit number of frames per project (0 = unlimited) |
+| `--limit` | int | `0` | Limit number of frames (0 = unlimited) |
 | `--smin` | float | `0.0` | Minimum duration filter in seconds |
 | `--smax` | float | `None` | Maximum duration filter in seconds |
 | `--shuffle` | flag | `False` | Shuffle projects before processing |
-| `--cs` | int | `0` | 0-3 | Chaos Seeds level |
+| `--cs` | int | `0` | Chaos Seeds level (0-3) |
 | `--bpm` | float | `None` | Manual BPM override (bypasses detection) |
 | `--pg` | flag | `False` | Enable PG Mode |
-
-#### Advanced Options
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--vspeed` | float | `8.0` | Visualizer speed (FPS) for music-agency. Supports 2, 4, 8, 16 |
+| `--vspeed` | float | `8.0` | Visualizer speed (FPS) for music-agency |
 | `--fc` | flag | `False` | Enable Frame & Canvas (Code Painter) mode |
-| `--kid` | int | `512` | Keyframe init dimension (higher = better composition) |
-| `--local` | flag | `False` | Local mode (Gemma + Flux) |
-| `--w` | int | `None` | Override width (local only) |
-| `--h` | int | `None` | Override height (local only) |
-
-### VP Forms Explained
-
-| Form | Description |
-|------|-------------|
-| `creative-agency` | Prompt → Story → Animation (default) |
-| `fbf-cartoon` | Legacy frame-by-frame animation |
-| `music-visualizer` | Audio-reactive abstract animation |
-| `music-agency` | Audio-reactive narrative story |
 
 ### Examples
 ```bash
@@ -206,16 +184,13 @@ python3 cartoon_producer.py --vpform music-agency --mu song.mp3 --prompt "Neon d
 
 # Abstract visualizer
 python3 cartoon_producer.py --vpform music-visualizer --mu ambient.wav
-
-# Local mode with custom dimensions
-python3 cartoon_producer.py --prompt "Space opera" --local --w 1920 --h 1080
 ```
 
 ---
 
 ## content_producer.py
 
-**Unified Generator** - Merges podcast animation and improv comedy generation. Now with Thax Douglas spoken word support.
+**The Podcast Factory** — Unified generator for podcast and improv content with RVC voice support.
 
 ### Usage
 ```bash
@@ -226,95 +201,133 @@ python3 content_producer.py [OPTIONS]
 
 | Option | Type | Default | Values | Description |
 |--------|------|---------|--------|-------------|
-| `--vpform` | str | `None` | `24-podcast`, `24-cartoon`, `10-podcast`, `gahd-podcast`, `thax-douglas`, `route66-podcast` | Vision Platonic Form |
-| `--project` | str | `None` | - | Project override (stub) |
-| `--ep` | int | `None` | - | Episode number (stub) |
+| `--vpform` | str | `None` | `24-podcast`, `24-cartoon`, `10-podcast`, `gahd-podcast`, `thax-douglas`, `route66-podcast`, `fullmovie-still` | Vision Platonic Form |
+| `--project` | str | `None` | - | Project override |
+| `--ep` | int | `None` | - | Episode number (format: SSE for Season S, Episode E) |
 | `--local` | flag | `False` | - | Use local engines (Flux + Kokoro) |
 | `--foley` | str | `"off"` | `on`, `off` | Enable generative foley audio |
 | `--slength` | float | `0.0` | - | Override duration in seconds |
-| `--fc` | flag | `False` | - | Code Painter mode (experimental) |
-| `--geminiapi` | flag | `False` | - | Force cloud Gemini API for text (disables local Gemma default) |
+| `--fc` | flag | `False` | - | Code Painter Mode |
+| `--geminiapi` | flag | `False` | - | Force Cloud Gemini API for text |
+| `--band` | str | `None` | - | Band name (thax-douglas mode) |
+| `--poem` | str | `None` | - | Poem text (thax-douglas mode) |
+| `--w` | int | `1024` | - | Width |
+| `--h` | int | `576` | - | Height |
+| `--location` | str | `None` | - | Override visual location |
+| `--rvc` | flag | `False` | - | Enable RVC voice conversion |
+| `--xml` / `--xb` | str | `None` | - | Input XMVP XML path |
 
-### VP Forms
+### VP Forms for Content
 
-| Form | Description |
-|------|-------------|
-| `24-podcast` / `24-cartoon` | 24-minute 4-person improv comedy special |
-| `10-podcast` | 10-minute version with duration override |
-| `gahd-podcast` | Traditional pair/triplet processing mode |
-| `thax-douglas` | Thax Douglas spoken word generator |
-| `route66-podcast` | 6-person improv narrative (66 minutes) |
+| Form | Cast Size | Default Duration | Description |
+|------|-----------|------------------|-------------|
+| `24-podcast` | 4 | 24 min (1440s) | 4-person improv comedy special |
+| `10-podcast` | 4 | 10 min (600s) | Topical tech podcast |
+| `route66-podcast` | 6 | 66 min (3960s) | Road trip narrative |
+| `gahd-podcast` | Variable | Variable | Great Moments in History |
+| `thax-douglas` | 1 | Variable | Spoken word poetry |
 
-### Cast System (24-podcast/24-cartoon)
+### Examples
+```bash
+# 24-minute improv podcast
+python3 content_producer.py --vpform 24-podcast --local --slength 1440
 
-The improv system uses a fixed cast with assigned voices:
+# Route 66 with RVC voices
+python3 content_producer.py --vpform route66-podcast --rvc --local --slength 3960 --ep 301 --location "The Roadside Diner"
 
-| Character | Base | Voice | Pitch | Persona |
-|-----------|------|-------|-------|---------|
-| William | Billy Joel | en-US-Journey-D | +1 | Working-class poet, melodic, cynical but soulful |
-| Maggie | Margaret Thatcher | en-US-Journey-F | -2 | Stern, authoritative, uses 'Royal We' |
-| Francis | Frank Sinatra | en-US-Journey-L | -2 | Cool, swaggering, mid-Atlantic accent |
-| Anne Tailored | Taylor Swift | en-US-Journey-O | +1 | Earnest, confessional, detailed storytelling |
+# GAHD podcast
+python3 content_producer.py --vpform gahd-podcast --slength 3200 --ep 207 --local --location "Ancient Rome"
+
+# Thax Douglas spoken word
+python3 content_producer.py --vpform thax-douglas --band "The Mountain Goats"
+```
 
 ---
 
 ## post_production.py
 
-**The Editor / Svelte 2x Machine** - Handles upscaling, frame interpolation, and audio stitching.
+**The Editor** — Upscaling, frame interpolation, restyling, and audio stitching.
 
 ### Usage
 ```bash
-python3 post_production.py INPUT [OPTIONS]
+python3 post_production.py <input> [OPTIONS]
+# Input can be: video file, folder of frames (numbered), or folder of videos (numbered)
 ```
 
-### Arguments
-
-| Argument | Type | Description |
-|----------|------|-------------|
-| `input` | positional (optional) | Input video file or directory of frames |
+### Input Types
+1. **Single video file**: `video.mp4`
+2. **Folder of frame images**: Directory with `frame_00001.png`, `frame_00002.png`, etc.
+3. **Folder of video segments**: Directory with `seg_001.mp4`, `seg_002.mp4`, etc.
 
 ### Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
+| `input` | positional/flag | - | Input video file or directory (use `--input` or positional) |
 | `--output` | str | `None` | Output directory |
-| `-x` | int | `2` | Frame expansion factor (tweening). 1 = no interpolation |
-| `--scale` | float | `2.0` | Upscale factor |
-| `--restyle` | str | `None` | Restyle mode. Values: `ascii` |
+| `-x` | int | `2` | Frame expansion factor (tweening). Default: 2 |
+| `--scale` | float | `2.0` | Upscale factor. Default: 2.0 |
+| `--restyle` | str | `None` | Restyle mode (e.g., 'ascii') |
 | `--local` | flag | `False` | Run locally (Flux Img2Img) |
-| `--more` | flag | `False` | Enable secondary interpolation/upscale (4x total) |
+| `--more` | flag | `False` | Enable secondary pass (4x total) |
 | `--mu` | str | `None` | Audio file for music video sync |
-| `--stitch-audio` | flag | `False` | Force-stitch frames to match audio duration (ignore delta threshold) |
+| `--stitch-audio` | flag | `False` | Force-stitch frames to match audio duration |
 
-### Processing Modes
-
-| Mode | Description |
-|------|-------------|
-| Default | Cloud-based Gemini upscaling |
-| `--local` | Flux-based Img2Img processing |
-| `--more` | 4x frames AND 4x resolution |
-| `--restyle ascii` | ASCII art overlay at 33% opacity |
-
-### Audio Sync Logic
-When `--mu` is provided:
-1. Measures audio duration
-2. Counts video frames
-3. If delta ≤ 10s (or `--stitch-audio`): auto-adjusts FPS to match
-4. If delta > 10s: keeps original FPS with warning
+### Processing Pipeline
+1. **Extract** — Extract frames from video (if video input)
+2. **Interpolate** — Generate in-between frames (controlled by `-x`)
+3. **Upscale** — Increase resolution (controlled by `--scale`)
+4. **Restyle** — Apply style filters (if `--restyle` set)
+5. **Stitch** — Combine frames into final video with audio sync
 
 ### Examples
 ```bash
-# Basic 2x upscale
-python3 post_production.py input.mp4 --scale 2.0
+# 2x upscale a single video
+python3 post_production.py video.mp4 --local --scale 2.0
 
-# Local Flux processing with interpolation
-python3 post_production.py input.mp4 --local --scale 2.0 -x 2
+# Frame interpolation (2x smoother)
+python3 post_production.py video.mp4 --local -x 2
 
-# Music video sync
-python3 post_production.py input.mp4 --mu soundtrack.mp3 --local --stitch-audio
+# 4x processing (interpolation + upscale)
+python3 post_production.py video.mp4 --local --more
 
-# Maximum quality (4x everything)
-python3 post_production.py input.mp4 --local --more
+# Sync video frames to audio duration
+python3 post_production.py /path/to/frames/ --mu soundtrack.mp3 --stitch-audio
+
+# Process folder of video segments with audio
+python3 post_production.py --input /path/to/segments/ --mu /path/to/audio.aif --stitch-audio
+
+# ASCII restyle
+python3 post_production.py video.mp4 --restyle ascii
+```
+
+---
+
+## xmvp_converter.py
+
+**The Converter** — Converts external scripts/text into XMVP format for rendering.
+
+### Usage
+```bash
+python3 xmvp_converter.py <input_file> [OPTIONS]
+```
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `input_file` | positional | - | Path to input script (txt, md) |
+| `--vpform` | str | `"standard"` | Form (parody-movie, standard) |
+| `--slength` | float | `None` | Target duration for retcon |
+| `--out` | str | `None` | Output directory |
+| `--local` | flag | `False` | Force local models |
+
+### Examples
+```bash
+# Convert a script to parody movie format
+python3 xmvp_converter.py /Volumes/XMVPX/mw/your-project/processed_text/Script.txt \
+    --vpform parody-movie \
+    --slength 5820
 ```
 
 ---
@@ -323,43 +336,30 @@ python3 post_production.py input.mp4 --local --more
 
 ## vision_producer.py
 
-**The Visionary** - Creates the "Bible" (CSSV) from a prompt.
+**The Visionary** — Creates the "Bible" (CSSV) from a prompt.
 
 ### Usage
 ```bash
-python3 vision_producer.py --vpform FORM --prompt "CONCEPT" [OPTIONS]
+python3 vision_producer.py [VPForm] "prompt" [OPTIONS]
 ```
 
 ### Options
 
-| Option | Type | Default | Required | Description |
-|--------|------|---------|----------|-------------|
-| `--vpform` | str | - | **Yes** | VPForm to use |
-| `--prompt` | str | - | **Yes** | Core concept (the "Situation") |
-| `--slength` | float | `60.0` | No | Total duration in seconds |
-| `--flength` | int | `0` | No | Total duration in frames (overrides slength) |
-| `--seg_len` | float | `8.0` | No | Target segment length in seconds |
-| `--cs` | int | `0` | No | Chaos seeds (0, 2, 3, 4, 5, 6) |
-| `--out` | str | `"bible.json"` | No | Output path for CSSV Bible |
-
-### Available VPForms
-
-| Form | FPS | Description |
-|------|-----|-------------|
-| `realize-ad` | 24 | Commercial advertisement |
-| `podcast-interview` | 1 | Two-person interview (audio focused) |
-| `movies-movie` | 24 | Hollywood blockbuster remake (1979-2001 era) |
-| `studio-movie` | 24 | Behind-the-scenes mockumentary |
-| `parody-movie` | 24 | Direct parody/spoof |
-| `music-video` | 24 | Music video synced to audio |
-| `tech-movie` | 24 | Tech/Code movie generator |
-| `draft-animatic` | 24 | Static storyboard / animatic mode |
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--vpform` | str | `None` | The VPForm to use |
+| `--prompt` | str | `None` | The core concept |
+| `--slength` | float | `60.0` | Total duration in seconds |
+| `--flength` | int | `0` | Total duration in frames (overrides slength) |
+| `--seg_len` | float | `8.0` | Target segment length in seconds |
+| `--cs` | int | `0` | Chaos Seeds (0=Off, 2-6=Wikipedia injection) |
+| `--out` | str | `"bible.json"` | Output path |
 
 ---
 
 ## stub_reification.py
 
-**The Writer** - Expands the Bible into a full Story (narrative arc).
+**The Story Architect** — Expands a Bible into a full Story structure.
 
 ### Usage
 ```bash
@@ -372,14 +372,14 @@ python3 stub_reification.py [OPTIONS]
 |--------|------|---------|-------------|
 | `--bible` | str | `"bible.json"` | Path to input CSSV JSON |
 | `--out` | str | `"story.json"` | Output path for Story JSON |
-| `--req` | str | `None` | Optional extra request/notes to modify the bible |
-| `--xb` | str | `None` | Path to XMVP XML file (overrides --bible) |
+| `--req` | str | `None` | Optional extra request/notes |
+| `--xb` | str | `None` | Path to XMVP XML (overrides --bible) |
 
 ---
 
 ## writers_room.py
 
-**The Screenwriter** - Breaks Story into temporal Portions (scenes).
+**The Writers** — Breaks a Story into timed Portions (scenes).
 
 ### Usage
 ```bash
@@ -393,18 +393,13 @@ python3 writers_room.py [OPTIONS]
 | `--bible` | str | `"bible.json"` | Path to input CSSV JSON |
 | `--story` | str | `"story.json"` | Path to input Story JSON |
 | `--out` | str | `"portions.json"` | Output path for Portions JSON |
-| `--xb` | str | `None` | Path to XMVP XML file (overrides inputs) |
-
-### Scene Duration Rules
-- Minimum: 4.0 seconds
-- Maximum: 20.0 seconds
-- Variable pacing encouraged based on narrative needs
+| `--xb` | str | `None` | Path to XMVP XML (overrides inputs) |
 
 ---
 
 ## portion_control.py
 
-**The Line Producer** - Calculates exact frame ranges for each Portion.
+**The Calculator** — Converts Portions into frame-accurate Segments.
 
 ### Usage
 ```bash
@@ -418,96 +413,61 @@ python3 portion_control.py [OPTIONS]
 | `--bible` | str | `"bible.json"` | Path to input CSSV JSON |
 | `--portions` | str | `"portions.json"` | Path to input Portions JSON |
 | `--out` | str | `"manifest.json"` | Output path for Manifest JSON |
-| `--xb` | str | `None` | Path to XMVP XML file (overrides inputs) |
+| `--xb` | str | `None` | Path to XMVP XML (overrides inputs) |
 
 ---
 
 ## dispatch_director.py
 
-**The Director** - Executes the Manifest to generate visual assets.
+**The Director** — Generates video/image assets from a Manifest.
 
 ### Usage
 ```bash
-python3 dispatch_director.py --manifest PATH [OPTIONS]
-```
-
-### Options
-
-| Option | Type | Default | Values | Description |
-|--------|------|---------|--------|-------------|
-| `--manifest` | str | - | **Required** | Path to input Manifest JSON |
-| `--out` | str | `"manifest_updated.json"` | - | Output path for updated Manifest |
-| `--staging` | str | `"componentparts"` | - | Directory to save generated assets |
-| `--mode` | str | `"image"` | `image`, `video` | Generation mode |
-| `--vm` | str | `"J"` | L, J, K | Video model tier (if mode=video) |
-| `--pg` | flag | `False` | - | Enable PG mode |
-| `--width` | int | `768` | - | Output width (image mode) |
-| `--height` | int | `768` | - | Output height (image mode) |
-| `--local` | flag | `False` | - | Force local mode (LTX for video, Flux for image) |
-
----
-
-## dispatch_animatic.py
-
-**The Storyboard Artist** - High-speed visualization engine for draft animatics using local inference.
-
-### Usage
-```bash
-python3 dispatch_animatic.py --manifest PATH [OPTIONS]
+python3 dispatch_director.py --manifest <path> [OPTIONS]
 ```
 
 ### Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--manifest` | str | **Required** | Path to input Manifest JSON |
+| `--manifest` | str | Required | Path to input Manifest JSON |
 | `--out` | str | `"manifest_updated.json"` | Output path for updated Manifest |
-| `--staging` | str | `"componentparts"` | Directory to save generated assets |
-| `--flux_path` | str | From definitions | Path to Flux model weights |
+| `--staging` | str | `"componentparts"` | Directory to save assets |
+| `--mode` | str | `"image"` | Generation mode: `image` or `video` |
+| `--vm` | str | `"J"` | Video Model Tier |
+| `--pg` | flag | `False` | Enable PG Mode |
+| `--width` | int | `768` | Output width (Image Mode) |
+| `--height` | int | `768` | Output height (Image Mode) |
+| `--local` | flag | `False` | Force Local Mode (LTX for Video) |
 
-### How It Works
+---
 
-1. **Director Engine**: Uses MLX-loaded Gemma 2 9B (with optional adapter) to translate script lines into visual descriptions
-2. **Flux Bridge**: Generates frames at draft FPS (default 2 FPS)
-3. **FFmpeg Stitching**: Compiles frames into video segments at 24 FPS output
+## dispatch_animatic.py
 
-### Configuration
+**The Storyboarder** — High-speed storyboard generation using Gemma + Flux.
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `WIDTH` | 512 | Output width (16:9) |
-| `HEIGHT` | 288 | Output height |
-| `DRAFT_FPS` | 2 | Generation frame rate |
-| `DIRECTOR_MODEL_PATH` | `mlx-community/gemma-2-9b-it-4bit` | Default director model |
-| `ADAPTER_PATH` | `adapters/director_v1` | Optional LoRA adapter |
+### Usage
+```bash
+python3 dispatch_animatic.py --manifest <path> [OPTIONS]
+```
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--manifest` | str | Required | Path to Manifest JSON |
+| `--out` | str | `"manifest_updated.json"` | Output path |
+| `--staging` | str | `"componentparts"` | Directory to save assets |
+| `--flux_path` | str | Fallback path | Path to Flux model |
 
 ---
 
 ## dispatch_wan.py
 
-**The Wan Orchestrator** - Pipeline for Wan 2.1 video generation with keyframe chaining.
+**The Wan Dispatcher** — Handles Wan 2.1 video generation for long-form content.
 
-### Usage
-```bash
-python3 dispatch_wan.py --manifest PATH [OPTIONS]
-```
-
-### Features
-
-- Dialogue audio verification
-- Keyframe generation via Flux
-- Video generation via Wan 2.1
-- Sequential chaining (last frame → next keyframe)
-
-### Pipeline Flow
-
-1. Load manifest with portions
-2. For each portion:
-   - Resolve/generate audio (fallback to Kokoro TTS)
-   - Generate or chain keyframe (Flux)
-   - Generate video clip (Wan 2.1)
-   - Extract last frame for next chain
-3. Save updated manifest
+### Classes
+- Handles I2V (Image-to-Video) generation using Wan 2.1
 
 ---
 
@@ -515,99 +475,35 @@ python3 dispatch_wan.py --manifest PATH [OPTIONS]
 
 ## foley_talk.py
 
-**Unified Audio Engine** - Handles dialogue generation and audio processing with multiple backends.
+**The Sound Designer** — Generates dialogue audio and foley effects.
 
 ### Usage
 ```bash
-python3 foley_talk.py --input VIDEO [OPTIONS]
+python3 foley_talk.py [OPTIONS]
 ```
 
 ### Options
 
-| Option | Type | Default | Values | Description |
-|--------|------|---------|--------|-------------|
-| `--input` | str | - | **Required** | Input silent video path |
-| `--xb` | str | `None` | - | Input XMVP manifest (source of dialogue) |
-| `--out` | str | `"final_mix.mp4"` | - | Output video path |
-| `--mode` | str | `"cloud"` | `cloud`, `comfy`, `rvc`, `kokoro`, `draft-mix` | Audio backend |
-| `--dry-run` | flag | `False` | - | Simulate execution without generating |
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--input` | str | `None` | Input silent video path |
+| `--xb` | str | `None` | Input XMVP manifest |
+| `--out` | str | `"final_mix.mp4"` | Output video path |
+| `--mode` | str | `"cloud"` | Audio backend: `cloud`, `comfy`, `rvc`, `kokoro`, `draft-mix` |
+| `--dry-run` | flag | `False` | Simulate execution |
 
-### Audio Backends
-
-| Backend | Description |
-|---------|-------------|
-| `cloud` | Google Cloud TTS (Journey voices) |
-| `comfy` | ComfyUI local workflow (IndexTTS) |
-| `rvc` | Legacy RVC voice conversion |
-| `kokoro` | Local Kokoro ONNX TTS |
-| `draft-mix` | Full pipeline: Hunyuan foley + Kokoro dialogue + mix |
-
-### Draft-Mix Mode
-
-The `draft-mix` mode runs the complete audio pipeline:
-
-```bash
-python3 foley_talk.py --input video.mp4 --xb manifest.xml --mode draft-mix --out final.mp4
-```
-
-1. Generates foley using Hunyuan for each video segment
-2. Generates dialogue using Kokoro with deterministic voice assignment
-3. Composes tracks with proper timing offsets
-4. Mixes with volume balance (foley 0.6, dialogue 1.2)
-
-### Voice Assignment
-
-Kokoro voices are deterministically assigned based on actor name hash:
-- Each voice expands to 3 variants: neutral (0), +1 semitone, -2 semitones
-- Consistent assignment across runs for the same actor name
-
-### Helper Functions
-
-| Function | Description |
-|----------|-------------|
-| `get_audio_duration(file_path)` | Get precise duration using ffprobe |
-| `compose_track(assets, duration, output)` | Compose WAV from timed assets |
-| `pitch_shift_file(input, semitones)` | Shift pitch using FFmpeg |
-| `generate_audio_asset(text, path, voice, pitch, mode)` | Unified TTS entry point |
+### Classes
+- `ComfyWrapper` — ComfyUI integration for advanced audio
+- `LegacyVoiceEngine` — Fallback TTS engine
 
 ---
 
 ## thax_audio.py
 
-**Thax Douglas Voice Engine** - Generates audio in Thax Douglas's voice using Kokoro + RVC.
+**The Poet's Voice** — Thax Douglas voice generation using Kokoro + RVC.
 
-### Class: `ThaxVoiceEngine`
-
-```python
-from thax_audio import get_thax_engine
-engine = get_thax_engine()
-engine.generate("Your poetic text here", "output.wav")
-```
-
-### Pipeline
-
-1. **Base Generation**: Kokoro TTS with `am_michael` voice at 0.9x speed
-2. **RVC Conversion**: Applies Thax Douglas voice model (if available)
-3. **Fallback**: Returns base audio if RVC model not found
-
-### Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `THAX_MODEL_DIR` | `z_training_data/thax_voice/model` | Path to RVC model |
-| `MODEL_NAME` | `thax.pth` | RVC model weights |
-| `INDEX_NAME` | `thax.index` | RVC index file |
-| `KOKORO_MODEL_PATH` | `/Volumes/XMVPX/mw/kokoro-root/kokoro-v0_19.onnx` | Kokoro model |
-| `RVC_PYTHON_BIN` | `~/miniconda3/envs/rvc_env/bin/python` | RVC environment |
-
-### Voice Model Files
-
-The included Thax Douglas voice model is located at:
-```
-z_training_data/thax_voice/model/
-├── thax.pth      # RVC model weights
-└── thax.index    # RVC index file
-```
+### Classes
+- `ThaxVoiceEngine` — Generates spoken word audio in Thax Douglas's voice
 
 ---
 
@@ -615,7 +511,7 @@ z_training_data/thax_voice/model/
 
 ## model_scout.py
 
-**Registry Manager** - Scans available models and manages the active profile.
+**The Scout** — Manages and inspects model configurations.
 
 ### Usage
 ```bash
@@ -627,324 +523,163 @@ python3 model_scout.py [OPTIONS]
 | Option | Type | Description |
 |--------|------|-------------|
 | `--status` | flag | Show current active models |
-| `--list` | str (optional) | List models for modality (or ALL). Values: `text`, `image`, `video`, `foley`, `spoken_tts`, `cloned_tts`, `ALL` |
-| `--switch` | 2 args | Switch active model. Format: `MODALITY MODEL_ID` |
+| `--list` | str | List models for modality (or ALL) |
+| `--switch` | MODALITY MODEL_ID | Switch active model |
 | `--scan` | flag | Scan cloud for available models |
 | `--probe` | str | Probe a specific model for rate limits |
-| `--pull` | str | Download HuggingFace model via MLX |
+| `--pull` | str | Download HF model via MLX |
 
 ### Examples
 ```bash
-# Show current configuration
+# Check current configuration
 python3 model_scout.py --status
-
-# List all text models
-python3 model_scout.py --list text
 
 # Switch to local Flux for images
 python3 model_scout.py --switch image flux-schnell
 
-# Probe Veo model
-python3 model_scout.py --probe veo-3.1-generate-preview
-
-# Download and convert model
-python3 model_scout.py --pull google/gemma-2-9b-it
+# List all video models
+python3 model_scout.py --list video
 ```
-
----
-
-## populate_models_xmvp.py
-
-**Model Downloader** - Downloads all required local models to `/Volumes/XMVPX/mw`.
-
-### Usage
-```bash
-python3 populate_models_xmvp.py
-```
-
-### No command-line arguments - runs interactively with optional HuggingFace token prompt.
-
-### Models Downloaded
-
-| Model | Repository | Target Directory |
-|-------|------------|------------------|
-| LTX-Video | Lightricks/LTX-Video | `/Volumes/XMVPX/mw/LT2X-root` |
-| Flux Schnell | black-forest-labs/FLUX.1-schnell | `/Volumes/XMVPX/mw/flux-root` |
-| IndexTTS | IndexTeam/IndexTTS-2 | `/Volumes/XMVPX/mw/indextts-root` |
-| Hunyuan-Foley | tencent/HunyuanVideo-Foley | `/Volumes/XMVPX/mw/hunyuan-foley` |
-| RVC Base | lj1995/VoiceConversionWebUI | `/Volumes/XMVPX/mw/rvc-root` |
-| Gemma 3 | google/gemma-3-27b-it | `/Volumes/XMVPX/mw/gemma-root` |
-| T5 Weights | city96/t5-v1_1-xxl-encoder-bf16 | `/Volumes/XMVPX/mw/t5weights-root` |
-| Kokoro TTS | Kijai/Kokoro-82M-ONNX | `/Volumes/XMVPX/mw/kokoro-root` |
-| ComfyUI | github.com/comfyanonymous/ComfyUI | `/Volumes/XMVPX/mw/comfyui-root` |
 
 ---
 
 ## sassprilla_carbonator.py
 
-**Prompt Expander** - Expands minimalist song titles into dense, genre-appropriate music video concepts.
+**The Carbonator** — Auto-expands title-style prompts into rich visual concepts.
 
 ### Usage
 ```bash
-python3 sassprilla_carbonator.py TITLE [OPTIONS]
+python3 sassprilla_carbonator.py "Title" [OPTIONS]
 ```
-
-### Arguments
-
-| Argument | Type | Description |
-|----------|------|-------------|
-| `title` | positional | Song title to expand |
 
 ### Options
 
-| Option | Type | Description |
-|--------|------|-------------|
-| `--artist` | str | Artist name for context |
-| `--context` | str | Additional context (e.g., 'Cyberpunk', 'Slow', 'Sad') |
-| `--run` | flag | Execute movie_producer automatically (Experimental) |
-
-### How It Works
-
-1. **Analyze**: Determines inherent genre and vibe from title
-2. **Extrapolate**: Identifies the "lesson" or thesis of the video
-3. **Generate**: Creates a dense visual description matching the analyzed genre
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `title` | positional | Required | Song/Movie title |
+| `--artist` | str | `None` | Artist name |
+| `--context` | str | `None` | Additional context (e.g., 'Cyberpunk', 'Slow') |
+| `--run` | flag | `False` | Execute movie_producer automatically |
 
 ### Examples
 ```bash
-# Basic expansion
-python3 sassprilla_carbonator.py "Midnight Train To Georgia"
-
-# With artist context
 python3 sassprilla_carbonator.py "Purple Rain" --artist "Prince"
-
-# With mood context
-python3 sassprilla_carbonator.py "Hurt" --context "Slow, introspective, acoustic"
+python3 sassprilla_carbonator.py "Midnight Train To Georgia" --context "Melancholy"
 ```
 
 ---
 
-## dialogue_critic.py
+## rescue_session.py
 
-**Gemma Wittgenstein** - A dialogue refiner that validates generated text against professional screenplays.
-
-### Class: `DialogueCritic`
-
-```python
-from dialogue_critic import DialogueCritic
-critic = DialogueCritic(text_engine)
-better_line = critic.refine("Hello there friend, I am sad.", character="Bob")
-```
-
-### Constructor
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `text_engine` | TextEngine | Text generation engine |
-| `corpus_root` | str (optional) | Path to parsed screenplay JSONs |
-
-### Methods
-
-| Method | Parameters | Returns | Description |
-|--------|------------|---------|-------------|
-| `refine()` | `draft_line`, `character`, `context` | str | Critique and refine dialogue |
-| `get_examples()` | `k=3` | List[str] | Get k random corpus examples |
-
-### Corpus Structure
-
-The critic loads parsed screenplay JSONs from `z_training_data/parsed_scripts/`:
-
-```json
-{
-  "script": [
-    {"type": "dialogue", "text": "Line text", "character": "Character Name"},
-    ...
-  ]
-}
-```
-
-### Graceful Fallback
-
-If no corpus is found (e.g., public repo pull), returns original text unmodified.
-
----
-
-## convert_voices.py
-
-**Voice Converter** - Converts Kokoro `.pt` voice files to `.npz` format.
+**The Rescuer** — Recovers and resumes failed sessions.
 
 ### Usage
 ```bash
-python3 convert_voices.py
+python3 rescue_session.py <session_dir>
 ```
-
-### Configuration
-
-| Variable | Default |
-|----------|---------|
-| `ROOT_DIR` | `/Volumes/XMVPX/mw/kokoro-root` |
-| `VOICES_DIR` | `{ROOT_DIR}/voices` |
-| `OUTPUT_PATH` | `{ROOT_DIR}/voices.npz` |
-
-### Process
-
-1. Scans `voices/` directory for `.pt` files
-2. Loads each as PyTorch tensor
-3. Converts to NumPy arrays
-4. Saves combined `voices.npz`
 
 ---
 
-## test_gen_capabilities.py
+## prep_movie_assets.py
 
-**Model Tester** - Tests Gemini and Imagen model capabilities.
+**The Prep** — Prepares training datasets from XMVP XML.
 
 ### Usage
 ```bash
-python3 test_gen_capabilities.py
+python3 prep_movie_assets.py --xml <path> [OPTIONS]
 ```
 
-### Functions
+### Options
 
-| Function | Description |
-|----------|-------------|
-| `test_imagen_model(model_name)` | Test Imagen image generation |
-| `test_gemini_model(model_name)` | Test Gemini Flash image generation |
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--xml` | str | Required | Input XMVP XML file |
+| `--out` | str | `"z_training_data/movies"` | Output root |
+| `--force` | flag | `False` | Overwrite existing |
 
-### Default Tests
+---
 
-- `gemini-2.5-flash-image` (L-Tier candidate)
+## still_life.py
+
+**The Still** — Generates frame+audio slideshows from XMVP XML.
+
+### Usage
+```bash
+python3 still_life.py --input <video> [OPTIONS]
+```
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--input` | str | Required | Input MP4 file |
+| `--xml` | str | `None` | Explicit path to XMVP XML |
+| `--local` | flag | `False` | Force Local Mode |
+| `--out` | str | `None` | Output directory |
+| `--w` | int | `256` | Width |
+| `--h` | int | `144` | Height |
 
 ---
 
 # Bridge Modules
 
-These modules provide interfaces to local inference engines. They are typically not called directly but are used internally by other modules.
-
 ## flux_bridge.py
 
-**Flux Interface** - Text-to-Image and Image-to-Image generation.
+**FluxBridge** — Local image generation using Flux.1-schnell.
 
 ### Class: `FluxBridge`
+- `generate(prompt, width, height, seed)` → PIL.Image
+- `img2img(image, prompt, strength)` → PIL.Image
 
-```python
-bridge = FluxBridge(model_path, device="mps")
-```
-
-### Methods
-
-| Method | Parameters | Returns | Description |
-|--------|------------|---------|-------------|
-| `generate()` | `prompt`, `width=1024`, `height=1024`, `steps=4`, `seed=None` | PIL Image | Text-to-image generation |
-| `generate_img2img()` | `prompt`, `image`, `strength=0.6`, `width=1024`, `height=1024`, `steps=4`, `seed=None` | PIL Image | Image-to-image transformation |
-
-### Singleton Helper
+### Factory
 ```python
 from flux_bridge import get_flux_bridge
-bridge = get_flux_bridge("/Volumes/XMVPX/mw/flux-root")
+bridge = get_flux_bridge()  # Singleton
 ```
 
 ---
 
 ## ltx_bridge.py
 
-**LTX-Video Interface** - Text-to-Video and Image-to-Video generation.
+**LTXBridge** — Local video generation using LTX-Video.
 
 ### Class: `LTXBridge`
+- `generate(prompt, num_frames, fps)` → Video path
 
+### Factory
 ```python
-bridge = LTXBridge(model_path, device="mps")
-```
-
-### Methods
-
-| Method | Parameters | Returns | Description |
-|--------|------------|---------|-------------|
-| `generate()` | `prompt`, `output_path`, `width=768`, `height=512`, `num_frames=121`, `fps=24`, `seed=None`, `image_path=None` | bool | Video generation. If `image_path` provided, uses Img2Vid |
-
----
-
-## kokoro_bridge.py
-
-**Kokoro TTS Interface** - Local text-to-speech.
-
-### Class: `KokoroBridge`
-
-```python
-bridge = KokoroBridge(model_path, voices_path=None)
-```
-
-### Methods
-
-| Method | Parameters | Returns | Description |
-|--------|------------|---------|-------------|
-| `load()` | - | - | Load model into memory |
-| `generate()` | `text`, `output_path`, `voice_name="af_bella"`, `speed=1.0` | bool | Generate speech |
-| `get_voice_list()` | - | List[str] | Get available voice names |
-
-### Available Voices (Default)
-- `af_bella`, `af_sarah` (American Female)
-- `am_michael`, `am_adam` (American Male)
-- `bf_emma` (British Female)
-- `bm_george` (British Male)
-
----
-
-## hunyuan_foley_bridge.py
-
-**Hunyuan Foley Interface** - Video-to-Audio foley generation.
-
-### Class: `HunyuanFoleyBridge`
-
-```python
-bridge = HunyuanFoleyBridge(model_path="/Volumes/XMVPX/mw/hunyuan-foley", device="auto")
-```
-
-### Methods
-
-| Method | Parameters | Returns | Description |
-|--------|------------|---------|-------------|
-| `generate_foley()` | `text_prompt`, `video_path`, `output_path`, `duration=None`, `guidance_scale=4.5`, `steps=30` | bool | Generate foley audio for video |
-
-### Helper Function
-```python
-from hunyuan_foley_bridge import generate_foley_asset
-result = generate_foley_asset(prompt, output_path, video_path=None, duration=4.0)
+from ltx_bridge import get_ltx_bridge
+bridge = get_ltx_bridge()  # Singleton, lazy-loaded
 ```
 
 ---
 
 ## wan_bridge.py
 
-**Wan 2.1 Interface** - Image-to-Video generation with speech support.
+**WanVideoBridge** — Local video generation using Wan 2.1 14B.
 
 ### Class: `WanVideoBridge`
+- `generate(prompt, image, num_frames)` → Video path
+- Supports keyframe chaining for long-form content
 
-```python
-from wan_bridge import get_wan_bridge
-bridge = get_wan_bridge("/Volumes/XMVPX/mw/wan-root")
-```
+---
 
-### Methods
+## kokoro_bridge.py
 
-| Method | Parameters | Returns | Description |
-|--------|------------|---------|-------------|
-| `load_model()` | - | - | Load Wan 2.1 14B into memory |
-| `generate()` | `prompt`, `image_path`, `audio_path`, `output_path` | bool | Generate video from image + audio + text |
+**KokoroBridge** — Local TTS using Kokoro ONNX.
 
-### Features
+### Class: `KokoroBridge`
+- `generate(text, voice, output_path)` → Audio path
+- Voices: `af_bella`, `af_sarah`, `af_nicole`, `am_michael`, `am_adam`, `bm_george`, etc.
 
-- MPS optimization for Apple Silicon
-- Fallback simulation mode for pipeline testing
-- Automatic memory optimization (attention slicing)
+---
 
-### Default Configuration
+## hunyuan_foley_bridge.py
 
-| Setting | Value |
-|---------|-------|
-| Model Path | `/Volumes/XMVPX/mw/wan-root` |
-| Output Resolution | 1280x720 |
-| Frame Count | 49 (≈2s @ 24fps) |
-| Inference Steps | 30 |
+**HunyuanFoleyBridge** — Local foley/sound effect generation.
+
+### Class: `HunyuanFoleyBridge`
+- `generate(prompt, duration)` → Audio path
 
 ---
 
@@ -952,116 +687,65 @@ bridge = get_wan_bridge("/Volumes/XMVPX/mw/wan-root")
 
 ## text_engine.py
 
-**Central Text Generation** - Unified interface for cloud and local LLM inference.
+**TextEngine** — Unified text generation interface (Cloud/Local).
 
 ### Class: `TextEngine`
+- `generate(prompt, system_prompt, temperature)` → str
+- `generate_json(prompt, schema)` → dict
 
-```python
-engine = TextEngine(config_path=None)
-```
-
-### Properties
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `backend` | str | Current backend: `"gemini_api"` or `"local_gemma"` |
-| `local_model_path` | str | Path to local model |
-
-### Methods
-
-| Method | Parameters | Returns | Description |
-|--------|------------|---------|-------------|
-| `generate()` | `prompt`, `temperature=0.7`, `json_schema=None` | str | Generate text response |
-| `get_gemini_client()` | - | genai.Client | Get configured Gemini client |
-| `get_model_instance()` | - | GenerativeModel | Get V1 SDK model object |
-
-### Singleton Helper
+### Factory
 ```python
 from text_engine import get_engine
-engine = get_engine()
+engine = get_engine()  # Uses active profile
 ```
-
-### Environment Override
-Set `TEXT_ENGINE=local_gemma` to force local mode.
 
 ---
 
 ## truth_safety.py
 
-**Prompt Refinement Engine** - Ensures coherence, safety, and quality. Now integrates DialogueCritic.
+**TruthSafety** — Content moderation and PG filtering.
 
 ### Class: `TruthSafety`
-
-```python
-ts = TruthSafety(api_key=None)
-```
-
-### Methods
-
-| Method | Parameters | Returns | Description |
-|--------|------------|---------|-------------|
-| `refine_prompt()` | `prompt`, `context_dict=None`, `pg_mode=False`, `local_mode=False` | str | Full refinement pipeline |
-| `soften_prompt()` | `prompt`, `pg_mode=False` | str | Legacy wrapper for refine_prompt |
-| `describe_image()` | `image_path` | str | Get dense description of image |
-| `wash_image()` | `image_path` | str | Sanitize image (describe → regenerate) |
-| `critique_dialogue()` | `draft_line`, `character="Unknown"`, `context=None` | str | Refine dialogue via DialogueCritic |
-
-### Refinement Phases
-1. **TRUTH**: Physical coherence, logic, style consistency
-2. **CONTEXT ALIGNMENT**: Weave in style/character context
-3. **FATTENING** (local_mode only): Expand to 100-150 words of cinematic detail
-4. **SAFETY**: Apply PG or Standard safety guidelines (skipped if local_mode AND NOT pg_mode)
+- `sanitize(prompt, pg_mode)` → str
+- `check_safety(content)` → bool
 
 ---
 
 ## definitions.py
 
-**Model Registry** - Centralized configuration for all models and VP Forms.
+**Definitions** — Model registry and VP Form configurations.
 
 ### Enums
+- `BackendType`: `CLOUD`, `LOCAL`
+- `Modality`: `TEXT`, `IMAGE`, `VIDEO`, `FOLEY`, `SPOKEN_TTS`, `CLONED_TTS`
 
-```python
-class BackendType(str, Enum):
-    CLOUD = "cloud"
-    LOCAL = "local"
-
-class Modality(str, Enum):
-    TEXT = "text"
-    IMAGE = "image"
-    VIDEO = "video"
-    FOLEY = "foley"
-    SPOKEN_TTS = "spoken_tts"
-    CLONED_TTS = "cloned_tts"
-```
-
-### Functions
-
-| Function | Parameters | Returns | Description |
-|----------|------------|---------|-------------|
-| `get_video_model()` | `key` | str | Legacy accessor for VIDEO_MODELS |
-| `get_active_model()` | `modality: Modality` | ModelConfig | Get config for active model |
-| `set_active_model()` | `modality: Modality`, `model_id: str` | - | Set and persist active model |
-| `resolve_vpform()` | `input_string: str` | VPFormConfig | Resolve form key or alias |
-| `add_global_vpform_args()` | `parser` | - | Add CLI args to parser |
-| `parse_global_vpform()` | `args`, `current_default` | str | Extract VPForm from args |
+### Key Functions
+| Function | Description |
+|----------|-------------|
+| `get_video_model(key)` | Legacy accessor for video models |
+| `get_active_model(modality)` | Get currently active model config |
+| `set_active_model(modality, model_id)` | Set and persist active model |
+| `resolve_vpform(input_string)` | Resolve form key or alias |
 
 ### VP Form Registry
 
 | Key | Aliases | Description |
 |-----|---------|-------------|
-| `music-video` | `mv`, `music-agency` | Music Video Generation (Story/Agency Mode) |
+| `music-video` | `mv`, `music-agency` | Music Video (Story/Agency Mode) |
 | `music-visualizer` | `viz`, `visualizer`, `audio-reactive` | Abstract Music Visualizer |
-| `creative-agency` | `ca`, `commercial`, `ad`, `agency` | Commercial/Creative Agency Spot |
-| `tech-movie` | `tech`, `tm` | Tech/Code Movie Generator |
-| `draft-animatic` | `animatic`, `draft`, `storyboard` | Static Storyboard / Animatic Mode |
-| `full-movie` | `feature`, `movie` | Full-length feature film animatic |
-| `movies-movie` | `mm`, `remake`, `blockbuster` | Condensed Hollywood Blockbuster Remake |
+| `creative-agency` | `ca`, `commercial`, `ad`, `agency` | Commercial/Creative Agency |
+| `tech-movie` | `tech`, `tm` | Tech/Code Movie |
+| `draft-animatic` | `animatic`, `draft`, `storyboard` | Static Storyboard |
+| `full-movie` | `feature`, `movie` | Full-length feature |
+| `movies-movie` | `mm`, `remake`, `blockbuster` | Condensed Blockbuster Remake |
 | `parody-movie` | `pm`, `spoof`, `parody` | Direct Parody/Spoof |
-| `thax-douglas` | `thax`, `td` | Thax Douglas Spoken Word Generator |
-| `gahd-podcast` | `gahd`, `god`, `history` | Great Moments in History Podcast |
-| `24-podcast` | `24`, `news` | 24-minute 4-person improv podcast |
+| `parody-video` | `pv`, `music-parody` | Music-Synced Parody |
+| `thax-douglas` | `thax`, `td` | Thax Douglas Spoken Word |
+| `gahd-podcast` | `gahd`, `god`, `history` | Great Moments in History |
+| `24-podcast` | `24`, `news` | 24-minute 4-person improv |
 | `10-podcast` | `10`, `tech-news` | 10-minute topical podcast |
-| `route66-podcast` | `r66`, `route66` | 6-Person Improv Narrative (66 Minutes) |
+| `route66-podcast` | `r66`, `route66` | 6-Person Road Trip Narrative |
+| `fullmovie-still` | `fms`, `slideshow` | Frame+Audio Slideshow |
 
 ### Registered Models
 
@@ -1071,7 +755,7 @@ class Modality(str, Enum):
 | `gemini-2.0-flash` | cloud | - |
 | `gemini-1.5-pro` | cloud | - |
 | `gemma-2-9b-it` | local | `/Volumes/XMVPX/mw/gemma-root` |
-| `gemma-2-9b-it-director` | local | `/Volumes/XMVPX/mw/gemma-root` + `adapters/director_v1` |
+| `gemma-2-9b-it-director` | local | `/Volumes/XMVPX/mw/gemma-root` + adapter |
 
 #### Image
 | ID | Backend | Path/Endpoint |
@@ -1105,7 +789,7 @@ class Modality(str, Enum):
 |-------|-------------|
 | `VPForm` | Genre and output mechanics |
 | `Constraints` | Technical limits (resolution, FPS, duration) |
-| `CSSV` | The "Bible" - Constraints, Scenario, Situation, Vision |
+| `CSSV` | The "Bible" — Constraints, Scenario, Situation, Vision |
 | `Story` | Narrative backbone |
 | `Portion` | High-level narrative chunk |
 | `Seg` | Executable technical segment |
@@ -1123,7 +807,7 @@ class Modality(str, Enum):
 | `load_manifest(path)` | Load Manifest from JSON |
 | `save_manifest(manifest, path)` | Save Manifest to JSON |
 | `load_api_keys(env_path)` | Load API keys from YAML |
-| `load_text_keys(env_path)` | Load TEXT_KEYS_LIST fallback |
+| `load_text_keys(env_path)` | Load TEXT_KEYS_LIST |
 | `save_xmvp(data_models, path)` | Save to XMVP XML format |
 | `load_xmvp(path, key)` | Load specific key from XMVP XML |
 | `get_client()` | Get rotated genai.Client |
@@ -1133,18 +817,15 @@ class Modality(str, Enum):
 
 ## frame_canvas.py
 
-**Code Painter** - Procedural image generation using Gemini-generated NumPy/SciPy code.
+**Code Painter** — Procedural image generation using Gemini-generated code.
 
 ### Features
-
-- Multi-stage procedural generation (pixel pass, refine pass, degrade pass)
-- Gemini-powered code generation for each stage
+- Multi-stage procedural generation (pixel, refine, degrade passes)
+- Gemini-powered NumPy/SciPy code generation
 - Safe execution with confidence scoring
-- Resolution scaling support
 
 ### Usage
-
-Typically invoked via `--fc` flag on producers:
+Typically invoked via `--fc` flag:
 ```bash
 python3 cartoon_producer.py --prompt "Abstract art" --fc
 ```
@@ -1173,17 +854,6 @@ python3 cartoon_producer.py --prompt "Abstract art" --fc
 }
 ```
 
-## Story Structure
-
-```json
-{
-  "title": "Title Here",
-  "synopsis": "Synopsis text...",
-  "characters": ["Character 1", "Character 2"],
-  "theme": "Theme description"
-}
-```
-
 ## Manifest Structure
 
 ```json
@@ -1208,7 +878,7 @@ python3 cartoon_producer.py --prompt "Abstract art" --fc
 
 ```xml
 <?xml version='1.0' encoding='utf-8'?>
-<XMVP version="2.69">
+<XMVP version="2.80">
   <Bible>{JSON}</Bible>
   <Story>{JSON}</Story>
   <Manifest>{JSON}</Manifest>
@@ -1228,8 +898,8 @@ LOCAL_MODEL_PATH: ""       # HuggingFace ID or path
 
 # API Keys
 GEMINI_API_KEY: "YOUR_KEY"
-ACTION_KEYS_LIST: "key1,key2,key3"  # High-cost operations (Veo)
-TEXT_KEYS_LIST: "key4,key5"         # High-volume text operations
+ACTION_KEYS_LIST: "key1,key2,key3,..."  # 16 keys for video/image (rotated)
+TEXT_KEYS_LIST: "key4,key5,..."         # 8 keys for text operations
 ```
 
 ## active_models.json
@@ -1247,29 +917,28 @@ Auto-generated profile tracking current active models:
 
 ---
 
-# Training Data & Voice Models
+# Training & Voice Models
 
-## z_training_data Directory Structure
+## Directory Structure
 
 ```
 z_training_data/
 ├── parsed_scripts/          # Parsed screenplay JSONs for DialogueCritic
 │   └── *.json
-└── thax_voice/              # Thax Douglas voice model
-    └── model/
-        ├── thax.pth         # RVC model weights
-        └── thax.index       # RVC index file
+├── thax_voice/              # Thax Douglas voice model
+│   └── model/
+│       ├── thax.pth         # RVC model weights
+│       └── thax.index       # RVC index file
+├── 24_voices/               # 24-podcast character voices
+└── route66_voices/          # Route 66 character voices
 ```
 
-## Thax Douglas Voice Model
+## Using the Thax Douglas Voice
 
-The included voice model for Thax Douglas (Chicago poet) is freely shared for creative use. To use:
-
-1. Ensure the model files are in `z_training_data/thax_voice/model/`
-2. Set up RVC environment: `conda create -n rvc_env python=3.10`
-3. Install rvc-python: `pip install rvc-python`
-4. Use via `thax_audio.py` or `content_producer.py --vpform thax-douglas`
+1. Ensure files are in `z_training_data/thax_voice/model/`
+2. Set up RVC environment: `conda create -n rvc_env python=3.10 && pip install rvc-python`
+3. Run: `python3 content_producer.py --vpform thax-douglas`
 
 ---
 
-*Generated for XMVP v2.69 - January 2026*
+*Generated for XMVP v2.80 — January 2026*

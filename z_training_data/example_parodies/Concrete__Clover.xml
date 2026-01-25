@@ -1,0 +1,670 @@
+<?xml version='1.0' encoding='utf-8'?>
+<XMVP version="1.0"><Bible>{
+  "constraints": {
+    "max_duration_sec": 6900.0,
+    "fps": 24
+  },
+  "scenario": "The world of Concrete &amp; Clover",
+  "situation": "A seasoned detective, haunted by a case from his rural past, must navigate the treacherous world of high-finance crime when a seemingly simple embezzlement leads him back to the quiet town he swore he'd left behind, forcing him to confront the illusions of safety and the true cost of belonging.",
+  "vision": "Cinematic, High Production Value"
+}</Bible><Story>{
+  "title": "Concrete &amp; Clover",
+  "synopsis": "A seasoned detective, haunted by a case from his rural past, must navigate the treacherous world of high-finance crime when a seemingly simple embezzlement leads him back to the quiet town he swore he'd left behind, forcing him to confront the illusions of safety and the true cost of belonging.",
+  "characters": [
+    "Detective Miles Corbin (Protagonist, City)",
+    "Evelyn Hayes (Supporting, Country - Accountant)",
+    "Julian Vance (Antagonist, City - Hedge Fund Manager)",
+    "Sheriff Brody Miller (Supporting, Country - Local Law Enforcement)",
+    "Clara Bellweather (Supporting, Country - Evelyn's Aunt, Town Historian)",
+    "Marcus Thorne (Supporting, City - Corbin's Captain)",
+    "Simone Archer (Supporting, City - Forensic Accountant)"
+  ],
+  "theme": "Hero's Journey"
+}</Story><Manifest>{
+  "segs": [
+    {
+      "id": 1,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 1: The Ordinary World",
+      "action": "cinematic",
+      "script_content": "{\n  \"SCENE\": {\n    \"SCENE_NUMBER\": \"1\",\n    \"LOCATION\": \"CORBIN'S APARTMENT - NIGHT\",\n    \"DESCRIPTION\": \"The apartment is meticulously organized, bordering on sterile. Bookshelves are arranged by color, not content. A half-finished chess game sits on a glass table. Rain streaks the window overlooking the city. DETECTIVE MILES CORBIN (40s, sharp, weary) is reviewing files, illuminated by a desk lamp. Empty takeout containers litter the kitchen counter, evidence of a meal ignored. The TV murmurs a procedural drama, but Corbin isn't watching.\",\n    \"CHARACTERS\": [\n      \"MILES CORBIN\",\n      \"MARCUS THORNE (V.O.)\"\n    ],\n    \"DIALOGUE\": [\n      {\n        \"CHARACTER\": \"MARCUS THORNE (V.O.)\",\n        \"LINE\": \"Corbin, you're chasing ghosts. These rural disappearances\u2026 they're not our jurisdiction. Sheriff Miller can handle a few lost sheep.\"\n      },\n      {\n        \"CHARACTER\": \"MILES CORBIN\",\n        \"LINE\": \"(Into phone, not looking up) Sheriff Miller requested assistance. Missing persons, unusual circumstances. Three in as many months. All connected to Vance\u2019s land acquisition.\"\n      },\n      {\n        \"CHARACTER\": \"MARCUS THORNE (V.O.)\",\n        \"LINE\": \"Vance is clean. We vetted him. He's a pillar of the community. A donor. You're wasting time on\u2026 sentimentality. You always do.\"\n      },\n      {\n        \"CHARACTER\": \"MILES CORBIN\",\n        \"LINE\": \"(Sighs, rubs his temples) Sentimentality? They\u2019re people, Marcus. Not variables in a spreadsheet.\"\n      },\n      {\n        \"CHARACTER\": \"MARCUS THORNE (V.O.)\",\n        \"LINE\": \"They're statistics, Miles. Collateral damage. You need to focus on what matters: closing the Moreau case. The Mayor is breathing down my neck.\"\n      },\n      {\n        \"CHARACTER\": \"MILES CORBIN\",\n        \"LINE\": \"Moreau\u2019s cold. This\u2026 feels different. There's a pattern. A silence. It's like they vanished into the land itself.\"\n      },\n      {\n        \"CHARACTER\": \"MARCUS THORNE (V.O.)\",\n        \"LINE\": \"You're projecting. You\u2019re letting your\u2026 personal issues cloud your judgment. Get back to the city, Corbin. Leave the country to the country folk.\"\n      },\n      {\n        \"CHARACTER\": \"MILES CORBIN\",\n        \"LINE\": \"(Quietly, to himself) The form is wrong. Always the form is wrong. You arrange the pieces, insist on the order\u2026 but the meaning remains absent. It's not about proving the argument; it's about whether the argument *is*.\"\n      }\n    ],\n    \"ACTION\": [\n      \"Corbin hangs up the phone, tossing it onto the desk. He returns to the files, specifically a grainy photo of EVELYN HAYES (30s, unassuming, dressed in practical clothes), an accountant from the rural town. Her face is etched with worry.\",\n      \"He opens a separate file containing financial records \u2013 complex diagrams and flowcharts detailing JULIAN VANCE\u2019s (50s, impeccably dressed, radiating power) land purchases. Corbin traces a line connecting Vance\u2019s company to a shell corporation, then to a series of untraceable accounts.\",\n      \"He glances at the chess board. White is in a strategically advantageous position, but Corbin hasn't made a move in days. The camera focuses on his hand, hovering over a pawn, then retracting. He's paralyzed by analysis, unable to commit.\"\n    ]\n  }\n}"
+    },
+    {
+      "id": 2,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 2: The Call to Adventure",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": 12,\n    \"setting\": \"INT. CORBIN'S APARTMENT - NIGHT\",\n    \"action\": \"The apartment is stark, minimalist. Rain streaks the windows. DETECTIVE MILES CORBIN (40s, weary, sharp eyes) stares at a chessboard. White has a clear advantage. Days-old coffee cups and stacks of files litter the small table. He hasn't moved a piece. The files detail JULIAN VANCE's land acquisitions. Corbin\u2019s hand hovers over a white pawn, then STOPS. He seems unable to act. The phone RINGS, jarring him.\\n\\nHe answers, voice gravelly.\",\n    \"dialogue\": [\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Into phone) Corbin.\"\n      },\n      {\n        \"character\": \"MARCUS THORNE (V.O.)\",\n        \"line\": \"Miles, we got a situation. Sheriff Miller just called from Oakhaven. Evelyn Hayes\u2026 the accountant you were looking at? Found dead.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Dead? How?\"\n      },\n      {\n        \"character\": \"MARCUS THORNE (V.O.)\",\n        \"line\": \"Appears to be a\u2026 farming accident. Tractor rollover. Miller\u2019s not convinced. Says it's too clean. No sign of a struggle, but\u2026 something feels off. He specifically requested you. Said she was asking about Vance\u2019s holdings right before it happened. He wants a fresh pair of eyes. And frankly, so do I. This Vance is\u2026slippery.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"A farming accident. Convenient. What about forensics?\"\n      },\n      {\n        \"character\": \"MARCUS THORNE (V.O.)\",\n        \"line\": \"Simone Archer is on her way now. Miller's holding the scene. He's\u2026a country sheriff, Miles. Not used to this level of complexity. He keeps talking about 'omens' and 'old family feuds'. It\u2019s\u2026 colorful.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Staring at the chessboard) Omens. Family feuds. It's all just\u2026 noise. A distraction from the simple equation. The land, the money, the shell corporations\u2026 Vance is building something. And now someone\u2019s dead. Because they started asking questions. It is nonsense to place the hypothesis $p \\supset p$ before a proposition in order to ensure that its arguments have the right form\u2026 The form doesn't matter if the foundation is corrupted.\"\n      },\n      {\n        \"character\": \"MARCUS THORNE (V.O.)\",\n        \"line\": \"Miles? You still there?\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Yeah. I'm going to Oakhaven.\"\n      },\n       {\n        \"character\": \"MARCUS THORNE (V.O.)\",\n        \"line\": \"Good. And Miles\u2026 be careful. Vance doesn't play games.\"\n      }\n    ],\n    \"transition\": \"CUT TO BLACK.\"\n  }\n}"
+    },
+    {
+      "id": 3,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 3: Refusal of the Call",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"3\",\n    \"setting\": \"INT. CORBIN'S APARTMENT - NIGHT\",\n    \"action\": \"The apartment is spartan, functional. Rain streaks the window overlooking the city. CORBIN, 30s, hardened but weary, stands silhouetted against the neon glow, a half-packed duffel bag at his feet. He stares at a framed photograph on his desk: a younger, smiling Corbin with a woman. He hasn\u2019t touched it in years. The phone rests on the desk, the remnants of a strained conversation hanging in the air. He picks up a chipped coffee mug, swirling the cold dregs.\",\n    \"dialogue\": [\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(To himself, barely a whisper) Oakhaven. What am I even doing?\"\n      },\n      {\n        \"character\": \"SIMONE ARCHER (O.S.)\",\n        \"line\": \"You're chasing a ghost, Miles. A very wealthy, very dangerous ghost.\"\n      },\n      {\n        \"action\": \"Corbin jumps, startled. SIMONE, 30s, sharp and impeccably dressed, stands in the doorway, holding a file. She hasn't bothered knocking.\",\n        \"character\": \"CORBIN\",\n        \"line\": \"Since when do you do house calls?\"\n      },\n      {\n        \"character\": \"SIMONE ARCHER\",\n        \"line\": \"Since your Captain practically ordered me to babysit. Vance's financials are\u2026 abstract. Layers of shell corporations, offshore accounts. The money\u2019s clean, technically. But it *moves* like something rotten. It\u2019s form without substance. It's nonsense to place the hypothesis $p \\supset p$ before a proposition in order to ensure that its arguments have the right form... because the hypothesis for a non-proposition as argument becomes not false but meaningless.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Meaningless how?\"\n      },\n      {\n        \"character\": \"SIMONE ARCHER\",\n        \"line\": \"Meaningless in that all the accounting principles, all the due diligence in the world, can't explain *why* he's moving it. It doesn't serve a logical purpose. It\u2019s\u2026 anticipatory. Like he's preparing for something. Something big.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Or he's just laundering money.\"\n      },\n      {\n        \"character\": \"SIMONE ARCHER\",\n        \"line\": \"That\u2019s what I initially thought. But the scale\u2026 the complexity\u2026 it\u2019s beyond anything I\u2019ve seen. And then there's Evelyn Hayes. The accountant from Oakhaven. She flagged a discrepancy, a small one, in the town\u2019s historical society funds. Vance bought the land under the society a month later.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"A land grab. He wants something buried there.\"\n      },\n      {\n        \"character\": \"SIMONE ARCHER\",\n        \"line\": \"Possibly. Or something *to be* buried. Look, I've run the numbers. You\u2019re walking into a pressure cooker. A small town with a Sheriff who clearly thinks you're wasting his time, a woman who's probably terrified, and a man who owns half the city. And you? You're a city detective who hasn't been outside the five boroughs in five years.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"I'm aware of my limitations.\"\n      },\n      {\n        \"character\": \"SIMONE ARCHER\",\n        \"line\": \"Then why are you hesitating? This isn\u2019t a missing persons case, Miles. This is\u2026 something else. Something colder. And the form doesn't matter if the foundation is corrupted. You know that.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Looks at the photograph again) I used to be good at this. At\u2026 facing things.\"\n      },\n      {\n        \"character\": \"SIMONE ARCHER\",\n        \"line\": \"You still are. Don\u2019t let Oakhaven break you before you even get there.\"\n      }\n    ],\n    \"transition\": \"FADE OUT.\"\n  }\n}"
+    },
+    {
+      "id": 4,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 4: Supernatural Aid",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"7\",\n    \"setting\": \"EXT. BELLWEATHER FARM - NIGHT\",\n    \"action\": [\n      \"The Bellweather farm is shrouded in mist. Moonlight struggles to penetrate the ancient oaks surrounding a weathered farmhouse. DETECTIVE CORBIN, looking haunted, stands on the porch with SHERIFF MILLER. EVELYN HAYES watches from a window, clutching a shawl. The air is thick with the scent of damp earth and something\u2026older.\",\n      \"Miller gestures towards the farmhouse door.\",\n      \"MILLER\",\n      \"Clara\u2019s been expectin\u2019 you, Detective. Said something about \u2018the weight of things\u2019 and a visitor from the city.\"\n    ],\n    \"dialogue\": [\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"\u2018The weight of things\u2019 sounds about right. This whole case feels like carrying a stone uphill.\"\n      },\n      {\n        \"character\": \"MILLER\",\n        \"line\": \"Oakhaven\u2019s got a history, Detective. Folks tend to forget that. They build their lives on top of\u2026 well, on top of other lives. And sometimes, those foundations shift.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Turning to Miller, a flicker of something akin to desperation in his eyes) Foundations. Right. Because it\u2019s nonsense to place the hypothesis \u2018p implies p\u2019 before a proposition to ensure its arguments have the right form \u2013 the hypothesis becomes meaningless if applied to a non-proposition, and the proposition itself becomes senseless if the arguments are wrong. The whole structure collapses if the starting point is flawed.\u201d\n      },\n      {\n        \"character\": \"MILLER\",\n        \"line\": \"(Frowning, confused) I\u2026 reckon that\u2019s a fancy way of sayin\u2019 things ain't what they seem.\"\n      },\n      \"Corbin nods slowly. They enter the farmhouse. The interior is cluttered with books, artifacts, and dried herbs. CLARA BELLWEATHER, a woman who seems to be woven from the same fabric as the farmhouse itself, sits by a crackling fireplace. Evelyn joins them.\",\n      {\n        \"character\": \"CLARA BELLWEATHER\",\n        \"line\": \"Detective Corbin. Welcome. I\u2019ve been expecting you. Sheriff Miller tells me you're wrestling with shadows.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Shadows doesn\u2019t begin to cover it. Vance\u2026 he\u2019s not just a financier. There's something\u2026 else. And I can't pin it down.\"\n      },\n      {\n        \"character\": \"CLARA BELLWEATHER\",\n        \"line\": \"(Smiling faintly) Sometimes, what you seek isn\u2019t \u2018pinned down,\u2019 Detective. It\u2019s\u2026unbound. It exists outside the structures you\u2019re accustomed to. Like a root system beneath the soil\u2014hidden, essential, and capable of both nurturing and strangling.\"\n      },\n      \"Clara reaches into a wooden chest and produces a small, intricately carved wooden clover. She hands it to Corbin.\",\n      {\n        \"character\": \"CLARA BELLWEATHER\",\n        \"line\": \"This was carried by my great-grandmother, during the\u2026 disturbances. It won\u2019t protect you from everything. But it will remind you of what truly anchors a thing. Remember, Detective: it's nonsense to presume logical form will save you when the very ground is unsound. The seed of truth isn\u2019t in the argument\u2019s shape, but in the soil it grows from. Find the root, and you find the strength.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Holding the clover, feeling its weight) The root\u2026 right.\"\n      },\n      {\n        \"character\": \"EVELYN HAYES\",\n        \"line\": \"(Quietly, to Corbin) She\u2019s right, you know. This land\u2026 it remembers things.\"\n      }\n    ],\n    \"transition\": \"FADE TO BLACK.\"\n  }\n}"
+    },
+    {
+      "id": 5,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 5: Crossing the First Threshold",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"SCENE 3\",\n    \"setting\": \"BELLWEATHER FARMHOUSE - NIGHT\",\n    \"action\": [\n      \"Rain lashes against the windows of the old farmhouse. The power is out, plunging the interior into near darkness, lit only by flickering emergency lanterns and the glow of a laptop screen. CORBIN paces, phone pressed to his ear, the clover clutched in his hand. EVELYN watches him, perched on the edge of a worn armchair. SHERIFF MILLER attempts to restore cell service, futilely waving his phone in the air. CLARA BELLWEATHER sits silently, rocking in an antique chair, a half-finished quilt in her lap. The air is thick with tension and the smell of damp earth.\",\n      \"CORBIN (into phone)\",\n      \"Corbin: Thorne, I\u2019m telling you, this isn\u2019t a simple embezzlement case. Hayes' books\u2026 they're clean. Too clean. It\u2019s like someone anticipated every audit, every question. And the pattern\u2026 it mirrors something else. Something older.\",\n      \"Thorne\u2019s voice (V.O., crackling)\",\n      \"Thorne: Corbin, you\u2019re chasing ghosts. Vance is a shark, yes, but he\u2019s not occult. We need concrete evidence, not rural paranoia.\",\n      \"CORBIN\",\n      \"Corbin: Concrete cracks, Captain. And sometimes, the foundation is rotten. I need a deep dive on Vance\u2019s land acquisitions, specifically anything in this county over the last ten years. Anything connected to the Bellweather name. \",\n      \"Thorne\u2019s voice (V.O., exasperated)\",\n      \"Thorne: Bellweather? Corbin, this is\u2026Look, I\u2019m sending Archer over with a forensic accounting team. She\u2019ll sort through the numbers. You\u2026 secure the scene and try not to scare the locals.\",\n      \"Corbin ends the call, frustration etched on his face. He looks at Evelyn.\",\n      \"CORBIN\",\n      \"They\u2019re sending Archer. She\u2019s good. But she'll be looking for numbers, not\u2026 roots.\",\n      \"EVELYN\",\n      \"She\u2019ll find what she\u2019s *told* to find. Julian knows how to build walls within walls, Captain. Layers of plausible deniability.\",\n      \"Sheriff Miller slams his phone down.\",\n      \"MILLER\",\n      \"Still nothing. Cell towers are down across the county. Feels\u2026 deliberate.\",\n      \"Clara Bellweather speaks, her voice raspy and slow.\",\n      \"CLARA\",\n      \"Deliberate is a kindness. Some things\u2026they resist being found. They bend the world around them to stay hidden. It's not about *finding* the truth, Detective. It\u2019s about peeling back what's been carefully arranged to *look* like the truth. It is nonsense to place the hypothesis $p \\supset p$ before a proposition in order to ensure that its arguments have the right form, because the hypothesis for a non-proposition as argument becomes not false but meaningless, and because the proposition itself becomes senseless for arguments of the wrong kind, and therefore it survives the wrong arguments no better and no worse than the senseless hypothesis attached for this purpose.\",\n      \"Corbin, startled, stares at Clara. He looks down at the clover in his hand, then back at Evelyn.\",\n      \"CORBIN\",\n      \"(Holding the clover, feeling its weight) The root\u2026 right.\",\n      \"EVELYN\",\n      \"(Quietly, to Corbin) She\u2019s right, you know. This land\u2026 it remembers things.\"\n    ],\n    \"transition\": \"FADE TO BLACK.\"\n  }\n}"
+    },
+    {
+      "id": 6,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 6: The Belly of the Whale",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"SCENE 17\",\n    \"setting\": \"VANCE FAMILY ESTATE - CELLAR - NIGHT\",\n    \"action\": [\n      \"The cellar is vast, smelling of damp earth and old money. Stone walls weep. Rows of antique wine racks stretch into darkness. At the far end, a heavy steel door, incongruous with the rustic surroundings, is set into the bedrock.  BRODY MILLER, looking profoundly uncomfortable, holds a flashlight, its beam dancing across cobwebs. CORBIN, EVELYN, and CLARA follow.  Marcus Thorne speaks through Corbin's earpiece - static crackling with each word.\",\n      \"THORNE (V.O.)\",\n      \"(Through earpiece, clipped) Corbin, I\u2019m reading unusual EMF signatures coming from that door.  Off the charts.  Be careful.\",\n      \"CORBIN\",\n      \"(Muttering into his wrist) Careful is my middle name, Marcus.\",\n      \"EVELYN\",\n      \"(Stopping, staring at the steel door) This isn\u2019t part of the original house. My aunt remembers\u2026 stories. Old man Vance, the founder, he built this himself. Said he was \u2018preparing for contingencies.\u2019\",\n      \"CLARA\",\n      \"(Eyes fixed on the door, a strange calm in her voice) Contingencies for what, though? That\u2019s the question. The land around here\u2026 it doesn\u2019t like secrets. It pushes back.  The Vances\u2026 they tried to bury things, not just in the ground.\",\n      \"BRODY\",\n      \"(Shining the light on the door's locking mechanism \u2013 a complex series of tumblers and a keypad) This ain't no ordinary wine cellar security. This is\u2026 military grade. What are we dealing with here?\",\n      \"CORBIN\",\n      \"(Examining the keypad) Vance wasn\u2019t just a hedge fund manager, Brody. He was a collector. Of power, of information\u2026 and apparently, of very secure doors. Evelyn, do you know a code?\"\n    ],\n    \"dialogue\": [\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"(Shakes her head) He never spoke about this place. Not to anyone. He kept it\u2026 separate. It was like a shadow within the family. A place where logic\u2026frayed. Like trying to prove something is true *by stating it is true*. A pointless exercise.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Pointless exercises are Vance\u2019s specialty. A foundation built on nothing but leverage and fabricated worth. (He tries a few obvious combinations on the keypad \u2013 birthdates, anniversaries. Nothing.) The hypothesis that something is self-evident doesn't negate the need for evidence. And this door\u2026 it\u2019s evidence of a very deliberate obfuscation.\"\n      },\n      {\n        \"character\": \"CLARA\",\n        \"line\": \"(Touching the cold steel) The stone remembers. It remembers the land before the house, before the Vances. It remembers the things they tried to hide *from* the land. And the land\u2026 it whispers those things back. They exist outside any agreed upon structure of justification.\"\n      },\n      {\n        \"character\": \"BRODY\",\n        \"line\": \"(Frustrated) Look, I appreciate the local color, ladies, but we need to get this door open. We've got a missing person \u2013 Simone Archer \u2013 and I\u2019ve got a feeling she\u2019s behind it. If Vance is hiding something, it\u2019s likely connected.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(His fingers flying across the keypad, inputting a complex sequence based on financial data he pulled earlier) Simone was digging into Vance\u2019s offshore accounts. She was getting close to something. Something he didn\u2019t want anyone to see.  It's not about *proving* a system works, it\u2019s about observing its failures. That\u2019s where the truth lies.\"\n      }\n    ],\n    \"action\": [\n      \"The keypad BEEPS. A series of heavy bolts retract with a grinding groan. The steel door swings inward, revealing a dark, narrow corridor. A blast of frigid air rushes out, carrying a metallic tang.  Corbin shines his flashlight into the darkness. The beam disappears into the gloom.\",\n      \"THORNE (V.O.)\",\n      \"(Through earpiece, urgent) Corbin, I\u2019m losing signal! Something\u2019s interfering with the radio waves. And those EMF readings are spiking again! Get out of there!\",\n      \"CORBIN\",\n      \"(Ignoring Thorne, takes a step into the corridor) Too late, Marcus.\",\n      \"EVELYN\",\n      \"(Grabbing Corbin\u2019s arm) Don\u2019t! You don\u2019t understand\u2026 this place\u2026 it consumes things.\"\n    ],\n    \"transition\": \"FADE TO BLACK.\"\n  }\n}"
+    },
+    {
+      "id": 7,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 7: The Threshold Guardian",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"3\",\n    \"setting\": \"BELLWEATHER HOUSE - KITCHEN - NIGHT\",\n    \"action\": [\n      \"The kitchen is stuck in time. 1950s appliances, floral wallpaper peeling at the edges. CLARA BELLWEATHER, late 70s, sits at a Formica table, meticulously arranging dried herbs. EVELYN watches CORBIN, who is attempting to examine a strangely ornate, hand-carved wooden box on the counter.\",\n      \"BRODY MILLER, the Sheriff, leans against the doorframe, arms crossed, radiating skepticism.\"\n    ],\n    \"dialogue\": [\n      \"CORBIN\",\n      \"(Trying to open the box) It\u2019s locked. No keyhole. Some kind of pressure mechanism, maybe?\",\n      \"CLARA\",\n      \"(Without looking up) It doesn\u2019t *want* to be opened. Some things are better left undisturbed.\",\n      \"BRODY\",\n      \"(Scoffs) Old woman\u2019s superstition. It\u2019s just a box, Detective. Probably full of doilies and mothballs.\",\n      \"EVELYN\",\n      \"(Sharply) It\u2019s Aunt Clara\u2019s. And she doesn\u2019t appreciate you dismissing her\u2026 beliefs.\",\n      \"CORBIN\",\n      \"(To Brody, ignoring Evelyn\u2019s tone) This isn\u2019t about beliefs, Sheriff. This house\u2026 this box\u2026 it\u2019s connected to Vance. He was asking about the Bellweather family history. Specifically, this house.\",\n      \"CLARA\",\n      \"(Looks up, eyes fixed on Corbin) Julian Vance\u2026 a hungry man. Always taking, never giving. He seeks what doesn\u2019t belong to him. Just like his father.\",\n      \"BRODY\",\n      \"Now hold on. Vance is a legitimate businessman. A bit ruthless, maybe, but\u2026\",\n      \"CORBIN\",\n      \"(Interrupting) Ruthless doesn't explain offshore accounts and shell corporations designed to hide millions. Simone Archer is digging into his finances, and she\u2019s already found enough to warrant a full investigation. But she needs something *more*. Something concrete.\",\n      \"EVELYN\",\n      \"(To Corbin, quietly) Concrete and clover. That\u2019s what they always said about this town. A foundation of something solid, hidden beneath a veneer of\u2026 pleasantries.\",\n      \"CLARA\",\n      \"(Taps the table, her voice a low rasp) The box remembers. It remembers everything. But it won\u2019t speak to those who approach with impure intent\u2026 or those who ask the wrong questions. It\u2019s not a matter of *form*, Detective, it's a matter of\u2026 resonance. Asking \u2018what is inside?\u2019 is meaningless if you haven\u2019t first considered *why* it is contained.\",\n      \"BRODY\",\n      \"(To Corbin, exasperated) You\u2019re listening to this? She\u2019s rambling. Let\u2019s just search the house properly. We\u2019ll find what we\u2019re looking for.\",\n      \"CORBIN\",\n      \"(Looks from Clara to Brody, a flicker of frustration crossing his face) Maybe. Or maybe we\u2019re missing the point entirely. The point isn\u2019t what\u2019s *in* the box. It\u2019s what the box *prevents*.\"\n    ],\n    \"transition\": \"CORBIN runs his hand over the box again, feeling for a hidden latch. The air in the kitchen seems to grow colder.  EVELYN watches him, her face etched with worry.\"\n  }\n}"
+    },
+    {
+      "id": 8,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 8: The Road of Trials (Phase 1)",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"34\",\n    \"setting\": \"BELLWEATHER HOUSE - KITCHEN - NIGHT\",\n    \"action\": \"The kitchen is cramped, smelling of dust and potpourri. CORBIN, 40s, weary but relentless, continues to examine the ornate wooden box. EVELYN HAYES, 30s, stands rigidly, arms crossed. SHERIFF BRODY MILLER, 50s, leans against the counter, observing with a skeptical gaze. CLARA BELLWEATHER, 70s, sits at the kitchen table, muttering to herself.\",\n    \"dialogue\": [\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(To Evelyn, not looking at her) Your aunt mentioned a specific ritual\u2026 a \u2018binding.\u2019 Said the box wasn\u2019t meant to be *opened*, but\u2026 contained.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"She\u2019s\u2026eccentric. Clara collects stories. Local folklore. It doesn\u2019t mean\u2026\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Turns, his gaze sharp) Doesn't it? Because this \u2018folklore\u2019 led Vance to hunt down a relic hidden in a town no one\u2019s ever heard of. A relic he believes unlocks\u2026 something. And frankly, Ms. Hayes, the precision of his approach feels less like random searching and more like following a set of instructions. Instructions derived from the very 'nonsense' your aunt spouts.\"\n      },\n      {\n        \"character\": \"BRODY\",\n        \"line\": \"Hold on now, Detective. You\u2019re implying old Clara\u2019s helping a city slicker steal\u2026 what exactly? Fairy dust?\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Ignoring Brody, to Evelyn) The box\u2026 it\u2019s not about what\u2019s *inside*, Sheriff\u2019s right about that. It\u2019s about what it *prevents*. Think of it as a\u2026 a logical gate. A flawed hypothesis deliberately placed before a proposition, ensuring its arguments are meaningless. If the structure is wrong, the whole thing collapses, but still\u2026 *exists*. That's what Vance is after, the preservation of the wrong structure itself.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"(Confused) I\u2026 I\u2019m an accountant, Detective. Not a philosopher.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Then treat it like an equation, Ms. Hayes. A very old, very dangerous equation. Your aunt holds the key to the\u2026 formatting. The correct sequence of operations. We need to understand that sequence before Vance does.\"\n      },\n      {\n        \"character\": \"CLARA\",\n        \"line\": \"(Muttering) The turning of the stones\u2026 the silvered thread\u2026 before the fall equinox\u2026 it all matters\u2026\"\n      },\n      {\n        \"character\": \"BRODY\",\n        \"line\": \"(To Corbin, quietly) You\u2019re losing me, Detective. And frankly, she\u2019s losing a step. This whole thing smells like a wild goose chase.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Picks up a small, tarnished silver locket from the table, examining it) A wild goose chase that Julian Vance is funding with billions of dollars. And I have a feeling\u2026 this locket is part of the equation.\"\n      }\n    ],\n    \"transition\": \"Suddenly, CORBIN\u2019s phone rings. He glances at the caller ID \u2013 MARCUS THORNE. A grim set to his jaw as he answers.\"\n  }\n}"
+    },
+    {
+      "id": 9,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 9: Meeting with the Goddess",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"SCENE 17\",\n    \"setting\": \"CLARA BELLWEATHER'S KITCHEN - NIGHT\",\n    \"action\": \"The kitchen is cluttered with books, antique maps, and dried herbs. CLARA BELLWEATHER, a woman radiating quiet wisdom, sips tea. DETECTIVE MILES CORBIN, SHERIFF BRODY MILLER, and EVELYN HAYES sit around a worn wooden table. The tarnished silver locket from the previous scene rests between them. Rain lashes against the windows.\\n\\nCORBIN is holding his phone away from his ear, grimacing. MARCUS THORNE\u2019s voice, tinny and impatient, is audible.\",\n    \"dialogue\": [\n      {\n        \"character\": \"THORNE (V.O.)\",\n        \"line\": \"Corbin, status report. Vance is breathing down my neck. This 'folklore investigation' is costing the city a fortune.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Into phone, tersely) I\u2019m getting something, Captain. Something\u2026unexpected.\"\n      },\n      {\n        \"character\": \"THORNE (V.O.)\",\n        \"line\": \"Unexpected? We\u2019re looking for a missing accountant, not chasing ghosts. Focus on financial trails, Corbin. That\u2019s where Vance's money leads.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Ignoring Thorne, addressing Clara) Ms. Bellweather, you said this locket\u2026 belonged to Elara Hemlock? The woman who disappeared in 1923?\"\n      },\n      {\n        \"character\": \"CLARA\",\n        \"line\": \"Elara. A beautiful, troubled soul. They said she ran off with a traveling salesman. But she was\u2026connected to this land. She understood its currents. The Hemlocks were the first settlers here, you know. They didn't just *build* on this land, they *listened* to it.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"(Quietly) My grandmother used to tell stories about Elara. Said she could predict the weather, heal the sick\u2026 even talk to the trees.\"\n      },\n      {\n        \"character\": \"BRODY\",\n        \"line\": \"Old wives\u2019 tales, Evelyn. Though\u2026old man Hemlock did leave some strange notations in his journals. Talked about \u2018resonances\u2019 and \u2018the weave of things.\u2019 Sounded like gibberish to me.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Staring at the locket, a growing sense of unease) Gibberish that Vance is willing to spend millions to suppress. Captain, I need more time. And access to those Hemlock journals. (beat) I\u2019m starting to think this isn\u2019t about money laundering. It\u2019s about\u2026something else.\"\n      },\n      {\n        \"character\": \"THORNE (V.O.)\",\n        \"line\": \"Something else? What in God's name are you talking about? Corbin, you're losing me. And frankly, you're starting to sound like you've drunk the local moonshine. This is a waste of resources. It\u2019s nonsense to place the hypothesis *p \u2283 p* before a proposition in order to ensure that its arguments have the right form, because the hypothesis for a non-proposition as argument becomes not false but meaningless, and because the proposition itself becomes senseless for arguments of the wrong kind\u2026.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Cutting Thorne off, voice low and firm) Captain, with all due respect, I have a feeling we\u2019re looking at a pattern far older, and far more dangerous, than Julian Vance. A pattern that connects this town\u2026to something vast and unseen.\u201d\n      },\n      {\n        \"character\": \"CLARA\",\n        \"line\": \"(Looking directly at Corbin, a knowing glint in her eye) The clover doesn't grow where the concrete spreads, Detective. But the concrete\u2026always tries to cover the clover.\"\n      }\n    ],\n    \"transition\": \"Corbin stares at Clara, a sudden, disorienting wave of understanding washing over him. He sees, for a fleeting moment, the town not as a collection of buildings and people, but as a node in a complex, interconnected network\u2014a fragile balance threatened by an encroaching darkness.\"\n  }\n}"
+    },
+    {
+      "id": 10,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 10: Woman as Temptress",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": 12,\n    \"setting\": \"BELLWEATHER HOUSE - KITCHEN - NIGHT\",\n    \"action\": \"The kitchen is warm, smelling of chamomile and old wood. CLARA BELLWEATHER (70s, sharp eyes, a lifetime etched on her face) pours Corbin (40s, weary, city detective) a mug of tea. EVELYN HAYES (30s, anxious, clutching a dishtowel) watches them, hovering. Rain drums against the windowpanes.\",\n    \"dialogue\": [\n      {\n        \"character\": \"CLARA BELLWEATHER\",\n        \"line\": \"Sugar? Though I suspect your city palate is accustomed to\u2026artificial sweetness.\"\n      },\n      {\n        \"character\": \"MILES CORBIN\",\n        \"line\": \"(Takes the mug, doesn't answer about the sugar) Mrs. Bellweather, you said something about the land\u2026about it \u2018remembering.\u2019\"\n      },\n      {\n        \"character\": \"CLARA BELLWEATHER\",\n        \"line\": \"Land remembers everything, Detective. Every joy, every sorrow, every drop of spilled blood. This town\u2026it\u2019s built on layers. Layers of history, layers of\u2026compromises.  People think they *change* things, but the land merely *rearranges* them. Like a puzzle with pieces that always fit back together, no matter how hard you try to force a different shape.\"\n      },\n      {\n        \"character\": \"EVELYN HAYES\",\n        \"line\": \"Aunt Clara, please\u2026Detective Corbin is trying to solve a crime.\"\n      },\n      {\n        \"character\": \"CLARA BELLWEATHER\",\n        \"line\": \"Crimes are symptoms, dear. Not the disease. (Looks intently at Corbin) Mr. Vance\u2026he understands a different kind of rearrangement. A financial one. Very clean. Very\u2026efficient. He doesn\u2019t soil his hands, but he\u2019s perfectly content to let others do the digging.  He simply takes what\u2019s unearthed. It\u2019s not about *proving* anything, Detective. It\u2019s about the *form* of the argument, isn\u2019t it? If the foundation is flawed, the whole structure collapses, regardless of how elegantly it\u2019s presented.  A meaningless hypothesis attached to a senseless proposition... it changes nothing.\"\n      },\n      {\n        \"character\": \"MILES CORBIN\",\n        \"line\": \"(Stirring his tea, slowly) You seem to know a lot about Julian Vance\u2026for someone who lives in Havenwood.\"\n      },\n      {\n        \"character\": \"CLARA BELLWEATHER\",\n        \"line\": \"(A small, sad smile) Havenwood is a small town, Detective. Secrets don\u2019t stay buried here\u2026they just get overgrown. And sometimes\u2026sometimes they bloom in unexpected places. Evelyn, dear, perhaps you should check on the pie. It\u2019s probably burning.\"\n      },\n      {\n        \"character\": \"EVELYN HAYES\",\n        \"line\": \"(Eager to escape the intensity) Right. Of course. (Exits to the oven)\"\n      },\n      {\n        \"character\": \"CLARA BELLWEATHER\",\n        \"line\": \"(Leaning closer to Corbin, her voice a conspiratorial whisper)  Detective, you came here searching for answers in the concrete\u2014in deeds and records and financial statements.  But the truth\u2026the real truth\u2026lies in the clover. In what\u2019s *hidden* beneath the surface. And sometimes, the most comfortable path\u2026is the one that leads you away from it.\"\n      }\n    ],\n    \"transition\": \"Corbin\u2019s gaze follows Evelyn as she disappears into the house, a flicker of doubt crossing his face. He looks from Clara to the rain-streaked window, the city a distant, fading memory.\"\n  }\n}"
+    },
+    {
+      "id": 11,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 11: The Road of Trials (Phase 2)",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": 7,\n    \"setting\": \"INT. BELLWEATHER HOUSE - NIGHT\",\n    \"action\": \"Rain lashes against the windows of Clara Bellweather\u2019s farmhouse. The interior is cluttered with antique furniture and stacks of local history books. DETECTIVE CORBIN stands awkwardly near a fireplace, while SHERIFF MILLER leans against a kitchen counter, nursing a coffee. EVELYN is upstairs. The air is thick with the smell of damp wood and old paper. A landline phone RINGS, startling Corbin.\",\n    \"dialogue\": [\n      {\n        \"character\": \"MILLER\",\n        \"line\": \"(Into phone) Miller. Yeah\u2026Hold on.\" He covers the receiver. \u201cCaptain Thorne wants to speak with you, Detective. Says it's urgent.\u201d\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Taking the phone) Corbin. Thorne. What is it?\",\n        \"parenthetical\": \"Grimacing.\"\n      },\n      {\n        \"character\": \"THORNE (V.O.)\",\n        \"line\": \"Corbin, we\u2019ve got a problem. Vance\u2019s lawyers are all over us. They\u2019re claiming harassment, demanding a warrant for everything we\u2019ve touched. And Simone just flagged something on the offshore accounts\u2026It doesn't add up. Millions are missing, moved through shell corporations\u2026it\u2019s a maze.\",\n        \"parenthetical\": \"Static crackles on the line.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Missing how? And what does this have to do with Hayes?\",\n        \"parenthetical\": \"Frustrated.\"\n      },\n      {\n        \"character\": \"THORNE (V.O.)\",\n        \"line\": \"Don\u2019t know yet. But the timing is\u2026convenient. Vance is anticipating something, Corbin. He\u2019s cleaning house. And frankly, I'm starting to wonder if we're chasing shadows. We're building a case on hypothetical connections, formal logic applied to\u2026well, to whim and fancy. It\u2019s nonsense to place the hypothesis $p \\supset p$ before a proposition in order to ensure that its arguments have the right form; because the hypothesis for a non-proposition as argument becomes not false but meaningless, and because the proposition itself becomes senseless for arguments of the wrong kind\u2026\",\n        \"parenthetical\": \"Thorne trails off, sounding weary.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Thorne, with all due respect, I\u2019m a little busy. What are you saying?\",\n        \"parenthetical\": \"Interrupting.\"\n      },\n      {\n        \"character\": \"THORNE (V.O.)\",\n        \"line\": \"I\u2019m saying, be careful. Vance is playing chess, and we\u2019re still trying to figure out the rules. I need something concrete, Corbin. Something beyond a hunch and a country accountant.\",\n        \"parenthetical\": \"Thorne hangs up abruptly.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Staring at the phone) Concrete\u2026\",\n        \"parenthetical\": \"Muttering.\"\n      },\n      {\n        \"character\": \"MILLER\",\n        \"line\": \"Rough call?\",\n        \"parenthetical\": \"Offering the coffee.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"They're trying to bury it. He\u2019s getting ready to disappear. And my Captain...he\u2019s losing faith.\",\n        \"parenthetical\": \"Shakes his head slowly.\"\n      },\n      {\n        \"character\": \"EVELYN (O.S.)\",\n        \"line\": \"Detective? Sheriff? I\u2026 I found something.\",\n        \"parenthetical\": \"Calling from upstairs.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"What is it, Ms. Hayes?\",\n        \"parenthetical\": \"Turning towards the stairs, a flicker of hope amidst the growing dread.\"\n      },\n      {\n        \"character\": \"EVELYN (O.S.)\",\n        \"line\":\"It's...a map. Hidden in the attic. A map of the town\u2026but not as it is now. As it *was*. Before the reservoir.\",\n        \"parenthetical\": \"Voice laced with a newfound urgency.\"\n      }\n    ],\n    \"transition\": \"Corbin and Miller exchange a look. The rain continues to beat against the windows, a relentless rhythm that mirrors the tightening grip of the case.\"\n  }\n}"
+    },
+    {
+      "id": 12,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 12: Atonement with the Father",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"SCENE 37\",\n    \"setting\": \"BELLWEATHER HOUSE - ATTIC - NIGHT\",\n    \"action\": \"Dust motes dance in the beam of CORBIN\u2019s flashlight. The attic is crammed with forgotten relics \u2013 chipped porcelain dolls, moth-eaten quilts, stacks of yellowed newspapers. EVELYN, visibly shaken, spreads a brittle, hand-drawn map on a rickety card table. SHERIFF MILLER leans over her shoulder, his expression grim. CORBIN stands back, observing, his gaze sweeping between the map and the faces of the two women. The air is thick with the scent of decay and damp earth.\",\n    \"dialogue\": [\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Before the reservoir\u2026meaning this shows Harrow Creek as it existed before the flooding? Before Vance\u2019s grandfather bought up the land?\",\n        \"parenthetical\": \"Quietly, dissecting the implication.\"\n      },\n      {\n        \"character\": \"CLARA\",\n        \"line\": \"Not just before the flooding, Detective. Before the *town*. Before Harrow Creek was Harrow Creek. This map\u2026 it depicts Old Haven. A settlement erased from memory. They didn't just build a reservoir. They buried a history.\",\n        \"parenthetical\": \"Eyes fixed on the map, tracing faded lines.\"\n      },\n      {\n        \"character\": \"MILLER\",\n        \"line\": \"Old Haven\u2026my grandpappy used to whisper stories. Said there were\u2026peculiar folks living up here. Practiced things they shouldn't. Disappeared when the water came.\",\n        \"parenthetical\": \"Scoffs, but a flicker of unease crosses his face.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Vance\u2019s grandfather, Silas Vance, was a \u2018peculiar\u2019 man himself. A self-made man. A man who understood leverage. It is nonsense to place the hypothesis $p \\supset p$ before a proposition in order to ensure that its arguments have the right form, because the hypothesis for a non-proposition as argument becomes not false but meaningless, and because the proposition itself becomes senseless for arguments of the wrong kind, and therefore it survives the wrong arguments no better and no worse than the senseless hypothesis attached for this purpose. He didn\u2019t just buy land, Sheriff. He bought secrets.\",\n        \"parenthetical\": \"His voice hard, his eyes narrowing. He circles the table.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"Look here. This symbol\u2026it\u2019s repeated throughout the map. Near the old church, by the Blackwood Mill\u2026and right where the reservoir is now. Aunt Clara says it\u2019s an alchemical symbol. Representing\u2026transmutation.\",\n        \"parenthetical\": \"Pointing to a complex symbol on the map.\"\n      },\n      {\n        \"character\": \"CLARA\",\n        \"line\": \"They believed they could change base metals into gold, Detective. But Old Haven wasn\u2019t seeking earthly riches. They were after something\u2026else. Something deeper. Something tied to the land itself.\",\n        \"parenthetical\": \"Her voice a hushed whisper.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"And Silas Vance knew what they were after. He didn't flood Old Haven to build a reservoir. He flooded it to *contain* something.\",\n        \"parenthetical\": \"Staring directly at Miller, a challenge in his gaze.\"\n      },\n      {\n        \"character\": \"MILLER\",\n        \"line\": \"You're saying Vance\u2026he's continuing his grandfather\u2019s work?\",\n        \"parenthetical\": \"Skeptical, but shaken.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"I'm saying Julian Vance isn't building a financial empire, Sheriff. He's excavating a legacy. And I intend to find out what\u2019s buried beneath that water.\",\n        \"parenthetical\": \"Determined, his jaw set.\"\n      }\n    ],\n    \"transition\": \"A sudden crack of thunder rattles the house. The flashlight beam flickers, momentarily plunging the attic into darkness. When it returns, Corbin is looking directly at Clara, a question forming on his lips.\"\n  }\n}"
+    },
+    {
+      "id": 13,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 13: Apotheosis",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": 12,\n    \"setting\": \"BELLWEATHER ATTIC - NIGHT\",\n    \"action\": [\n      \"Dust motes dance in the beam of CORBIN\u2019s flashlight. The attic is crammed with generations of forgotten things: antique furniture draped in white sheets, stacks of yellowed newspapers, and boxes overflowing with photographs. Rain lashes against the single, grimy window.\",\n      \"CORBIN kneels before a large, ornately carved wooden chest. EVELYN, SHERIFF MILLER, and CLARA stand nearby, watching him. MILLER looks uncomfortable, as if this whole foray into local history is a waste of time. EVELYN seems genuinely curious. CLARA, however, watches Corbin with unnerving intensity.\",\n      \"Corbin lifts the heavy lid of the chest. Inside, nestled amongst moth-eaten fabrics, are ledgers, bound in leather. He carefully pulls one out, its pages brittle with age.\"\n    ],\n    \"dialogue\": [\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"These aren\u2019t just old accounting books, Clara. These are\u2026 meticulous. Almost obsessive in their detail.\",\n        \"parenthetical\": \"Tracing a finger across the faded ink.\"\n      },\n      {\n        \"character\": \"CLARA\",\n        \"line\": \"Old Man Hemlock kept everything. Every penny, every transaction. He said a man's character was written in his ledgers.\",\n        \"parenthetical\": \"A knowing smile plays on her lips.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"Hemlock\u2026 That was your grandfather?\",\n        \"parenthetical\": \"Looking at Clara with concern.\"\n      },\n      {\n        \"character\": \"CLARA\",\n        \"line\": \"He was more than just my grandfather, dear. He *was* Oakhaven. For a time. Before\u2026 things changed.\",\n        \"parenthetical\": \"Her gaze drifts to the window, lost in thought.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"These transactions\u2026 they aren\u2019t local. These are shell corporations. Offshore accounts. Names\u2026 familiar names. Vance Foundation is listed here, from 1998.\",\n        \"parenthetical\": \"His voice hardening with realization.\"\n      },\n      {\n        \"character\": \"MILLER\",\n        \"line\": \"Vance? Julian Vance? What\u2019s he got to do with Oakhaven\u2019s history?\",\n        \"parenthetical\": \"Skeptical, arms crossed.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"He\u2019s been here before, Sheriff. A long time ago. He didn\u2019t build his wealth. He\u2026 inherited it. And these ledgers show *how*. Hemlock wasn't just an accountant. He was shielding something. Someone. He was building a facade, a structure without substance, believing that merely asserting the proposition \u2013 that the accounts were sound \u2013 somehow *made* them sound. It's nonsense, of course. The form is meaningless without genuine substance.\",\n        \"parenthetical\": \"Eyes blazing, piecing it all together.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"Shielding what, Detective?\",\n        \"parenthetical\": \"Anxious.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"A secret. A darkness. Something buried deep beneath the veneer of respectability. Vance didn\u2019t *become* Julian Vance. He *reclaimed* him. And Hemlock was the gatekeeper. The one who ensured that the arguments \u2013 the financial records \u2013 had the \u2018right form\u2019, even when the underlying proposition was hollow. But the form can\u2019t conceal the rot, Evelyn. It just delays the inevitable.\",\n        \"parenthetical\": \"Staring intently at Clara, who meets his gaze without flinching.\"\n      },\n\t  {\n        \"character\": \"CLARA\",\n        \"line\": \"Some things are better left buried, Detective. Some legacies are curses in disguise.\",\n        \"parenthetical\": \"A chilling smile.\"\n      }\n    ],\n    \"transition\": \"A close-up on Corbin\u2019s face. He\u2019s no longer just a city detective chasing a white-collar criminal. He\u2019s a man confronting a history far older, and far more sinister, than he ever imagined. The rain intensifies, mirroring the storm brewing within him.\"\n  }\n}"
+    },
+    {
+      "id": 14,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 14: The Ultimate Boon",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": 12,\n    \"setting\": \"BELLWEATHER MANOR - ATTIC - NIGHT\",\n    \"action\": [\n      \"Rain lashes against the attic windows. Dust motes dance in the beam of CORBIN\u2019s flashlight. He kneels before a decaying wooden chest, EVELYN beside him, nervously clutching a shawl. SHERIFF MILLER stands guard by the attic door, his face grim. The chest is unlocked. Inside, nestled amongst faded velvet, is a heavy gold signet ring.\",\n      \"The ring depicts a coiled serpent devouring its own tail \u2013 an Ouroboros. Corbin carefully lifts it. The metal is cold, ancient.\",\n      \"EVELYN gasps, recognizing it. CLARA BELLWEATHER stands in the doorway, a dark figure against the flickering light. Her expression is unreadable.\"\n    ],\n    \"dialogue\": [\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"This is it. The Bellweather Ring. Vance wanted this\u2026 but why? It's not about the money, is it?\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"It never was. It's\u2026 a symbol. A key. My family has guarded it for generations. A duty, not a possession. Aunt Clara tried to warn you. She understands the\u2026 weight of it.\"\n      },\n      {\n        \"character\": \"CLARA\",\n        \"line\": \"Weight is a childish word, Detective. It\u2019s a recursion. A closed loop of consequence. You seek to understand the 'why' of Vance\u2019s desire? It is the attempt to justify the unjustifiable. To impose linear causality on something fundamentally\u2026 circular. He doesn\u2019t *want* to understand, he wishes to *become*.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(To Miller) Get this to forensics. I want every inch of this ring analyzed. And alert Captain Thorne. Tell him we have the object, but we\u2019ve also opened a Pandora\u2019s Box.\"\n      },\n      {\n        \"character\": \"SHERIFF MILLER\",\n        \"line\": \"You think Vance knew what he was getting into?\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Knowing and understanding are not the same. He had a hypothesis \u2013 power through lineage, control through symbolism. But he built that hypothesis *around* the ring, instead of *from* it. A flawed construction. It\u2019s like claiming \u2018If P, then P\u2019 proves anything\u2026 it merely states the obvious, offering no new information, and collapses under scrutiny when the premise itself is\u2026 undefined.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"He didn't care about the history. He just saw a tool. A way to\u2026 amplify something.\"\n      },\n      {\n        \"character\": \"CLARA\",\n        \"line\": \"Amplification requires a signal, Detective. And some signals are best left quiet. The ring doesn\u2019t *grant* power; it *attracts* it\u2026 or rather, what mistakes humanity calls power. And it doesn\u2019t discriminate.\"\n      }\n    ],\n    \"transition\": \"Corbin pockets the ring, a sense of unease settling over him. The rain continues to fall, washing away the grime of the attic, but not the feeling that they\u2019ve stumbled onto something far more dangerous than a simple financial crime. FADE TO BLACK.\"\n  }\n}"
+    },
+    {
+      "id": 15,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 15: The Refusal of the Return",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"42\",\n    \"setting\": \"INT. VANCE PENTHOUSE - NIGHT\",\n    \"action\": \"Rain streaks the panoramic windows overlooking the city. JULIAN VANCE, impeccably dressed, pours Corbin a generous measure of amber liquid. Evelyn Hayes sits rigidly on a modern sofa, Sheriff Miller hovering nearby. The penthouse is a monument to ruthless success \u2013 minimalist, expensive, and cold. Corbin holds the ring, turning it over in his fingers. He looks\u2026 different. Less burdened.\",\n    \"dialogue\": [\n      {\n        \"character\": \"VANCE\",\n        \"line\": \"Another? You look like you could use it. Though I suspect the ambiance is doing most of the work.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Quietly, almost to himself) Ambiance\u2026 or access. It's funny. All this time, chasing numbers, tracing ledgers\u2026 and it wasn't about the money, was it? It was about *potential*.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"Detective Corbin, we need to report this. The evidence, the\u2026 the ring. Sheriff Miller can contact Captain Thorne.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Without looking at her) Report what, Ms. Hayes? A financial irregularity? A theft? You think Captain Thorne understands the\u2026 *resonance* of this?\"\n      },\n      {\n        \"character\": \"SHERIFF MILLER\",\n        \"line\": \"Detective, with all due respect, this is getting out of hand. You're acting like a different man.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Perhaps I am. You spend your life building walls, adhering to structures\u2026 believing in consequences. Then you find something that dissolves those walls. It's\u2026 liberating. (He raises his glass, looking at the city) All those little lives, all those problems\u2026 they seem so\u2026 small.\"\n      },\n      {\n        \"character\": \"VANCE\",\n        \"line\": \"He understands, Sheriff. Detective Corbin is experiencing a\u2026 realignment of perspective. It\u2019s what happens when one touches the source. Though I warned you, didn\u2019t I? Signals are best left quiet. Attempts to impose order on chaos... futile.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"You're right. It's nonsense to try and force a structure onto something inherently\u2026 fluid. To demand \u2018if p, then p\u2019 before even defining \u2018p\u2019\u2026 it\u2019s a category error. A pretense of control where none exists. In the city, we build systems to *predict* outcomes. Here\u2026 (He holds up the ring) \u2026we *become* the outcome.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"Detective, please. My aunt, Clara\u2026 she told me stories about this ring. Old stories. Bad stories. It doesn't bring liberation; it brings ruin.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Scoffs) Ruin for whom? For the system? For the rules? Let it burn. I've spent twenty years enforcing those rules, cleaning up the mess. I\u2019m tired of being the janitor. (To Vance) You weren't offering a partnership, were you? You were offering\u2026 ascension.\"\n      },\n      {\n        \"character\": \"VANCE\",\n        \"line\": \"Let's just say I recognized a kindred spirit. Someone weary of the mundane. Someone capable of understanding that the arguments themselves become meaningless when the foundation is shifting. Detective, welcome to a world without limitations.\"\n      }\n    ],\n    \"transition\": \"Corbin downs his drink. His gaze sweeps over the city, no longer scanning for crime, but assessing potential. A predator surveying its domain. Sheriff Miller reaches for his radio, but hesitates, seeing the steely resolve in Corbin\u2019s eyes. FADE TO BLACK.\"\n  }\n}"
+    },
+    {
+      "id": 16,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 16: The Magic Flight",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": 12,\n    \"setting\": \"RURAL HIGHWAY - NIGHT\",\n    \"action\": [\n      \"RAIN lashes against the windshield of a beat-up Ford pickup, Sheriff Miller at the wheel. Evelyn Hayes clutches a waterproof bag \u2013 the 'Prize' \u2013 in her lap, knuckles white. Detective Corbin, grim-faced, rides shotgun. The truck fishtails slightly on the slick asphalt.\",\n      \"Behind them, headlights rapidly gain. Three black SUVs, sleek and menacing. Julian Vance is in the lead vehicle, his expression a mask of controlled fury.\",\n      \"INT. LEAD SUV - NIGHT\",\n      \"VANCE barks into a phone. His voice is clipped, precise.\",\n      \"VANCE\",\n      \"Confirm visual. Hayes and Corbin. Do *not* let them reach Bellweather\u2019s property. Apprehend Hayes. Corbin is\u2026 an obstacle. Neutralize as necessary.\",\n      \"CUT TO: HIGHWAY - NIGHT\",\n      \"Miller slams on the brakes, swerving onto a muddy shoulder. He grabs his radio.\",\n      \"MILLER\",\n      \"(Static-laced) Dispatch, this is Miller. We\u2019re being pursued\u2026 multiple vehicles. Requesting backup. Repeat, requesting backup!\",\n      \"Corbin snatches the radio. His voice is calm, devoid of emotion.\",\n      \"CORBIN\",\n      \"Negative, Sheriff. Backup will only complicate things. This isn\u2019t about law enforcement. It\u2019s\u2026 a failure of form. Arguments built on foundations that don't exist.\",\n      \"Miller stares at him, bewildered.\",\n      \"MILLER\",\n      \"What in the\u2026?\",\n      \"Corbin ignores him, scanning the rearview mirror. He reaches inside his jacket, pulling out a small EMP device. \",\n      \"CORBIN (CONT'D)\",\n      \"They operate under the illusion of consequence. A belief in \u2018right kind\u2019 arguments. Watch.\",\n      \"He activates the EMP. The SUVs behind them momentarily flicker, their headlights dimming, engines sputtering.\",\n      \"EXT. HIGHWAY - CONTINUOUS\",\n      \"The SUVs recover quickly, but the momentary disruption gives Corbin, Miller, and Hayes a crucial lead. Miller floors the accelerator, the pickup bouncing violently.\",\n      \"VANCE (V.O.)\",\n      \"An EMP? He anticipated\u2026 This isn\u2019t standard procedure.\",\n      \"CUT TO: INT. PICKUP TRUCK - CONTINUOUS\",\n      \"Evelyn is pale, terrified.\",\n      \"EVELYN\",\n      \"What did you do? Who *are* those people?\",\n      \"Corbin doesn't answer. He\u2019s calculating angles, predicting movements.\",\n      \"CORBIN\",\n      \"They believe in a logical sequence. If A, then B. But what if the premise of A is\u2026 meaningless? They\u2019re trying to apply rules to a system that rejects them.\",\n      \"The SUVs are gaining again, closing the distance.\",\n      \"MILLER\",\n      \"We ain't gonna outrun 'em, Detective!\",\n      \"Corbin points to a narrow dirt road branching off the highway, almost hidden by trees.\",\n      \"CORBIN\",\n      \"Take that road. It leads to Bellweather\u2019s property. Prepare for a rough ride.\"\n    ],\n    \"characters\": [\n      \"Detective Miles Corbin\",\n      \"Evelyn Hayes\",\n      \"Julian Vance\",\n      \"Sheriff Brody Miller\"\n    ],\n    \"dialogue\": {\n      \"Detective Miles Corbin\": [\n        \"Negative, Sheriff. Backup will only complicate things. This isn\u2019t about law enforcement. It\u2019s\u2026 a failure of form. Arguments built on foundations that don't exist.\",\n        \"They operate under the illusion of consequence. A belief in \u2018right kind\u2019 arguments. Watch.\",\n        \"They believe in a logical sequence. If A, then B. But what if the premise of A is\u2026 meaningless? They\u2019re trying to apply rules to a system that rejects them.\",\n        \"Take that road. It leads to Bellweather\u2019s property. Prepare for a rough ride.\"\n      ],\n      \"Evelyn Hayes\": [\n        \"What did you do? Who *are* those people?\"\n      ],\n      \"Julian Vance\": [\n        \"Confirm visual. Hayes and Corbin. Do *not* let them reach Bellweather\u2019s property. Apprehend Hayes. Corbin is\u2026 an obstacle. Neutralize as necessary.\",\n        \"An EMP? He anticipated\u2026 This isn\u2019t standard procedure.\"\n      ],\n      \"Sheriff Brody Miller\": [\n        \"(Static-laced) Dispatch, this is Miller. We\u2019re being pursued\u2026 multiple vehicles. Requesting backup. Repeat, requesting backup!\",\n        \"What in the\u2026? \",\n        \"We ain't gonna outrun 'em, Detective!\"\n      ]\n    },\n    \"transition\": \"The pickup truck screeches onto the dirt road, disappearing into the darkness. The SUVs follow, their headlights cutting through the trees. The chase continues, now deeper into the heart of the country. FADE TO BLACK.\"\n  }\n}"
+    },
+    {
+      "id": 17,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 17: Rescue from Without",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": 12,\n    \"setting\": \"Abandoned Bellweather Mill - Night\",\n    \"action\": [\n      \"The mill is a skeletal ruin against the inky sky. Moonlight spills through gaping holes in the roof, illuminating dust motes dancing in the air. BRODY\u2019s pickup is wedged between two crumbling walls, headlights extinguished. CORBIN, breathing heavily, presses his back against the cold stone.\",\n      \"Outside, the growl of engines and the crunch of tires on gravel. VANCE\u2019s SUVs have them pinned.\",\n      \"BRODY frantically works a jammed magazine into his revolver.\",\n      \"CORBIN scans the mill\u2019s interior. Decay and shadows. He\u2019s a city cop, out of his element. He realizes \u2013 a crucial, suffocating realization \u2013 he hasn\u2019t planned for *this*. The elaborate financial trail, the complex shell corporations\u2026 it all meant nothing if it ended here, in a forgotten ruin.\",\n      \"A voice, surprisingly calm, cuts through the tension.\"\n    ],\n    \"dialogue\": [\n      {\n        \"character\": \"EVELYN HAYES\",\n        \"line\": \"You picked a rather\u2026 picturesque spot to get yourself cornered, Detective.\"\n      },\n      \"CORBIN whirls around. EVELYN HAYES stands in the shadows, a shotgun \u2013 ancient, but well-maintained \u2013 casually held across her arms. She's accompanied by CLARA BELLWEATHER, ancient and frail, but with surprisingly sharp eyes.\",\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Hayes? What are you doing here? And\u2026 who is this?\"\n      },\n      {\n        \"character\": \"EVELYN HAYES\",\n        \"line\": \"Clara knows this county like the back of her hand. And I\u2026 well, let\u2019s just say I have a vested interest in seeing Mr. Vance\u2019s little empire crumble. My accounts weren\u2019t the only ones he was \u2018optimizing.\u2019 It\u2019s nonsense to place the hypothesis that people act rationally before observing their actions, as if a pre-defined framework can account for the inherent chaos of human greed.\"\n      },\n      {\n        \"character\": \"CLARA BELLWEATHER\",\n        \"line\": \"This mill\u2026 built by my great-grandfather. Secret passages. Old ways of moving around. Vance and his boys think they\u2019ve got you trapped. They haven\u2019t accounted for the stones themselves.\"\n      },\n      \"SOUND of tires screeching closer.\",\n      {\n        \"character\": \"BRODY\",\n        \"line\": \"They\u2019re comin\u2019 in hot! We\u2019re outta time!\"\n      },\n      {\n        \"character\": \"EVELYN HAYES\",\n        \"line\": \"Time is a construct, Sheriff. Especially for those who understand the land. Clara, show him the way. Corbin, with me. We\u2019ll give them a welcome they won't forget. Consider this a demonstration of how futile it is to impose logical structures onto inherently illogical systems.\"\n      },\n      \"CLARA leads BRODY towards a section of the wall, tapping a specific pattern on the stones. A section slides inward, revealing a dark passage.\",\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"What are you\u2026? This is insane.\"\n      },\n      {\n        \"character\": \"EVELYN HAYES\",\n        \"line\": \"Insane is thinking you could take down a man like Vance playing by the rules, Detective. Now, let\u2019s rewrite them. The premise of ethical finance is already a meaningless assertion.\"\n      }\n    ],\n    \"action\": [\n      \"EVELYN raises the shotgun, a grim smile playing on her lips. She steps out into the open, drawing the SUVs\u2019 attention.\",\n      \"CORBIN hesitates for a moment, then follows EVELYN, a flicker of hope \u2013 and a growing sense of disorientation \u2013 in his eyes. BRODY disappears into the passage with CLARA.\",\n      \"GUNFIRE erupts. The chase has become a trap.\"\n    ],\n    \"transition\": \"Chaos. The mill explodes with sound and fury. FADE TO BLACK.\"\n  }\n}"
+    },
+    {
+      "id": 18,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 18: Crossing the Return Threshold",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"9\",\n    \"setting\": \"INT. DETECTIVE CORBIN'S APARTMENT - NIGHT\",\n    \"action\": [\n      \"The apartment is aggressively normal. Beige walls, a worn sofa, a stack of unopened mail. CORBIN (40s, haunted) stares at a half-eaten takeout container. He hasn\u2019t shaved in days. The city hums outside, a sound that usually comforts him, now feels\u2026wrong.\",\n      \"A news report flickers on the TV: grainy footage of the mill explosion. REPORTER (V.O.) details the \u2018tragic accident,\u2019 emphasizing the rural location and the mysterious circumstances. CORBIN barely registers it.\",\n      \"The doorbell rings. He flinches. It\u2019s MARCUS THORNE (50s, stern, Corbin\u2019s Captain).\",\n      \"CORBIN opens the door. THORNE doesn\u2019t offer pleasantries.\"\n    ],\n    \"dialogue\": [\n      {\n        \"character\": \"THORNE\",\n        \"line\": \"Corbin. You were AWOL. No contact. What the hell were you doing?\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"I\u2026 followed a lead. A real one. About Vance.\"\n      },\n      {\n        \"character\": \"THORNE\",\n        \"line\": \"Vance is untouchable. Hedge fund manager, charitable donations, the mayor\u2019s golf buddy. You chasing shadows in Bumblefuck, USA doesn\u2019t change that. It *detracts* from it. We need solid evidence, not\u2026 rural fantasies.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"It wasn\u2019t a fantasy. There was\u2026 something happening there. With Evelyn Hayes, Sheriff Miller\u2026 Clara Bellweather. They knew things. Things Vance was hiding.\"\n      },\n      {\n        \"character\": \"THORNE\",\n        \"line\": \"Hayes? The accountant? Bellweather? The town historian? Corbin, are you serious? You're building a case on *local color*? It's as if you believe the mere arrangement of facts, presented with enough conviction, *becomes* the proof. That's\u2026 illogical. It's applying a structure *before* the data, assuming form dictates truth.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Struggling to articulate) It\u2019s not about the form, it\u2019s about the\u2026disconnect. Vance\u2019s finances are clean, surgically so. But the pieces don't fit. The money trail ends in dead ends, impossibly neat. It felt\u2026constructed. And those people\u2026 they saw through it. They understood the core absurdity of it all.\"\n      },\n      {\n        \"character\": \"THORNE\",\n        \"line\": \"Absurdity? Corbin, you\u2019re rambling. Vance is being brought in for questioning, standard procedure after the explosion. We\u2019re building a case on negligence, not folklore. Simone Archer is going over the books again, she\u2019ll find something. Something *real*.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Simone\u2026 she\u2019ll find what she\u2019s *supposed* to find. Vance has layers, Thorne. He\u2019s anticipating this. The real truth is buried deeper, in the spaces between the numbers, in the things people don\u2019t say.\"\n      },\n      {\n        \"character\": \"THORNE\",\n        \"line\": \"You need to rest, Corbin. Get your head clear. This obsession\u2026 it\u2019s unhealthy. The mill was an accident. Let it go.\"\n      }\n    ],\n    \"action\": [\n      \"Thorne turns to leave. Corbin looks at the TV, then back at Thorne. He feels adrift, like a diver surfacing too quickly.\",\n      \"He glances around his apartment, noticing the dust motes dancing in the artificial light. Everything feels\u2026flat. Meaningless. He touches the takeout container, a wave of nausea washing over him.\",\n      \"The city sounds press in, a cacophony of indifference. He's back, but he doesn\u2019t feel like he belongs anymore.\"\n    ],\n    \"transition\": \"CORBIN stares into the middle distance, a hollow expression on his face. FADE TO BLACK.\"\n  }\n}"
+    },
+    {
+      "id": 19,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 19: Master of the Two Worlds",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"98\",\n    \"setting\": \"CORBIN'S APARTMENT - NIGHT\",\n    \"action\": [\n      \"The apartment is stark. Minimalist. Dust motes swirl in the beam of a single lamp. CORBIN (40s, haunted) stands motionless, staring at a chipped ceramic mug. He hasn\u2019t shaved. His suit is rumpled.\",\n      \"The rhythmic TICKING of a grandfather clock dominates the soundscape. It's an incongruous object in the modern space, a relic from a life Corbin barely remembers.\",\n      \"The phone RINGS, jarring him. He ignores it. It rings again. And again. Finally, he answers.\"\n    ],\n    \"dialogue\": [\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Into phone, flatly) Corbin.\"\n      },\n      {\n        \"character\": \"THORNE (V.O.)\",\n        \"line\": \"Miles, where the hell have you been? We've got Vance lawyered up tighter than a drum. He's singing a different tune now \u2013 innocent bystander, confused investor. We need your statement. Now.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Statements\u2026 are constructs, Captain. Arrangements of words designed to\u2026 fit a pre-determined structure. Like forcing a square peg into a round hole. It doesn\u2019t change the shape of the peg.\"\n      },\n      {\n        \"character\": \"THORNE (V.O.)\",\n        \"line\": \"Miles, what are you talking about? Are you drunk?\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"No. Just\u2026 observing. The inherent fallacy in attempting to validate existence through predetermined frameworks. It\u2019s nonsense to insist on the shape of the argument before acknowledging the substance of the claim. The claim *is* the substance. The argument\u2026 is just noise.\"\n      },\n      {\n        \"character\": \"THORNE (V.O.)\",\n        \"line\": \"Look, I don't have time for philosophy. Vance is walking. You were the one who built the case! What happened down in Oakhaven?\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(A beat, his voice regaining a sliver of focus) Oakhaven\u2026 showed me the foundations are rotten. Not just Vance\u2019s operation. *Everything*. The city\u2026 it\u2019s a gilded cage built on borrowed time. A constant assertion of order where there is only chaos.\"\n      },\n      {\n        \"character\": \"THORNE (V.O.)\",\n        \"line\": \"Miles, listen to me\u2014\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Cutting him off) Evelyn Hayes. The accountant. She wasn\u2019t looking for patterns in numbers, Captain. She was looking for *silence*. The absence of truth. Vance didn\u2019t hide the money, he buried it in plain sight, camouflaged by complexity. And everyone, *everyone*, accepted the camouflage.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(He walks to the window, looking out at the glittering cityscape) It's all meaningless geometry, Thorne. Illusions of control. Clara Bellweather understood. She said the land remembers. The land\u2026doesn\u2019t need validation. It simply *is*.\"\n      },\n      {\n        \"character\": \"THORNE (V.O.)\",\n        \"line\": \"Miles, I'm sending Simone to your location. She'll help you get your head straight.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Simone\u2026 She's good. But she\u2019s looking for numbers. Vance wasn\u2019t defeated by numbers. He was defeated by *knowing* where to look. By abandoning the hypothesis before the proposition.\"\n      }\n    ],\n    \"action\": [\n      \"Corbin hangs up the phone. He turns from the window, his gaze settling on the grandfather clock. He walks towards it, his movements deliberate.\",\n      \"He opens the clock\u2019s face, revealing not gears and weights, but a small, hidden compartment. Inside is a single, dried clover.\",\n      \"He picks it up, turning it over in his fingers. A ghost of a smile touches his lips.\"\n    ],\n    \"transition\": \"CORBIN clutches the clover, a flicker of resolve in his eyes. He picks up his coat. FADE OUT.\"\n  }\n}"
+    },
+    {
+      "id": 20,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 20: Freedom to Live",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"98\",\n    \"setting\": \"INT. CORBIN'S APARTMENT - NIGHT\",\n    \"action\": [\n      \"CORBIN clutches the clover, a flicker of resolve in his eyes. He picks up his coat.\",\n      \"The apartment is sparsely furnished, reflecting a life lived on the edge. Rain streaks the window, mirroring the city lights.\",\n      \"He moves with a newfound lightness, no longer burdened by the weight of Vance's threat. The fear that defined him for weeks has\u2026 shifted.\",\n      \"A beat. He pauses at the door, looking back at the grandfather clock. It's no longer a symbol of time running out, but of time remembered.\"\n    ],\n    \"dialogue\": [\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(to himself, almost a whisper)\\nIt\u2019s all just\u2026 accounting. Shifting numbers, hiding truths. Vance thought he could build something permanent on a foundation of lies. He confused correlation with consequence.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(continues, a touch of wry amusement)\\nHe believed in the *form* of argument, the neat structure. Like needing to state the obvious \u2013 if something is, then it is \u2013 before presenting a case. As if that somehow validates the premise, or masks the inherent emptiness of it all. It doesn\u2019t. It just\u2026is.\"\n      }\n    ],\n    \"transition\": \"CORBIN exits the apartment, stepping out into the rain-swept city. The clover remains clutched in his hand. FADE OUT.\"\n  }\n}"
+    },
+    {
+      "id": 21,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 21: (Expanded) The New Status Quo",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": 6,\n    \"setting\": \"INT. POLICE HQ - CORBIN'S OFFICE - NIGHT\",\n    \"action\": \"The office is subtly different. Cleaner. More\u2026organized. A single potted clover sits on Corbin's desk, incongruous amongst the files. Rain streaks the window behind him. Marcus Thorne leans against the doorframe, watching Corbin sift through financial reports with Evelyn Hayes. Evelyn, looking profoundly uncomfortable, adjusts her glasses.\",\n    \"dialogue\": [\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Without looking up)\\nThree shell companies, all registered to vacant lots in Jersey. Standard Vance playbook. Simone confirmed the pattern \u2013 layering, obfuscation\u2026 the ritual.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"Ritual? That's\u2026a strong word, Detective.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"It\u2019s precise, Evelyn. Deliberate. He doesn\u2019t just hide money, he *performs* the hiding. It\u2019s\u2026the form is the function. He needs the complexity, the layers. It\u2019s not about the money, not entirely.\"\n      },\n      {\n        \"character\": \"THORNE\",\n        \"line\": \"So, the guy's a control freak with a trust fund. Newsflash. We got him skimming funds from city pensions. That's what matters.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"It's about how he does it, Marcus. The elegance of the deceit. He believes in the *form* of argument, the neat structure. Like needing to state the obvious \u2013 if something is, then it is \u2013 before presenting a case. As if that somehow validates the premise, or masks the inherent emptiness of it all. It doesn\u2019t. It just\u2026is.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"(Hesitantly)\\nClara\u2026 my aunt, she told me stories about the Bellweather family. They were some of the first settlers here. She said they had\u2026 arrangements. With the land. Obligations. Things done a certain way, for generations.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Obligations? To whom?\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"She wasn\u2019t specific. Just\u2026the land demands respect. A balance. If you disrupt it\u2026there are consequences. Sounds superstitious, I know.\"\n      },\n      {\n        \"character\": \"THORNE\",\n        \"line\": \"Sounds like small-town folklore. We're chasing a white-collar criminal, not appeasing earth spirits.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Staring out the window)\\nMaybe. Or maybe Vance isn't just skimming pensions. Maybe he\u2019s\u2026disrupting a balance. And the land is responding. It\u2019s nonsense to place the hypothesis $p \\supset p$ before a proposition in order to ensure that its arguments have the right form, because the hypothesis for a non-proposition as argument becomes not false but meaningless, and because the proposition itself becomes senseless for arguments of the wrong kind, and therefore it survives the wrong arguments no better and no worse than the senseless hypothesis attached for this purpose.\"\n      },\n      {\n        \"character\": \"THORNE\",\n        \"line\": \"(Confused)\\n\u2026You okay, Corbin?\"\n      }\n    ],\n    \"transition\": \"Corbin turns back to the files, his gaze distant. Evelyn watches him with growing concern. The rain continues to fall, relentless and unforgiving. FADE OUT.\"\n  }\n}"
+    },
+    {
+      "id": 22,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 22: (Expanded) The Epilogue",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"98\",\n    \"setting\": \"INT. POLICE HEADQUARTERS - CORBIN'S OFFICE - NIGHT\",\n    \"action\": \"Rain lashes against the window. The office is dimly lit, cluttered with files. DETECTIVE MILES CORBIN (40s, weary) stares at a financial report, barely seeing the numbers. Across from him, EVELYN HAYES (30s, subdued) nervously sips lukewarm coffee. A half-empty takeout container sits between them. CAPTAIN MARCUS THORNE (50s, gruff but concerned) hovers near the doorway.\",\n    \"dialogue\": [\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Muttering)\\n\u2026The signatures\u2026they\u2019re almost identical. Not copies, not forgeries. *Variations*\u2026refined over time.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"Like\u2026practice? He was perfecting something?\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Perfecting the illusion. Vance didn\u2019t just move money; he *re-wrote* it. Created echoes, false trails\u2026built a system where the truth is\u2026optional. It\u2019s not about what *is*, Evelyn. It\u2019s about what someone can convincingly *make* appear to be.\"\n      },\n      {\n        \"character\": \"THORNE\",\n        \"line\": \"(From doorway)\\nCorbin, we got the word from Miller. Hayes\u2019 aunt, Clara Bellweather\u2026she found something in the town archives. Old land deeds, pre-dating the Hayes family. All tied back to a holding company\u2026Vance\u2019s holding company.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"What kind of connection?\"\n      },\n      {\n        \"character\": \"THORNE\",\n        \"line\": \"Seems Vance\u2019s family has been buying up land in Havenwood for generations. Quietly. Under shell corporations. Clara thinks it started with a\u2026a failed silver mine. Something about a disproportionate amount of wealth appearing shortly after.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"A failed mine\u2026? He was\u2026building something there, wasn't he? Not just a retreat. Something\u2026bigger.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Stands abruptly, pacing)\\nBigger. Always bigger. It\u2019s never about the money, Evelyn. It's about the *control*. The ability to\u2026reshape reality to fit his narrative. To make a lie indistinguishable from the truth. The forms\u2026 the rights\u2026 the structures\u2026 they are all meaningless without the grounding of truth. He assumed the form of the truth, and thus, the truth became meaningless.\"\n      },\n      {\n        \"character\": \"THORNE\",\n        \"line\": \"(Confused)\\n\u2026You okay, Corbin?\"\n      }\n    ],\n    \"transition\": \"Corbin turns back to the files, his gaze distant. Evelyn watches him with growing concern. The rain continues to fall, relentless and unforgiving. FADE OUT.\"\n  }\n}"
+    },
+    {
+      "id": 23,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 23: (Expanded) The Closing Image",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"102\",\n    \"setting\": \"CORBIN'S APARTMENT - NIGHT\",\n    \"action\": \"Rain lashes against the windows of Corbin's sparsely furnished apartment. The room is lit only by the cold glow of a desk lamp illuminating stacks of financial documents and crime scene photos. CORBIN (40s, weary, haunted) sits staring at a single photograph \u2013 EVELYN HAYES (30s, practical, frightened) standing in front of a weathered farmhouse. He holds a small, intricately carved wooden clover in his hand, turning it over and over. Across from him, EVELYN nervously sips lukewarm coffee. The air is thick with unspoken anxieties.\",\n    \"dialogue\": [\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"They\u2026 they said you found something at Vance's office. Something about\u2026 the land?\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"He wasn't just skimming accounts, Evelyn. He was *buying* the past. Specifically, everything beneath Bellweather Creek. Mineral rights, water rights\u2026 even the soil composition reports from the thirties. All meticulously documented, legally sound\u2026 perfectly *formed*.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"But\u2026 why? That land\u2026 it's worthless. Old farms, woods\u2026 Clara always said it was cursed. Bad luck follows anyone who tries to 'improve' it.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Quietly, almost to himself)\\nCursed\u2026 or simply\u2026 inconvenient? He built a fortress of legality, anticipating every challenge. But the foundation\u2026 the very idea that you can *own* something that exists beyond the scope of human understanding\u2026 that\u2019s where the structure breaks. It\u2019s nonsense to build a premise on a premise. To assume the truth *before* the proposition.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"I\u2026 I don\u2019t understand.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"He wanted control. Not just financial control, but control over the narrative. Over the *truth* of this place. He thought he could rewrite history, bury whatever\u2019s down there under layers of contracts and shell corporations. But history\u2026 it has a way of resurfacing. It doesn't concern itself with proper form.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"Clara\u2026 she knew something. She always talked about the old ways, the agreements\u2026 the things people forgot.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Looking at the clover)\\nShe did. And Vance\u2026 he tried to erase those agreements. Reduce them to assets. He attempted to define the indefinable, to quantify the unquantifiable. He built his empire on the illusion of certainty, never realizing that the most dangerous truths are the ones that defy logic. The ones that are\u2026 meaningless to his kind of ambition.\"\n      },\n      {\n        \"character\": \"EVELYN\",\n        \"line\": \"What about Sheriff Miller? He's still helping us, right?\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Miller's a good man. Grounded in reality. But even he\u2019s starting to question what he\u2019s seeing. The reports from Simone\u2026 they\u2019re\u2026 anomalous. Things don\u2019t add up. The data is\u2026 resistant to interpretation. Like trying to apply logic to a dream.\"\n      }\n    ],\n    \"transition\": \"Corbin slowly closes his hand around the wooden clover, his knuckles white. He stares out the window, at the relentless rain washing over the city. The reflection in the glass seems to show not his own face, but a distorted image of the farmhouse, swallowed by the encroaching darkness. The clover\u2026 a fragile symbol of a forgotten world, held tight against the concrete of his despair. FADE TO BLACK.\"\n  }\n}"
+    },
+    {
+      "id": 24,
+      "start_frame": 0,
+      "end_frame": 0,
+      "prompt": "Concrete &amp; Clover - Beat 24: (Expanded) The Fade Out",
+      "action": "cinematic",
+      "script_content": "{\n  \"scene\": {\n    \"scene_number\": \"12\",\n    \"setting\": \"INT. CORBIN'S APARTMENT - NIGHT\",\n    \"action\": \"Rain lashes against the window. The apartment is dimly lit, illuminated only by the city glow and the screen of a muted television. DETECTIVE MILES CORBIN (40s, weary) sits at his kitchen table, nursing a glass of whiskey. He repeatedly rolls a small, carved WOODEN CLOVER between his fingers. Across from him sits SIMONE ARCHER (30s, sharp, precise). She\u2019s reviewing financial printouts, a digital tablet beside them.\",\n    \"dialogue\": [\n      {\n        \"character\": \"SIMONE\",\n        \"line\": \"The shell companies\u2026 they\u2019re intricate, Corbin. Vance isn't just laundering money, he's building mazes *with* it. Layers upon layers, designed to obscure the origin and destination. It\u2019s\u2026 almost artistic.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Quietly) Artistic. He\u2019s building castles on quicksand, Simone. And someone\u2019s going to fall through.\"\n      },\n      {\n        \"character\": \"SIMONE\",\n        \"line\": \"Evelyn Hayes\u2026 she flagged inconsistencies in Vance\u2019s rural land acquisitions. Small farms, mostly. Bought up for pennies on the dollar. She thought it odd. No clear development plan. Just\u2026 absorption.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Absorption. Like the land itself is being\u2026 erased.\"\n      },\n      {\n        \"character\": \"SIMONE\",\n        \"line\": \"The accounts are\u2026 chaotic. Deliberately so. It\u2019s as if he *wanted* someone to get lost in the details, to exhaust themselves searching for a pattern that isn't there. Or\u2026 isn\u2019t obvious. Like trying to apply logic to a dream.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"(Staring at the clover) He\u2019s hiding something in the noise. A signal lost in static. It's nonsense to place the hypothesis $p \\supset p$ before a proposition in order to ensure that its arguments have the right form, because the hypothesis for a non-proposition as argument becomes not false but meaningless, and because the proposition itself becomes senseless for arguments of the wrong kind, and therefore it survives the wrong arguments no better and no worse than the senseless hypothesis attached for this purpose.\"\n      },\n      {\n        \"character\": \"SIMONE\",\n        \"line\": \"(Pauses, looking at Corbin with concern) You okay, Corbin? You're drifting.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Just\u2026 thinking about the farm. About Mrs. Bellweather. About the sheriff, trying to make sense of it all. They see something different than we do. Something\u2026 older.\"\n      },\n      {\n        \"character\": \"SIMONE\",\n        \"line\": \"They see a tragedy. A local woman gone missing. We see a pattern. A predator. That\u2019s all.\"\n      },\n      {\n        \"character\": \"CORBIN\",\n        \"line\": \"Is it? Or are we just forcing a pattern onto something that doesn't have one? Maybe there *is* no logic. Just\u2026 echoes.\"\n      }\n    ],\n    \"transition\": \"Corbin slowly closes his hand around the wooden clover, his knuckles white. He stares out the window, at the relentless rain washing over the city. The reflection in the glass seems to show not his own face, but a distorted image of the farmhouse, swallowed by the encroaching darkness. The clover\u2026 a fragile symbol of a forgotten world, held tight against the concrete of his despair. FADE TO BLACK.\"\n  }\n}"
+    }
+  ],
+  "files": {},
+  "dialogue": {
+    "lines": [
+      {
+        "character": "\"LOCATION\": \"CORBIN'S APARTMENT - NIGHT\",",
+        "text": "\"DESCRIPTION\": \"The apartment is meticulously organized, bordering on sterile. Bookshelves are arranged by color, not content. A half-finished chess game sits on a glass table. Rain streaks the window overlooking the city. DETECTIVE MILES CORBIN (40s, sharp, weary) is reviewing files, illuminated by a desk lamp. Empty takeout containers litter the kitchen counter, evidence of a meal ignored. The TV murmurs a procedural drama, but Corbin isn't watching.\",",
+        "start_offset": 0.0,
+        "visual_focus": "\"LOCATION\": \"CORBIN'S APARTMENT - NIGHT\",",
+        "action": "Speaking",
+        "page_index": 0
+      },
+      {
+        "character": "\"MARCUS THORNE (V.O.)\"",
+        "text": "],",
+        "start_offset": 27.200000000000003,
+        "visual_focus": "\"MARCUS THORNE (V.O.)\"",
+        "action": "Speaking",
+        "page_index": 0
+      },
+      {
+        "character": "\"DIALOGUE\": [",
+        "text": "{",
+        "start_offset": 27.6,
+        "visual_focus": "\"DIALOGUE\": [",
+        "action": "Speaking",
+        "page_index": 0
+      },
+      {
+        "character": "\"CHARACTER\": \"MARCUS THORNE (V.O.)\",",
+        "text": "\"LINE\": \"Corbin, you're chasing ghosts. These rural disappearances\u2026 they're not our jurisdiction. Sheriff Miller can handle a few lost sheep.\"",
+        "start_offset": 28.0,
+        "visual_focus": "\"CHARACTER\": \"MARCUS THORNE (V.O.)\",",
+        "action": "Speaking",
+        "page_index": 0
+      },
+      {
+        "character": "\"CHARACTER\": \"MILES CORBIN\",",
+        "text": "\"LINE\": \"(Into phone, not looking up) Sheriff Miller requested assistance. Missing persons, unusual circumstances. Three in as many months. All connected to Vance\u2019s land acquisition.\"",
+        "start_offset": 36.0,
+        "visual_focus": "\"CHARACTER\": \"MILES CORBIN\",",
+        "action": "Speaking",
+        "page_index": 0
+      },
+      {
+        "character": "\"CHARACTER\": \"MARCUS THORNE (V.O.)\",",
+        "text": "\"LINE\": \"Vance is clean. We vetted him. He's a pillar of the community. A donor. You're wasting time on\u2026 sentimentality. You always do.\"",
+        "start_offset": 46.0,
+        "visual_focus": "\"CHARACTER\": \"MARCUS THORNE (V.O.)\",",
+        "action": "Speaking",
+        "page_index": 0
+      },
+      {
+        "character": "\"CHARACTER\": \"MILES CORBIN\",",
+        "text": "\"LINE\": \"(Sighs, rubs his temples) Sentimentality? They\u2019re people, Marcus. Not variables in a spreadsheet.\"",
+        "start_offset": 55.2,
+        "visual_focus": "\"CHARACTER\": \"MILES CORBIN\",",
+        "action": "Speaking",
+        "page_index": 0
+      },
+      {
+        "character": "\"CHARACTER\": \"MARCUS THORNE (V.O.)\",",
+        "text": "\"LINE\": \"They're statistics, Miles. Collateral damage. You need to focus on what matters: closing the Moreau case. The Mayor is breathing down my neck.\"",
+        "start_offset": 60.800000000000004,
+        "visual_focus": "\"CHARACTER\": \"MARCUS THORNE (V.O.)\",",
+        "action": "Speaking",
+        "page_index": 0
+      },
+      {
+        "character": "\"CHARACTER\": \"MILES CORBIN\",",
+        "text": "\"LINE\": \"Moreau\u2019s cold. This\u2026 feels different. There's a pattern. A silence. It's like they vanished into the land itself.\"",
+        "start_offset": 70.4,
+        "visual_focus": "\"CHARACTER\": \"MILES CORBIN\",",
+        "action": "Speaking",
+        "page_index": 0
+      },
+      {
+        "character": "\"CHARACTER\": \"MARCUS THORNE (V.O.)\",",
+        "text": "\"LINE\": \"You're projecting. You\u2019re letting your\u2026 personal issues cloud your judgment. Get back to the city, Corbin. Leave the country to the country folk.\"",
+        "start_offset": 78.0,
+        "visual_focus": "\"CHARACTER\": \"MARCUS THORNE (V.O.)\",",
+        "action": "Speaking",
+        "page_index": 0
+      },
+      {
+        "character": "\"CHARACTER\": \"MILES CORBIN\",",
+        "text": "\"LINE\": \"(Quietly, to himself) The form is wrong. Always the form is wrong. You arrange the pieces, insist on the order\u2026 but the meaning remains absent. It's not about proving the argument; it's about whether the argument *is*.\"",
+        "start_offset": 87.6,
+        "visual_focus": "\"CHARACTER\": \"MILES CORBIN\",",
+        "action": "Speaking",
+        "page_index": 0
+      },
+      {
+        "character": "\"ACTION\": [",
+        "text": "\"Corbin hangs up the phone, tossing it onto the desk. He returns to the files, specifically a grainy photo of EVELYN HAYES (30s, unassuming, dressed in practical clothes), an accountant from the rural town. Her face is etched with worry.\",",
+        "start_offset": 102.8,
+        "visual_focus": "\"ACTION\": [",
+        "action": "Speaking",
+        "page_index": 0
+      },
+      {
+        "character": "\"MILLER\",",
+        "text": "\"Clara\u2019s been expectin\u2019 you, Detective. Said something about \u2018the weight of things\u2019 and a visitor from the city.\"",
+        "start_offset": 118.8,
+        "visual_focus": "\"MILLER\",",
+        "action": "Speaking",
+        "page_index": 3
+      },
+      {
+        "character": "\"CORBIN\",",
+        "text": "\"Corbin: Concrete cracks, Captain. And sometimes, the foundation is rotten. I need a deep dive on Vance\u2019s land acquisitions, specifically anything in this county over the last ten years. Anything connected to the Bellweather name. \",",
+        "start_offset": 126.0,
+        "visual_focus": "\"CORBIN\",",
+        "action": "Speaking",
+        "page_index": 4
+      },
+      {
+        "character": "\"CORBIN\",",
+        "text": "\"They\u2019re sending Archer. She\u2019s good. But she'll be looking for numbers, not\u2026 roots.\",",
+        "start_offset": 140.4,
+        "visual_focus": "\"CORBIN\",",
+        "action": "Speaking",
+        "page_index": 4
+      },
+      {
+        "character": "\"EVELYN\",",
+        "text": "\"She\u2019ll find what she\u2019s *told* to find. Julian knows how to build walls within walls, Captain. Layers of plausible deniability.\",",
+        "start_offset": 145.6,
+        "visual_focus": "\"EVELYN\",",
+        "action": "Speaking",
+        "page_index": 4
+      },
+      {
+        "character": "\"MILLER\",",
+        "text": "\"Still nothing. Cell towers are down across the county. Feels\u2026 deliberate.\",",
+        "start_offset": 153.6,
+        "visual_focus": "\"MILLER\",",
+        "action": "Speaking",
+        "page_index": 4
+      },
+      {
+        "character": "\"CLARA\",",
+        "text": "\"Deliberate is a kindness. Some things\u2026they resist being found. They bend the world around them to stay hidden. It's not about *finding* the truth, Detective. It\u2019s about peeling back what's been carefully arranged to *look* like the truth. It is nonsense to place the hypothesis $p \\supset p$ before a proposition in order to ensure that its arguments have the right form, because the hypothesis for a non-proposition as argument becomes not false but meaningless, and because the proposition itself becomes senseless for arguments of the wrong kind, and therefore it survives the wrong arguments no better and no worse than the senseless hypothesis attached for this purpose.\",",
+        "start_offset": 158.0,
+        "visual_focus": "\"CLARA\",",
+        "action": "Speaking",
+        "page_index": 4
+      },
+      {
+        "character": "\"CORBIN\",",
+        "text": "\"(Holding the clover, feeling its weight) The root\u2026 right.\",",
+        "start_offset": 201.2,
+        "visual_focus": "\"CORBIN\",",
+        "action": "Speaking",
+        "page_index": 4
+      },
+      {
+        "character": "\"EVELYN\",",
+        "text": "\"(Quietly, to Corbin) She\u2019s right, you know. This land\u2026 it remembers things.\"",
+        "start_offset": 204.79999999999998,
+        "visual_focus": "\"EVELYN\",",
+        "action": "Speaking",
+        "page_index": 4
+      },
+      {
+        "character": "\"THORNE (V.O.)\",",
+        "text": "\"(Through earpiece, clipped) Corbin, I\u2019m reading unusual EMF signatures coming from that door.  Off the charts.  Be careful.\",",
+        "start_offset": 209.6,
+        "visual_focus": "\"THORNE (V.O.)\",",
+        "action": "Speaking",
+        "page_index": 4
+      },
+      {
+        "character": "\"CORBIN\",",
+        "text": "\"(Muttering into his wrist) Careful is my middle name, Marcus.\",",
+        "start_offset": 216.79999999999998,
+        "visual_focus": "\"CORBIN\",",
+        "action": "Speaking",
+        "page_index": 4
+      },
+      {
+        "character": "\"EVELYN\",",
+        "text": "\"(Stopping, staring at the steel door) This isn\u2019t part of the original house. My aunt remembers\u2026 stories. Old man Vance, the founder, he built this himself. Said he was \u2018preparing for contingencies.\u2019\",",
+        "start_offset": 220.79999999999998,
+        "visual_focus": "\"EVELYN\",",
+        "action": "Speaking",
+        "page_index": 4
+      },
+      {
+        "character": "\"CLARA\",",
+        "text": "\"(Eyes fixed on the door, a strange calm in her voice) Contingencies for what, though? That\u2019s the question. The land around here\u2026 it doesn\u2019t like secrets. It pushes back.  The Vances\u2026 they tried to bury things, not just in the ground.\",",
+        "start_offset": 233.6,
+        "visual_focus": "\"CLARA\",",
+        "action": "Speaking",
+        "page_index": 4
+      },
+      {
+        "character": "\"BRODY\",",
+        "text": "\"(Shining the light on the door's locking mechanism \u2013 a complex series of tumblers and a keypad) This ain't no ordinary wine cellar security. This is\u2026 military grade. What are we dealing with here?\",",
+        "start_offset": 250.0,
+        "visual_focus": "\"BRODY\",",
+        "action": "Speaking",
+        "page_index": 4
+      },
+      {
+        "character": "\"CORBIN\",",
+        "text": "\"(Examining the keypad) Vance wasn\u2019t just a hedge fund manager, Brody. He was a collector. Of power, of information\u2026 and apparently, of very secure doors. Evelyn, do you know a code?\"",
+        "start_offset": 263.6,
+        "visual_focus": "\"CORBIN\",",
+        "action": "Speaking",
+        "page_index": 5
+      },
+      {
+        "character": "\"THORNE (V.O.)\",",
+        "text": "\"(Through earpiece, urgent) Corbin, I\u2019m losing signal! Something\u2019s interfering with the radio waves. And those EMF readings are spiking again! Get out of there!\",",
+        "start_offset": 276.0,
+        "visual_focus": "\"THORNE (V.O.)\",",
+        "action": "Speaking",
+        "page_index": 5
+      },
+      {
+        "character": "\"CORBIN\",",
+        "text": "\"(Ignoring Thorne, takes a step into the corridor) Too late, Marcus.\",",
+        "start_offset": 285.6,
+        "visual_focus": "\"CORBIN\",",
+        "action": "Speaking",
+        "page_index": 5
+      },
+      {
+        "character": "\"EVELYN\",",
+        "text": "\"(Grabbing Corbin\u2019s arm) Don\u2019t! You don\u2019t understand\u2026 this place\u2026 it consumes things.\"",
+        "start_offset": 290.0,
+        "visual_focus": "\"EVELYN\",",
+        "action": "Speaking",
+        "page_index": 5
+      },
+      {
+        "character": "\"CORBIN\",",
+        "text": "\"(Trying to open the box) It\u2019s locked. No keyhole. Some kind of pressure mechanism, maybe?\",",
+        "start_offset": 294.8,
+        "visual_focus": "\"CORBIN\",",
+        "action": "Speaking",
+        "page_index": 5
+      },
+      {
+        "character": "\"CLARA\",",
+        "text": "\"(Without looking up) It doesn\u2019t *want* to be opened. Some things are better left undisturbed.\",",
+        "start_offset": 300.8,
+        "visual_focus": "\"CLARA\",",
+        "action": "Speaking",
+        "page_index": 5
+      },
+      {
+        "character": "\"BRODY\",",
+        "text": "\"(Scoffs) Old woman\u2019s superstition. It\u2019s just a box, Detective. Probably full of doilies and mothballs.\",",
+        "start_offset": 306.8,
+        "visual_focus": "\"BRODY\",",
+        "action": "Speaking",
+        "page_index": 5
+      },
+      {
+        "character": "\"EVELYN\",",
+        "text": "\"(Sharply) It\u2019s Aunt Clara\u2019s. And she doesn\u2019t appreciate you dismissing her\u2026 beliefs.\",",
+        "start_offset": 312.8,
+        "visual_focus": "\"EVELYN\",",
+        "action": "Speaking",
+        "page_index": 5
+      },
+      {
+        "character": "\"CORBIN\",",
+        "text": "\"(To Brody, ignoring Evelyn\u2019s tone) This isn\u2019t about beliefs, Sheriff. This house\u2026 this box\u2026 it\u2019s connected to Vance. He was asking about the Bellweather family history. Specifically, this house.\",",
+        "start_offset": 317.6,
+        "visual_focus": "\"CORBIN\",",
+        "action": "Speaking",
+        "page_index": 6
+      },
+      {
+        "character": "\"CLARA\",",
+        "text": "\"(Looks up, eyes fixed on Corbin) Julian Vance\u2026 a hungry man. Always taking, never giving. He seeks what doesn\u2019t belong to him. Just like his father.\",",
+        "start_offset": 329.20000000000005,
+        "visual_focus": "\"CLARA\",",
+        "action": "Speaking",
+        "page_index": 6
+      },
+      {
+        "character": "\"BRODY\",",
+        "text": "\"Now hold on. Vance is a legitimate businessman. A bit ruthless, maybe, but\u2026\",",
+        "start_offset": 339.6,
+        "visual_focus": "\"BRODY\",",
+        "action": "Speaking",
+        "page_index": 6
+      },
+      {
+        "character": "\"CORBIN\",",
+        "text": "\"(Interrupting) Ruthless doesn't explain offshore accounts and shell corporations designed to hide millions. Simone Archer is digging into his finances, and she\u2019s already found enough to warrant a full investigation. But she needs something *more*. Something concrete.\",",
+        "start_offset": 344.8,
+        "visual_focus": "\"CORBIN\",",
+        "action": "Speaking",
+        "page_index": 6
+      },
+      {
+        "character": "\"EVELYN\",",
+        "text": "\"(To Corbin, quietly) Concrete and clover. That\u2019s what they always said about this town. A foundation of something solid, hidden beneath a veneer of\u2026 pleasantries.\",",
+        "start_offset": 359.6,
+        "visual_focus": "\"EVELYN\",",
+        "action": "Speaking",
+        "page_index": 6
+      },
+      {
+        "character": "\"CLARA\",",
+        "text": "\"(Taps the table, her voice a low rasp) The box remembers. It remembers everything. But it won\u2019t speak to those who approach with impure intent\u2026 or those who ask the wrong questions. It\u2019s not a matter of *form*, Detective, it's a matter of\u2026 resonance. Asking \u2018what is inside?\u2019 is meaningless if you haven\u2019t first considered *why* it is contained.\",",
+        "start_offset": 369.6,
+        "visual_focus": "\"CLARA\",",
+        "action": "Speaking",
+        "page_index": 6
+      },
+      {
+        "character": "\"BRODY\",",
+        "text": "\"(To Corbin, exasperated) You\u2019re listening to this? She\u2019s rambling. Let\u2019s just search the house properly. We\u2019ll find what we\u2019re looking for.\",",
+        "start_offset": 393.20000000000005,
+        "visual_focus": "\"BRODY\",",
+        "action": "Speaking",
+        "page_index": 6
+      },
+      {
+        "character": "\"CORBIN\",",
+        "text": "\"(Looks from Clara to Brody, a flicker of frustration crossing his face) Maybe. Or maybe we\u2019re missing the point entirely. The point isn\u2019t what\u2019s *in* the box. It\u2019s what the box *prevents*.\"",
+        "start_offset": 401.6,
+        "visual_focus": "\"CORBIN\",",
+        "action": "Speaking",
+        "page_index": 6
+      },
+      {
+        "character": "\"INT. LEAD SUV - NIGHT\",",
+        "text": "\"VANCE barks into a phone. His voice is clipped, precise.\",",
+        "start_offset": 414.40000000000003,
+        "visual_focus": "\"INT. LEAD SUV - NIGHT\",",
+        "action": "Speaking",
+        "page_index": 14
+      },
+      {
+        "character": "\"VANCE\",",
+        "text": "\"Confirm visual. Hayes and Corbin. Do *not* let them reach Bellweather\u2019s property. Apprehend Hayes. Corbin is\u2026 an obstacle. Neutralize as necessary.\",",
+        "start_offset": 418.40000000000003,
+        "visual_focus": "\"VANCE\",",
+        "action": "Speaking",
+        "page_index": 14
+      },
+      {
+        "character": "\"CUT TO: HIGHWAY - NIGHT\",",
+        "text": "\"Miller slams on the brakes, swerving onto a muddy shoulder. He grabs his radio.\",",
+        "start_offset": 426.8,
+        "visual_focus": "\"CUT TO: HIGHWAY - NIGHT\",",
+        "action": "Speaking",
+        "page_index": 14
+      },
+      {
+        "character": "\"MILLER\",",
+        "text": "\"(Static-laced) Dispatch, this is Miller. We\u2019re being pursued\u2026 multiple vehicles. Requesting backup. Repeat, requesting backup!\",",
+        "start_offset": 432.40000000000003,
+        "visual_focus": "\"MILLER\",",
+        "action": "Speaking",
+        "page_index": 14
+      },
+      {
+        "character": "\"CORBIN\",",
+        "text": "\"Negative, Sheriff. Backup will only complicate things. This isn\u2019t about law enforcement. It\u2019s\u2026 a failure of form. Arguments built on foundations that don't exist.\",",
+        "start_offset": 438.40000000000003,
+        "visual_focus": "\"CORBIN\",",
+        "action": "Speaking",
+        "page_index": 14
+      },
+      {
+        "character": "\"MILLER\",",
+        "text": "\"What in the\u2026?\",",
+        "start_offset": 448.00000000000006,
+        "visual_focus": "\"MILLER\",",
+        "action": "Speaking",
+        "page_index": 14
+      },
+      {
+        "character": "\"CORBIN (CONT'D)\",",
+        "text": "\"They operate under the illusion of consequence. A belief in \u2018right kind\u2019 arguments. Watch.\",",
+        "start_offset": 449.20000000000005,
+        "visual_focus": "\"CORBIN (CONT'D)\",",
+        "action": "Speaking",
+        "page_index": 14
+      },
+      {
+        "character": "\"EXT. HIGHWAY - CONTINUOUS\",",
+        "text": "\"The SUVs recover quickly, but the momentary disruption gives Corbin, Miller, and Hayes a crucial lead. Miller floors the accelerator, the pickup bouncing violently.\",",
+        "start_offset": 454.80000000000007,
+        "visual_focus": "\"EXT. HIGHWAY - CONTINUOUS\",",
+        "action": "Speaking",
+        "page_index": 14
+      },
+      {
+        "character": "\"VANCE (V.O.)\",",
+        "text": "\"An EMP? He anticipated\u2026 This isn\u2019t standard procedure.\",",
+        "start_offset": 464.4000000000001,
+        "visual_focus": "\"VANCE (V.O.)\",",
+        "action": "Speaking",
+        "page_index": 14
+      },
+      {
+        "character": "\"CUT TO: INT. PICKUP TRUCK - CONTINUOUS\",",
+        "text": "\"Evelyn is pale, terrified.\",",
+        "start_offset": 467.6000000000001,
+        "visual_focus": "\"CUT TO: INT. PICKUP TRUCK - CONTINUOUS\",",
+        "action": "Speaking",
+        "page_index": 14
+      },
+      {
+        "character": "\"EVELYN\",",
+        "text": "\"What did you do? Who *are* those people?\",",
+        "start_offset": 469.2000000000001,
+        "visual_focus": "\"EVELYN\",",
+        "action": "Speaking",
+        "page_index": 14
+      },
+      {
+        "character": "\"CORBIN\",",
+        "text": "\"They believe in a logical sequence. If A, then B. But what if the premise of A is\u2026 meaningless? They\u2019re trying to apply rules to a system that rejects them.\",",
+        "start_offset": 472.4000000000001,
+        "visual_focus": "\"CORBIN\",",
+        "action": "Speaking",
+        "page_index": 15
+      },
+      {
+        "character": "\"MILLER\",",
+        "text": "\"We ain't gonna outrun 'em, Detective!\",",
+        "start_offset": 484.4000000000001,
+        "visual_focus": "\"MILLER\",",
+        "action": "Speaking",
+        "page_index": 15
+      },
+      {
+        "character": "\"CORBIN\",",
+        "text": "\"Take that road. It leads to Bellweather\u2019s property. Prepare for a rough ride.\"",
+        "start_offset": 486.80000000000007,
+        "visual_focus": "\"CORBIN\",",
+        "action": "Speaking",
+        "page_index": 15
+      }
+    ]
+  }
+}</Manifest><Meta>{
+  "source_file": "Ex_Nihilo_Project",
+  "hj24_map": true,
+  "parody": true,
+  "genesis_mode": true,
+  "atu_theme": "ATU 112: Country Mouse and City Mouse",
+  "tlp_axiom": "(It is nonsense to place the hypothesis $p \\supset p$ before a proposition in order to ensure that its arguments have the right form, because the hypothesis for a non-proposition as argument becomes not false but meaningless, and because the proposition itself becomes senseless for arguments of the wrong kind, and therefore it survives the wrong arguments no better and no worse than the senseless hypothesis attached for this purpose.)"
+}</Meta></XMVP>

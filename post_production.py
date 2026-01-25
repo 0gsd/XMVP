@@ -141,6 +141,64 @@ def run_ascii_forge(input_video, output_video):
         logging.error(f"ASCII Forge failed: {e}")
         return False
 
+def change_framerate(input_video, target_fps):
+    """
+    Retimes a video to a specific framerate.
+    - Downsampling: Drops frames.
+    - Upsampling: Blends frames (minterpolate) for a 'ghosting' effect (not AI).
+    """
+    try:
+        if not input_video.exists():
+            logging.error(f"❌ Input not found: {input_video}")
+            return False
+            
+        current_fps = get_fps(input_video)
+        if not current_fps: current_fps = 24.0 # Fallback
+        
+        output_video = input_video.parent / f"{input_video.stem}_retime_{target_fps}fps{input_video.suffix}"
+        
+        logging.info(f"⏱️  Retiming {input_video.name}: {current_fps} -> {target_fps} fps")
+        
+        # FFmpeg Filter Logic
+        # -r force framerate works well for dropping.
+        # minterpolate works well for blending up.
+        
+        if target_fps >= current_fps:
+            # Upsample with Blend
+            logging.info("   📈 Upsampling with Frame Blending...")
+            # 'minterpolate' with mi_mode=blend generates blended inter-frames
+            filter_str = f"minterpolate='fps={target_fps}:mi_mode=blend'"
+        else:
+            # Downsample (Drop frames)
+            logging.info("   📉 Downsampling (Dropping frames)...")
+            # For strict decimation, -r is usually sufficient and cleanest
+            # But filter 'fps' is more precise in chain.
+            filter_str = f"fps={target_fps}"
+            
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', str(input_video),
+            '-filter:v', filter_str,
+            '-c:a', 'copy', # Preserve Audio exactly
+            str(output_video)
+        ]
+        
+        # If input has no audio, -c:a copy might fail? No, ffmpeg handles it (no stream). 
+        # But harmless to try.
+        
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        if output_video.exists():
+             logging.info(f"   ✅ Retimed Video: {output_video}")
+             return True
+        else:
+             logging.error("   ❌ Retiming failed (No output).")
+             return False
+             
+    except Exception as e:
+        logging.error(f"   ❌ Retiming Error: {e}")
+        return False
+
 def get_duration(media_path):
     """Returns duration in seconds using ffprobe (Copied from music_video.py)."""
     try:
@@ -155,6 +213,27 @@ def get_duration(media_path):
         return float(result.stdout.strip())
     except Exception as e:
         logging.error(f"[-] Error getting duration for {media_path}: {e}")
+        return None
+
+def get_fps(media_path):
+    """Returns frame rate using ffprobe."""
+    try:
+        cmd = [
+            'ffprobe', 
+            '-v', 'error', 
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=r_frame_rate', 
+            '-of', 'default=noprint_wrappers=1:nokey=1', 
+            str(media_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        # Result often '24/1' or '30000/1001'
+        vals = result.stdout.strip().split('/')
+        if len(vals) == 2:
+            return float(vals[0]) / float(vals[1])
+        return float(result.stdout.strip())
+    except Exception as e:
+        logging.error(f"[-] Error getting fps for {media_path}: {e}")
         return None
 
 def blend_videos(base_video, overlay_video, output_path, opacity=0.33):
@@ -176,6 +255,68 @@ def blend_videos(base_video, overlay_video, output_path, opacity=0.33):
     except Exception as e:
         logging.error(f"Video Blending failed: {e}")
         return False
+
+def run_vdj_blend(args, output_root):
+    """
+    Runs the VDJ Blend logic:
+    1. Loops Video A (Bottom 100%) and Video B (Top 40%) to match Audio Duration.
+    2. Blends them using colorchannelmixer after resizing Top to match Bottom.
+    3. Muxes with Audio.
+    """
+    logging.info(f"🎧 VDJ Mode Activated")
+    logging.info(f"   Bottom: {args.bottomvideo}")
+    logging.info(f"   Top:    {args.topvideo} (Opacity 40%)")
+    logging.info(f"   Audio:  {args.mu}")
+    
+    # Validation
+    if not os.path.exists(args.bottomvideo):
+        logging.error(f"   ❌ Missing Bottom Video: {args.bottomvideo}")
+        return
+    if not os.path.exists(args.topvideo):
+        logging.error(f"   ❌ Missing Top Video: {args.topvideo}")
+        return
+    if not os.path.exists(args.mu):
+        logging.error(f"   ❌ Missing Audio: {args.mu}")
+        return
+        
+    duration = get_duration(args.mu)
+    if not duration:
+        logging.error("   ❌ Could not determine audio duration.")
+        return
+        
+    logging.info(f"   ⏱️ Target Duration: {duration:.2f}s")
+    
+    output_file = output_root / f"vdj_blend_{int(time.time())}.mp4"
+    
+    # FFmpeg Command
+    # -stream_loop -1: Loop inputs infinitely
+    # Filter Complex Explanation:
+    # [1:v][0:v]scale2ref[top][bottom]: Resizes stream 1 (top) to match stream 0 (bottom). Passes both through.
+    # [top]format=rgba,colorchannelmixer=aa=0.4[top_alpha]: Sets opacity of resized top.
+    # [bottom][top_alpha]overlay=shortest=1:format=auto[outv]: Overlays.
+    
+    cmd = [
+        "ffmpeg", "-y",
+        "-stream_loop", "-1", "-i", str(args.bottomvideo),
+        "-stream_loop", "-1", "-i", str(args.topvideo),
+        "-i", str(args.mu),
+        "-filter_complex", 
+        "[1:v][0:v]scale2ref[top][bottom];"
+        "[top]format=rgba,colorchannelmixer=aa=0.4[top_alpha];"
+        "[bottom][top_alpha]overlay=format=auto[outv]",
+        "-map", "[outv]", 
+        "-map", "2:a",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+        "-t", str(duration),
+        str(output_file)
+    ]
+    
+    logging.info(f"   🚀 Rendering Blend...")
+    try:
+        subprocess.run(cmd, check=True)
+        logging.info(f"   ✅ Done: {output_file}")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"   ❌ FFmpeg Failed: {e}")
 
 # --- CLASSES ---
 
@@ -242,9 +383,12 @@ class FrameUpscaler:
                 img = img.resize((target_w, target_h), Image.LANCZOS)
                 
                 # Flux Denoise (Add Detail)
-                # Load Bridge
-                config = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-schnell")
-                bridge = get_flux_bridge(config.path)
+                # Use Flux Schnell for Img2Img (Klein Img2Img is broken/unsupported for this pipeline)
+                flux_root = "/Volumes/XMVPX/mw/flux-root"
+                guidance_val = 0.0
+                
+                logging.info(f"   ✨ using Flux Schnell for Upscaling: {flux_root}")
+                bridge = get_flux_bridge(flux_root)
                 
                 # Prompt? "High resolution, sharp details, 4k"
                 enhanced = bridge.generate_img2img(
@@ -253,7 +397,8 @@ class FrameUpscaler:
                     width=target_w,
                     height=target_h,
                     strength=0.30, # Low strength to preserve geometry but add texture
-                    steps=4
+                    steps=4,
+                    guidance_scale=guidance_val
                 )
                 
                 if not enhanced: 
@@ -338,32 +483,33 @@ class FrameInterpolator:
                 # 2. Simple Blend (50%)
                 blended = Image.blend(img_a, img_b, 0.5)
                 
-                # 3. Flux Denoise (Img2Img)
-                # Strength 0.55 -> Enough to hallucinate smooth transitions but keep structure
-                config = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-schnell")
-                bridge = get_flux_bridge(config.path)
+                # 3. Flux Img2Img Tweening
+                # Use Flux Schnell (Klein is broken for Img2Img)
+                flux_root = "/Volumes/XMVPX/mw/flux-root"
+                guidance_val = 0.0
                 
-                # Prompt? Just describe movement or generic?
-                # "cinematic shot, smooth motion, high quality"
-                prompt = "cinematic aesthetic, smooth motion blur, high quality, consistent lighting"
-                w, h = blended.size
+                logging.info(f"   ✨ using Flux Schnell for Tweening: {flux_root}")
+                bridge = get_flux_bridge(flux_root)
                 
-                result = bridge.generate_img2img(
-                    prompt=prompt,
+                # Interpolation Prompt
+                # We want it to look like the blend but "resolved"
+                tween = bridge.generate_img2img(
+                    prompt="cinematic, motion blur, smooth transition, high quality",
                     image=blended,
-                    width=w, 
-                    height=h, 
-                    strength=0.55,
-                    steps=4
+                    width=blended.width,
+                    height=blended.height,
+                    strength=0.55, # Higher strength for tweening to hallucinate motion
+                    steps=4,
+                    guidance_scale=guidance_val
                 )
                 
-                if result:
-                    result.save(output_path)
+                if tween:
+                    tween.save(output_path)
                     return True
                 else:
                     return False
             except Exception as e:
-                logging.error(f"   ❌ Local Tween Failed: {e}")
+                logging.error(f"   ❌ Flux Tween Failed: {e}")
                 return False
 
         # --- LEGACY GEMINI LOGIC ---
@@ -428,6 +574,14 @@ def sort_frames(frame_list):
 
 def process(args):
     keys = load_keys()
+    
+    # --- VDJ MODE ---
+    if args.vvaudio:
+        # We handle output root differently for VDJ (simple file output)
+        out_root = Path(args.output).parent if args.output else Path.cwd()
+        run_vdj_blend(args, out_root)
+        return
+        
     if not keys:
         logging.error("❌ No keys found.")
         sys.exit(1)
@@ -804,31 +958,56 @@ def process(args):
     # So we should multiply base fps (which we'll assume is ~24 or 12?)
     
     # Safe Default: 24fps as base.
-    # If we expanded by args.x... wait.
-    # If we have 1 sec of audio and 12 frames.
-    # If we expand to 24 frames (x=2), and set FPS to 24, duration is 1 sec. Perfect.
-    # So if original was "Animation" (approx 12?), then 12 * x is correct.
-    # Let's assume input matches the expansion intent.
+    # We now detect input FPS if possible.
+    input_fps = 24.0
+    if input_video:
+        detected = get_fps(input_video)
+        if detected: 
+            input_fps = detected
+            logging.info(f"   🎥 Detected Input FPS: {input_fps:.2f}")
     
-    target_fps = 12 * args.x 
-    # Or should we just stick to 24?
-    # User usually wants 24fps final.
-    # Let's stick to 24 forced if no better info.
-    target_fps = 24
-    if args.local:
-        # If we did 2x interp, doubling frames. 12->24?
-        # If --more, we did 4x interp. 12->48?
-        # Assuming input is LTX generic (24fps?) post-interpolation.
-        # Actually usually if we interpolate we want SLOW MOTION or SMOOTHER MOTION.
-        # If we keep FPS same -> Slow Motion.
-        # If we increase FPS -> Smoother.
-        # "music-video" implies sync. So duration must match.
-        # If we have 4x frames, we need 4x FPS to keep duration.
-        base_fps = 24
-        multiplier = 2 if args.x > 1 else 1 # Simple assumption
-        if args.more: multiplier = 4
+    # Target FPS Logic:
+    # If we expanded frames by X, we must multiply FPS by X to keep same duration.
+    # e.g. 24fps input -> 2x frames -> 48fps output = Same Duration (Smoother)
+    # If user wants "Slow Motion", they presumably wouldn't use interpolation to fill the gaps, 
+    # or they would explicitly ask for standard FPS with more frames.
+    # But usually 'tweening' implies smoothing.
+    
+    target_fps = input_fps * args.x
+    if args.more:
+        # 'More' implies another 2x factor (total 4x)
+        # But wait, did we actually generate 4x frames?
+        # In process loop: "if args.more ... count_tweens..." logic might need review.
+        # Current logic: args.x frames. 
+        # Wait, lines 711 says `count_tweens = args.x - 1`. 
+        # If x=2, tween=1. Total=2.
+        # If 'more' is checked, we did secondary interpolation?
+        # Lines 726: if args.more: adds "simple_more" frames.
+        # A -> Simple -> Tween -> Simple -> B.
+        # That's 4 frames total per interval (Source, S, T, S... next Source).
+        # Actually Sequence: Source(A), Simple, Tween, Simple, Source(B).
+        # Intervals: 4. (A-S, S-T, T-S, S-B). Total frames approx 4x.
+        target_fps = input_fps * 4.0
         
-        target_fps = base_fps * multiplier
+    logging.info(f"   🎯 Target FPS: {target_fps:.2f} (Base {input_fps} * Expansion)")
+    
+    # Override for Local/Cloud legacy handling if needed? 
+    # No, strict math is better.
+    
+    # if args.local:
+    #     # If we did 2x interp, doubling frames. 12->24?
+    #     # If --more, we did 4x interp. 12->48?
+    #     # Assuming input is LTX generic (24fps?) post-interpolation.
+    #     # Actually usually if we interpolate we want SLOW MOTION or SMOOTHER MOTION.
+    #     # If we keep FPS same -> Slow Motion.
+    #     # If we increase FPS -> Smoother.
+    #     # "music-video" implies sync. So duration must match.
+    #     # If we have 4x frames, we need 4x FPS to keep duration.
+    #     base_fps = 24
+    #     multiplier = 2 if args.x > 1 else 1 # Simple assumption
+    #     if args.more: multiplier = 4
+    #     
+    #     target_fps = base_fps * multiplier
     
     # Check if we have audio
     audio_cmd = ""
@@ -857,8 +1036,9 @@ def process(args):
                 logging.info(f"   ⏱️ Audio: {audio_dur:.2f}s | Frames: {num_frames} | @{target_fps}fps = {expected_dur:.2f}s")
                 logging.info(f"   ⚠️ Delta: {diff:.2f}s")
                 
-                # 3. Stretch/Squeeze Threshold (10s) OR Forced Stitch
-                if diff <= 10.0 or args.stitch_audio:
+                # 3. Stretch/Squeeze Threshold (10s) OR Relative (25%) OR Forced Stitch
+                relative_diff = diff / audio_dur if audio_dur > 0 else 0
+                if diff <= 10.0 or relative_diff <= 0.25 or args.stitch_audio:
                     # Calculate Perfect FPS
                     new_fps = num_frames / audio_dur
                     logging.info(f"   ✨ Auto-Sync: Adjusting FPS {target_fps} -> {new_fps:.4f} to match audio (Stitch Mode: {args.stitch_audio}).")
@@ -951,15 +1131,24 @@ def main():
     parser.add_argument("--restyle", type=str, default=None, help="Restyle Mode (e.g. 'ascii').")
     parser.add_argument("--local", action="store_true", help="Run Locally (Flux Img2Img)")
     parser.add_argument("--more", action="store_true", help="Enable Secondary Interpolation/Upscale (4x Total)")
-    parser.add_argument("--mu", type=str, help="Audio File for Music Video Sync")
+    parser.add_argument("--mu", type=str, help="Audio File for Music Video Sync (or VDJ Mode)")
     parser.add_argument("--stitch-audio", action="store_true", help="Force-stitch frames to match audio duration (Ignore Delta).")
-    
+    parser.add_argument("--framerate", type=float, help="Retime video to specific FPS (e.g. 6.0).")
+
+    # VDJ Args
+    parser.add_argument("--vvaudio", action="store_true", help="Enable VDJ Blend Mode (Requires --bottomvideo, --topvideo, --mu)")
+    parser.add_argument("--bottomvideo", type=str, help="VDJ: Content for Bottom Layer (100%% Opacity)")
+    parser.add_argument("--topvideo", type=str, help="VDJ: Content for Top Layer (40%% Opacity)")
+
     args = parser.parse_args()
     
     # Unified Input
     args.input = args.input_flag or args.input_pos
     
-    if args.input:
+    if args.framerate and args.input:
+        # Special Mode: Retime
+        change_framerate(Path(args.input), args.framerate)
+    elif args.input or args.vvaudio:
         process(args)
     else:
         parser.print_help()

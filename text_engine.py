@@ -75,19 +75,57 @@ class TextEngine:
         
         # 0. Check Environment Variable Override (Highest Priority)
         # This allows movie_producer --local to force local mode without editing yaml
-        if os.environ.get("TEXT_ENGINE") == "local_gemma":
+        env_backend = os.environ.get("TEXT_ENGINE")
+        
+        if env_backend == "local_gemma":
              logging.info("   🔧 Overriding Text Engine Backend via ENV: local_gemma")
              self.backend = "local_gemma"
              # Optionally set model path if also in env, otherwise default
              self.local_model_path = os.environ.get("LOCAL_MODEL_PATH", "mlx-community/gemma-2-9b-it-4bit")
              self.local_adapter_path = os.environ.get("LOCAL_ADAPTER_PATH")
 
-        elif config_path and os.path.exists(config_path):
+        elif env_backend == "gemini_cloud":
+             logging.info("   ☁️  Overriding Text Engine Backend via ENV: gemini_cloud (Forcing Cloud)")
+             self.backend = "gemini_api"
+             # Skip profile check below
+        
+        # 0.5 Check active_models.json (Profile Priority)
+        # If the user has explicitly set their profile to a local text model, respect it!
+        elif True: # Use elif to chain correctly after the explicit overrides checking config logic... 
+            # Wait, the structure was: 
+            # if env == local: ...
+            # else: check profile
+            # So I should keep that structure but handle gemini_cloud
+            pass 
+            
+            try:
+                # Look for active_models.json in standard locations
+                am_candidates = [
+                    Path("active_models.json"),
+                    Path(__file__).parent / "active_models.json",
+                    Path(__file__).parent.parent.parent / "active_models.json"
+                ]
+                for am_path in am_candidates:
+                    if am_path.exists():
+                        with open(am_path, 'r') as f:
+                            profile = json.load(f)
+                            text_model = profile.get("text", "")
+                            # If model is gemma-2-9b-it (Local), switch backend
+                            if "gemma" in text_model or "local" in text_model:
+                                logging.info(f"   🔧 Active Profile ({text_model}) requests Local Backend.")
+                                self.backend = "local_gemma"
+                                # We leave paths to defaults or config (loaded below)
+                                # But we MUST ensure we don't accidentally revert to gemini later.
+                        break
+            except Exception as e:
+                pass # Fail silently, fall back to config
+
+        if config_path and os.path.exists(config_path):
             try:
                 with open(config_path, 'r') as f:
                     config = yaml.safe_load(f)
                     
-                # 1. Determine Backend
+                # 1. Determine Backend (Yaml Config overrides Profile)
                 if config and config.get("TEXT_ENGINE") == "local_gemma":
                     self.backend = "local_gemma"
                     custom_path = config.get("LOCAL_MODEL_PATH")
@@ -149,7 +187,12 @@ class TextEngine:
                 import mlx_lm
                 MLX_AVAILABLE = True
             except ImportError:
-                logging.error("[-] TextEngine: 'mlx_lm' not installed. Falling back to Gemini API.")
+                logging.error("[-] TextEngine: 'mlx_lm' not installed.")
+                if self.backend == "local_gemma":
+                     logging.error("❌ CRITICAL: Local Mode requested but MLX not found. Aborting to prevent accidental Cloud costs.")
+                     raise RuntimeError("MISSING_DEPENDENCY: mlx_lm is required for 'local_gemma' backend.")
+                
+                logging.error("Falling back to Gemini API.")
                 self.backend = "gemini_api"
                 return
 
@@ -179,11 +222,23 @@ class TextEngine:
         """
         if self.mlx_model is not None:
              logging.info("   🗑️  Unloading Text Engine from RAM...")
+             del self.mlx_model
+             del self.mlx_tokenizer
              self.mlx_model = None
              self.mlx_tokenizer = None
              
              import gc
              gc.collect()
+             
+             try:
+                 import mlx.core as mx
+                 if hasattr(mx, "clear_cache"):
+                    mx.clear_cache()
+                 else:
+                    mx.metal.clear_cache()
+             except:
+                 pass
+                 
              logging.info("   ✅ Text Engine Unloaded.")
              
     def _ensure_loaded(self):
@@ -442,7 +497,10 @@ class TextEngine:
         finally:
             # MEMORY OPTIMIZATION: Clear Metal Cache
             try:
-                mx.metal.clear_cache()
+                if hasattr(mx, "clear_cache"):
+                    mx.clear_cache()
+                else:
+                    mx.metal.clear_cache()
             except:
                 pass
 
@@ -458,7 +516,10 @@ class TextEngine:
         if self.backend == "local_gemma" and MLX_AVAILABLE:
             try:
                 import mlx.core as mx
-                mx.metal.clear_cache()
+                if hasattr(mx, "clear_cache"):
+                    mx.clear_cache()
+                else:
+                    mx.metal.clear_cache()
                 # logging.debug("   🧹 Metal Cache Cleared.")
             except:
                 pass

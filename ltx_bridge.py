@@ -2,7 +2,8 @@
 import os
 import torch
 import logging
-from diffusers import LTXPipeline, LTXImageToVideoPipeline
+# Direct submodule import to bypass broken auto_pipeline / transformers glue
+from diffusers.pipelines.ltx import LTXPipeline, LTXImageToVideoPipeline
 from diffusers.utils import export_to_video
 import gc
 
@@ -26,15 +27,43 @@ class LTXBridge:
         
         logging.info(f"   🌊 Loading LTX Pipeline (Txt2Vid) from: {self.model_path}...")
         try:
-            self.txt2vid_pipe = LTXPipeline.from_pretrained(
-                self.model_path,
-                torch_dtype=torch.float16, # bfloat16 might be better for MPS? Let's try float16 standard first.
-                use_safetensors=True
-            ).to(self.device)
+            if self.model_path.endswith(".safetensors"):
+                # Load T5 Encoder separately (required for this checkpoint)
+                from transformers import T5EncoderModel, T5Tokenizer
+                
+                base_dir = os.path.dirname(self.model_path)
+                te_path = os.path.join(base_dir, "text_encoder")
+                tok_path = os.path.join(base_dir, "tokenizer")
+                
+                if os.path.exists(te_path):
+                     logging.info(f"   🧩 Loading T5 Encoder from: {te_path}...")
+                     text_encoder = T5EncoderModel.from_pretrained(te_path, torch_dtype=torch.float16, use_safetensors=True)
+                     tokenizer = T5Tokenizer.from_pretrained(tok_path)
+                     
+                     self.txt2vid_pipe = LTXPipeline.from_single_file(
+                        self.model_path,
+                        text_encoder=text_encoder,
+                        tokenizer=tokenizer,
+                        torch_dtype=torch.float16,
+                        use_safetensors=True
+                     ).to(self.device)
+                else:
+                     # Fallback if no specific TE path found (will likely fail same as before)
+                     self.txt2vid_pipe = LTXPipeline.from_single_file(
+                        self.model_path,
+                        torch_dtype=torch.float16,
+                        use_safetensors=True
+                     ).to(self.device)
+            else:
+                self.txt2vid_pipe = LTXPipeline.from_pretrained(
+                    self.model_path,
+                    torch_dtype=torch.float16, 
+                    use_safetensors=True
+                ).to(self.device)
             
             # CPU Offload for Mac
             self.txt2vid_pipe.enable_model_cpu_offload()
-            self.txt2vid_pipe.enable_vae_tiling() # Maybe needed for 4K?
+            # self.txt2vid_pipe.enable_vae_tiling() # Not supported on LTXPipeline yet via diffusers
             
             logging.info("   ✅ LTX Txt2Vid Ready.")
         except Exception as e:
@@ -60,7 +89,7 @@ class LTXBridge:
             logging.error(f"   ❌ Failed to load LTX Img2Vid: {e}")
             raise e
 
-    def generate(self, prompt, output_path, width=768, height=512, num_frames=121, fps=24, seed=None, image_path=None):
+    def generate(self, prompt, output_path, width=768, height=512, num_frames=121, fps=24, seed=None, image_path=None, num_inference_steps=40, guidance_scale=3.0):
         """
         Generates video.
         If image_path is provided, uses Img2Vid.
@@ -110,8 +139,8 @@ class LTXBridge:
                     height=height,
                     width=width,
                     num_frames=num_frames,
-                    num_inference_steps=30,
-                    guidance_scale=3.0,
+                    num_inference_steps=num_inference_steps, 
+                    guidance_scale=guidance_scale, 
                     max_sequence_length=512,
                     generator=generator
                 )

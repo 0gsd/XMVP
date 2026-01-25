@@ -7,11 +7,16 @@ import torch
 import gc
 from pathlib import Path
 from diffusers import FluxPipeline
+try:
+    from flux_bridge import get_flux_bridge
+except ImportError:
+    logging.warning("FluxBridge unavailable. Image generation will fail.")
 import time
 from mvp_shared import Manifest, load_manifest, save_manifest, load_api_keys
 
 import itertools
 import random
+import shutil # Added for file moving
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -30,8 +35,8 @@ os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
 # --- Configuration ---
 import definitions
 # Retrieve Config from Registry
-FLUX_CACHE = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE]["flux-schnell"].path
-FLUX_REPO = "black-forest-labs/FLUX.1-schnell"
+FLUX_CACHE = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE]["flux-klein"].path
+FLUX_REPO = "black-forest-labs/FLUX.2-klein-9B"
 
 # --- VEO DIRECTOR (Inlined from action.py) ---
 
@@ -271,70 +276,21 @@ class LTXDirector:
             logging.error(f"❌ Failed to load LTX Bridge: {e}")
             sys.exit(1)
 
-    def generate(self, prompt, output_path, width=768, height=512, seed=None, image_path=None):
+    def generate(self, prompt, output_path, width=768, height=512, seed=None, image_path=None, num_frames=121):
         return self.bridge.generate(
             prompt=prompt,
             output_path=output_path,
             width=width,
             height=height,
             seed=seed,
-            image_path=image_path
+            image_path=image_path,
+            num_frames=num_frames
         )
 
 
-class FluxDirector:
-    def __init__(self):
-        self.pipe = None
-        
-    def load(self):
-        if self.pipe: return
-        
-        logging.info(f"⏳ Loading Flux.1 Schnell from {FLUX_CACHE}...")
-        try:
-            if not os.path.exists(FLUX_CACHE):
-                os.makedirs(FLUX_CACHE, exist_ok=True)
-                
-            self.pipe = FluxPipeline.from_pretrained(
-                FLUX_REPO,
-                cache_dir=FLUX_CACHE,
-                torch_dtype=torch.bfloat16
-            )
-            
-            if torch.backends.mps.is_available():
-                self.pipe.enable_model_cpu_offload()
-                logging.info("🚀 Flux loaded on MPS (CPU Offload enabled)")
-            else:
-                self.pipe.enable_model_cpu_offload()
-                logging.warning("⚠️ MPS not available. Using CPU Offload.")
-                
-        except Exception as e:
-            logging.error(f"❌ Failed to load Flux: {e}")
-            sys.exit(1)
 
-    def generate(self, prompt: str, width: int, height: int, output_path: str, seed: int = 42) -> bool:
-        try:
-            logging.info(f"   🎨 Painting: {prompt[:50]}...")
-            
-            # memory cleanup before acting
-            gc.collect()
-            if torch.backends.mps.is_available():
-                torch.mps.empty_cache()
-            
-            image = self.pipe(
-                prompt,
-                height=height,
-                width=width,
-                guidance_scale=0.0,
-                num_inference_steps=4,
-                max_sequence_length=512,
-                generator=torch.Generator("mps").manual_seed(seed)
-            ).images[0]
-            
-            image.save(output_path)
-            return True
-        except Exception as e:
-            logging.error(f"   ❌ Generation failed: {e}")
-            return False
+
+# FluxDirector removed. Replaced by flux_bridge usage.
 
 class VideoDirectorAdapter:
     """
@@ -513,14 +469,23 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
         
     # 3. Init Director
     director = None
+    director = None
     if mode == "image":
-        director = FluxDirector()
-        director.load()
+        # FLUX with Bridge
+        logging.info(f"   🌊 Initializing Flux Bridge from {FLUX_CACHE}...")
+        # Resolve Path via registry or default
+        try:
+            director = get_flux_bridge(FLUX_CACHE) # Using cache path as model path? 
+            # Wait, FLUX_CACHE is defined as definitions.MODAL_REGISTRY...path.
+            # If that path is a directory containing model, it works.
+        except Exception as e:
+            logging.error(f"Failed to load Flux Bridge: {e}")
+            return False
     elif mode == "video":
         local_mode = kwargs.get('local_mode', False)
         
         if local_mode:
-            logging.info("🎥 Mode: Video (Local LTX)")
+            logging.info("🎥 Mode: Video (Local LTX-First)")
             director = LTXDirector()
             director.load()
         else:
@@ -579,14 +544,23 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
         success = False
         if mode == "image":
              # Flux Logic
+             # Flux Logic
              seed = 42 + seg.id
-             success = director.generate(
+             
+             # Call Bridge
+             img = director.generate(
                 prompt=seg.prompt,
                 width=width,
                 height=height,
-                output_path=filepath,
-                seed=seed
+                seed=seed,
+                # Default steps=4, guidance=3.5
             )
+             
+             if img:
+                 img.save(filepath)
+                 success = True
+             else:
+                 success = False
         elif mode == "video":
             # Veo Logic
             # Context Logic: Use last wrapper file?
@@ -604,26 +578,11 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
             
             # action.VeoDirector expects "image" context usually.
             
-            local_mode = kwargs.get('local_mode', False)
-            
-            context_arg = None
-            if last_file:
-                # Extract frame? 
-                # extract_last_frame exists locally now.
-                if mode == "video":
-                     last_frame = extract_last_frame(str(last_file))
-                     if last_frame:
-                         context_arg = last_frame
-                else:
-                     context_arg = str(last_file) # For image-to-image/video?
-            
             if local_mode:
                 # LTX Logic with TruthSafety Fattening (Local Mode = True)
                 logging.info(f"   ✨ Enhancing Prompt for Local LTX (PG: {pg_mode})...")
                 try:
                     # We need an API key for TruthSafety (uses TextEngine internally)
-                    # We can use a random key or load keys. 
-                    # TruthSafety handles key loading if none provided.
                     cleaner = TruthSafety() 
                     fat_prompt = cleaner.refine_prompt(
                         seg.prompt, 
@@ -637,11 +596,40 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
                     fat_prompt = seg.prompt
 
                 seed = 42 + seg.id
+                
+                # Calculate Duration/Frames
+                # LTX prefers 8k + 1 frames usually (e.g. 121, 97, etc.)
+                # Seg has start_frame/end_frame (at assumed 24fps)
+                target_frames = seg.end_frame - seg.start_frame
+                
+                # Ensure acceptable LTX length
+                # Common LTX training buckets: 121 (~5s). 
+                # Let's try to match requested length but snap to 8k+1
+                # if target_frames < 16: target_frames = 17 
+                
+                # Snap to nearest 8k + 1
+                # k = round((target_frames - 1) / 8)
+                # snapped_frames = (k * 8) + 1
+                # Allow strictly what is requested if reasonable, else snap.
+                # Actually, LTX might handle arbitrary if not strict. 
+                # Let's enforce 8k+1 to be safe based on architecture.
+                
+                if target_frames < 33: target_frames = 33 # Minimum ~1.5s
+                
+                remainder = (target_frames - 1) % 8
+                if remainder != 0:
+                    target_frames = target_frames - remainder # Snap down
+                    
+                # Fix dimensions (must be divisible by 32)
+                t_width = (width // 32) * 32
+                t_height = (height // 32) * 32
+                
                 success = director.generate(
                     prompt=fat_prompt,
                     output_path=str(filepath),
-                    width=width,   # LTX supports width/height
-                    height=height, # LTX supports width/height
+                    width=t_width, 
+                    height=t_height,
+                    num_frames=target_frames,
                     seed=seed,
                     image_path=context_arg if context_arg else None # Img2Vid
                 )

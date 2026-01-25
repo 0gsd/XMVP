@@ -16,3 +16,4 @@ pillow
 pyloudnorm
 soundfile
 librosa
+sqlalchemy

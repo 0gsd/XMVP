@@ -6,7 +6,7 @@ import subprocess
 from typing import Optional
 from pathlib import Path
 from mvp_shared import CSSV, Constraints, VPForm, save_cssv
-# import librosa (Stubbed for MVP stability)
+import librosa
 import numpy as np
 # Monkeypatch for Scipy 1.13+ vs Librosa < 0.10 compatibility
 try:
@@ -244,18 +244,22 @@ def get_audio_duration(file_path):
 
 def analyze_audio(audio_path):
     """
-    Analyzes audio for Duration (Stubbed BPM).
+    Analyzes audio for Duration and BPM.
     Returns (duration, bpm)
     """
     try:
-        # y, sr = librosa.load(audio_path, sr=None)
-        # duration = librosa.get_duration(y=y, sr=sr)
-        duration = get_audio_duration(audio_path)
+        y, sr = librosa.load(audio_path, sr=None)
+        duration = librosa.get_duration(y=y, sr=sr)
+        # duration = get_audio_duration(audio_path) # Fallback to ffprobe if librosa fails? Librosa is better for exact sample count.
         
-        # tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-        # bpm = 120.0
-        bpm = 120.0 # Stub
-        
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        # tempo is usually a scalar, but can be array.
+        if isinstance(tempo, np.ndarray):
+            bpm = float(tempo[0])
+        else:
+            bpm = float(tempo)
+            
+        logging.info(f"   🎵 Librosa Analysis: {duration:.2f}s @ {bpm:.2f} BPM")
         return duration, bpm
     except Exception as e:
         logging.error(f"Audio analysis failed: {e}")
@@ -377,7 +381,7 @@ def main():
     parser.add_argument("--prompt", type=str, help="The core request/concept (The 'Situation')")
     parser.add_argument("--slength", type=float, default=60.0, help="Total Duration in Seconds")
     parser.add_argument("--flength", type=int, default=0, help="Total Duration in Frames (Overrides slength if set)")
-    parser.add_argument("--seg_len", type=float, default=8.0, help="Target Segment Length in Seconds")
+    parser.add_argument("--seg_len", type=float, default=4.0, help="Target Segment Length in Seconds (Default: 4.0 = Loose/Variable)")
     parser.add_argument("--cs", type=int, default=0, choices=[0, 2, 3, 4, 5, 6], help="Chaos Seeds: 0=Off. 2-6=Wikipedia Injection.")
     parser.add_argument("--out", type=str, default="bible.json", help="Output path for the CSSV Bible")
     

@@ -89,6 +89,10 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
         - Create a sequence of "Micro-Scenes" (Fast cuts, dialogue bits, action beats).
         - Focus ONLY on the immediate next segment of the plot. Do not rush to the ending unless we are near {total_duration_target}s.
         {pacing_instruction}
+        - PACING HEURISTIC: "1 Page = 1 Minute". 
+          * 60 seconds of screen time = ~1 page of standard screenplay format.
+          * 60 seconds = ~200 words of dialogue/action or 55 lines.
+          * Ensure your content density matches the requested duration.
         - TARGET QUANTITY: You need roughly {int(current_batch_target / (target_seg_len if is_strict_pacing else 5))} scenes for this batch.
         
         OUTPUT FORMAT (JSON List):

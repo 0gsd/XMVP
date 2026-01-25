@@ -17,6 +17,7 @@ import json
 import re
 import argparse
 import random
+import glob
 from pathlib import Path
 from PIL import Image
 
@@ -48,7 +49,7 @@ LIGHTING = [
     "soft studio lighting", "dramatic cinematic lighting", "natural window light", "hard rim lighting"
 ]
 
-def generate_char_prompts(char_name, movie_style, count=20):
+def generate_char_prompts(char_name, movie_style, count=20, anchor=None):
     """Generates prompts for characters."""
     prompts = []
     combined = []
@@ -63,7 +64,13 @@ def generate_char_prompts(char_name, movie_style, count=20):
         
     for i, (view, expr) in enumerate(selected):
         light = random.choice(LIGHTING)
-        p = f"A {view} of {char_name}, {expr}, {light}. {STYLE_PREFIX} {movie_style}"
+        desc = char_name
+        if anchor:
+            # Mix Name + Anchor
+            # "A portrait of Stanley, resembles Humphrey Bogart at age 45..."
+            desc = f"{char_name} (resembling {anchor})"
+            
+        p = f"A {view} of {desc}, {expr}, {light}. {STYLE_PREFIX} {movie_style}"
         prompts.append(p)
     return prompts
 
@@ -94,15 +101,45 @@ def generate_style_prompts(movie_style, count=10):
 def extract_locations(manifest):
     """Extracts INT./EXT. locations from segments/prompts."""
     locs = set()
-    regex = r"(?:INT\.|EXT\.)\s+([A-Z0-9\s\-\']+?)(?:\s+\-|\s*$)"
+    # Robust Regex: Handles "INT.", "EXT.", "INT/EXT" with optional quotes
+    # Capture group 1 is the main location name
+    regex = r"[\"']?(?:INT\.|EXT\.|INT/EXT|I/E)\s+([A-Z0-9\s\-\'.]+?)(?:\s+\-|\s*$|\s*[\"'])"
     
     if manifest.segs:
         for seg in manifest.segs:
             if seg.prompt:
-                match = re.search(regex, seg.prompt)
-                if match:
-                    locs.add(match.group(1).strip())
+                # Iterate matches to catch multiple locations if present
+                for match in re.finditer(regex, seg.prompt, re.IGNORECASE):
+                     raw_loc = match.group(1).strip()
+                     # Cleanup
+                     clean_loc = raw_loc.strip('"').strip("'").strip()
+                     if len(clean_loc) > 2:
+                         locs.add(clean_loc.upper())
     return list(locs)
+
+def is_valid_clean_char(c):
+    """Validates character names, filtering out metadata keys and syntax artifacts."""
+    if not c: return False
+    # Strip anchor tags first
+    c = re.sub(r'\{.*?\}', '', c)
+    c = c.split('[')[0] # Strip gender tags too if present
+    c = c.strip().strip('"').strip("'")
+    if len(c) < 2: return False
+    if len(c) > 30: return False
+    
+    # Reject syntactical junk (JSON artifacts often leave these)
+    if any(x in c for x in [":", "{", "}", "[", "]", "SCRIPT", "SCENE"]): return False
+    
+    # Blacklist common false positives from JSON dumps
+    blacklist = [
+        "ACTION", "DIALOGUE", "CUT TO", "FADE IN", "FADE OUT", 
+        "INT.", "EXT.", "CAMERA", "SFX", "MUSIC", 
+        "TIME_OF_DAY", "SETTING", "CHARACTER", "CHARACTERS", 
+        "TITLE", "SCENE_NUMBER", "SCENE_CONTENT", "LINES",
+        "SCENE", "SHEET"
+    ]
+    if c.upper() in blacklist: return False
+    return True
 
 def main():
     parser = argparse.ArgumentParser(description="XMVP Movie Asset Prepper")
@@ -147,9 +184,16 @@ def main():
                      elif ":" in p.content:
                          # Fallback parse
                          parts = p.content.split(":", 1)
-                         all_lines.append(DialogueLine(
-                             character=parts[0].strip(), text=parts[1].strip(), action="speaking", visual_focus=parts[0].strip()
-                         ))
+                         raw_char = parts[0].strip()
+                         
+                         # Sanitization
+                         # Remove quotes
+                         clean_char = raw_char.strip('"').strip("'").strip().upper()
+                         
+                         if is_valid_clean_char(clean_char):
+                             all_lines.append(DialogueLine(
+                                 character=clean_char, text=parts[1].strip(), action="speaking", visual_focus=clean_char
+                             ))
                          
                 manifest = Manifest(segs=segs, dialogue=DialogueScript(lines=all_lines))
             else:
@@ -164,11 +208,24 @@ def main():
         
     # Extract Title
     movie_title = "Unknown_Movie"
+    anchor_map = {}
     try:
         raw_story = load_xmvp(xml_path, "Story")
         if raw_story:
             story = json.loads(raw_story)
             movie_title = story.get("title", "Unknown_Movie").replace(" ", "_")
+            
+            # Build Anchor Map: "NAME" -> "Anchor Prompt"
+            # Chars are likely "Name (Role) [Gender] {Anchor}"
+            if story.get("characters"):
+                for c_str in story["characters"]:
+                    # check for {Anchor}
+                    anchor_match = re.search(r'\{(.*?)\}', c_str)
+                    if anchor_match:
+                        # Extract Name
+                        name_part = c_str.split("(")[0].split("[")[0].strip().upper()
+                        name_part = name_part.replace('"', '').replace("'", "")
+                        anchor_map[name_part] = anchor_match.group(1)
     except:
         pass
         
@@ -176,7 +233,10 @@ def main():
     chars = set()
     if manifest.dialogue and manifest.dialogue.lines:
         for line in manifest.dialogue.lines:
-            chars.add(line.character)
+            # Clean and Validate
+            clean = line.character.strip().strip('"').strip("'").upper()
+            if is_valid_clean_char(clean):
+                chars.add(clean)
             
     # Extract Locations
     locs = extract_locations(manifest)
@@ -239,14 +299,30 @@ def main():
     
     # 3. Init Bridge
     print("    🌊 Initializing Flux Bridge...")
-    flux_root = "/Volumes/XMVPX/mw/flux-root"
-    if not os.path.exists(flux_root):
-        flux_root = "/Volumes/XMVPX/mw/flux-schnell.safetensors"
+    
+    # Priority 1: Flux.2 [klein] 9B
+    klein_path = "/Volumes/XMVPX/mw/flux-root/klein-9b"
+    flux_path = klein_path
+    
+    # Priority 2: Standard Flux Schnell Root (Symlink?)
+    if not os.path.exists(flux_path):
+        flux_path = "/Volumes/XMVPX/mw/flux-root"
         
-    bridge = get_flux_bridge(flux_root)
+    # Priority 3: Old Safetensors fallback
+    if not os.path.exists(flux_path):
+        flux_path = "/Volumes/XMVPX/mw/flux-schnell.safetensors"
+        
+    print(f"       Target Model: {flux_path}")
+    bridge = get_flux_bridge(flux_path)
     if not bridge:
         print("[-] Bridges burnt. Aborting.")
         sys.exit(1)
+        
+    # Determine Guidance based on Model
+    # Klein 9B typically needs guidance ~3.5. Schnell needs 0.0.
+    # Logic: if path contains "klein", use 3.5. Else 0.0.
+    guidance = 3.5 if "klein" in str(flux_path).lower() else 0.0
+    print(f"       Guidance Scale: {guidance}")
 
     # 4. Generate Assets
     metadata = []
@@ -262,7 +338,7 @@ def main():
             
         print(f"       + {fname} | {prompt[:40]}...")
         # 512x512 for Speed + LoRA Standard
-        img = bridge.generate(prompt, width=512, height=512, steps=4)
+        img = bridge.generate(prompt, width=512, height=512, steps=4, guidance_scale=guidance)
         if img:
             img.save(fpath)
         else:
@@ -339,8 +415,35 @@ def main():
 
     for char in chars:
         print(f"    📸 Shooting Character: {char}")
-        prompts = generate_char_prompts(char, style_core, count=20)
         clean_name = char.replace(" ", "_").lower()
+        
+        # --- PERSISTENCE CHECK ---
+        # Check for existing images
+        existing_pattern = os.path.join(dataset_dir, f"char_{clean_name}_*.jpg")
+        existing_files = glob.glob(existing_pattern)
+        
+        if len(existing_files) >= 6 and not args.force:
+             print(f"       ✨ canon found ({len(existing_files)} images). Skipping generation.")
+             # Add existing to metadata
+             for ef in existing_files:
+                 ename = os.path.basename(ef)
+                 # We don't have the original prompt cleanly mapped unless we read old metadata 
+                 # or just use a generic one. For now, empty prompt or reconstruct?
+                 # content_producer/training usually needs a caption. 
+                 # If we skip, we might miss adding them to the NEW metadata file if we are rewriting it.
+                 # The script rewrites metadata.jsonl at the end.
+                 # So we MUST add them to `metadata` list here.
+                 p_text = f"A portrait of {char}" # Fallback
+                 metadata.append({"file_name": ename, "text": p_text})
+             continue
+        # -------------------------
+ 
+        # Lookup Anchor
+        anchor_text = anchor_map.get(char, None)
+        if anchor_text:
+            print(f"       ⚓ Anchor Found: {anchor_text}")
+        
+        prompts = generate_char_prompts(char, style_core, count=10, anchor=anchor_text) # Reduced from 20 -> 10
         
         generated_files = []
         
@@ -351,20 +454,11 @@ def main():
             if os.path.exists(fpath):
                  generated_files.append(fpath)
             
-            # Metadata is appended blindly, but we should probably only modify metadata for KEPT files?
-            # Or we filter metadata later?
-            # Existing loop appends to `metadata` list immediately.
-            # We should probably filter `metadata` list based on kept files.
-            # But the current architecture separates Generation from Metadata writing.
-            # Quick fix: Add to metadata ONLY if file exists at end.
-            
         # Cull
         if generated_files:
-            kept = cull_outliers(generated_files, keep_count=10)
+            kept = cull_outliers(generated_files, keep_count=6) # Reduced from 10 -> 6
             
-            # Update metadata list for this character
-            # (Re-generate prompts for kept files? No, we need to map file -> prompt)
-            # Let's map fname -> prompt locally
+            # Map fname -> prompt locally
             local_map = {f"char_{clean_name}_{i:02d}.jpg": p for i, p in enumerate(prompts)}
             
             for kpath in kept:

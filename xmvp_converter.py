@@ -221,31 +221,95 @@ def setup_gemma_director():
 
 # --- GENESIS HELPERS ---
 
-def load_random_inspiration():
-    """Returns (ATU_Theme, TLP_Axiom)"""
+def get_best_inspiration(engine=None, content_snippet=None):
+    """
+    Returns (ATU_Theme, TLP_Axiom)
+    If engine & content_snippet provided, asks LLM to pick best ATU.
+    Else, random.
+    """
     atu_theme = "ATU 300: The Dragon Slayer"
     tlp_axiom = "The world is everything that is the case."
     
     # Load ATU
-    atu_path = MV_ROOT / "atui_235.md"
+    atu_options = []
+    atu_path = MV_ROOT / "z_training_data" / "atui_235.md"
     if atu_path.exists():
         try:
             full = atu_path.read_text(encoding='utf-8')
-            lines = [l.strip() for l in full.split('\n') if "* **ATU" in l]
-            if lines: atu_theme = random.choice(lines).replace("* **", "").replace("**", "")
+            atu_options = [l.replace("*", "").strip() for l in full.split('\n') if "**ATU" in l]
         except: pass
-        
+
     # Load TLP
-    tlp_path = MV_ROOT / "tlp.md"
+    tlp_options = []
+    tlp_path = MV_ROOT / "z_training_data" / "tlp.md"
     if tlp_path.exists():
         try:
             full = tlp_path.read_text(encoding='utf-8')
-            # Paragraphs in TLP are separated by blank lines. We want a juicy one.
-            paras = [p.strip() for p in full.split('\n\n') if len(p) > 20 and not p[0].isdigit()]
-            if paras: tlp_axiom = random.choice(paras)
+            tlp_options = [p.strip() for p in full.split('\n\n') if len(p) > 20 and not p[0].isdigit()]
         except: pass
+
+    # Smart Selection (if Engine available and Content exists)
+    if engine and content_snippet and atu_options:
+        logging.info("   🧠 Analyzing Script for Best ATU Theme...")
+        prompt = f"""
+        ANALYZE this story summary and SELECT the single most appropriate Aarne-Thompson-Uther (ATU) Tale Type from the list below.
+        
+        Story Snippet:
+        {content_snippet[:3000]}
+        
+        Available Themes:
+        {json.dumps(atu_options)} 
+        (Pick best match)
+        
+        Task: Return ONLY the selected ATU string (e.g. "ATU 300: The Dragon Slayer").
+        """
+        try:
+            # Quick cheaper call
+            selected = engine.generate(prompt, temperature=0.3)
+            if "ATU" in selected:
+                # Cleanup
+                for opt in atu_options:
+                    if opt in selected:
+                        atu_theme = opt
+                        break
+                # Fallback if fuzzy match failed but string looks right
+                if "ATU" in selected and len(selected) < 100:
+                     atu_theme = selected.strip().strip('"')
+            logging.info(f"   🎯 Targeted Theme: {atu_theme}")
+        except Exception as e:
+            logging.warning(f"   ⚠️ Smart Theme Select Failed: {e}")
+    else:
+        # Random (Genesis or Fallback)
+        import time
+        random.seed(time.time())
+        if atu_options: atu_theme = random.choice(atu_options)
+        
+    if tlp_options:
+        tlp_axiom = random.choice(tlp_options)
             
     return atu_theme, tlp_axiom
+
+    return atu_theme, tlp_axiom
+
+def get_celebrity_anchor(gender):
+    """Returns a visual anchor (deceased historical actor) for consistent facial generation."""
+    mou = [
+        "Humphrey Bogart", "Cary Grant", "James Stewart", "Marlon Brando", "Alec Guinness",
+        "Richard Burton", "Peter O'Toole", "Montgomery Clift", "John Cazale", "Philip Seymour Hoffman",
+        "Oliver Reed", "James Mason", "Buster Keaton", "Rudolph Valentino", "Orson Welles",
+        "Leslie Howard", "Fredric March", "Charles Laughton", "Robert Mitchum", "Henry Fonda"
+    ]
+    fem = [
+        "Katharine Hepburn", "Bette Davis", "Audrey Hepburn", "Ingrid Bergman", "Grace Kelly",
+        "Marilyn Monroe", "Vivien Leigh", "Elizabeth Taylor", "Judy Garland", "Lauren Bacall",
+        "Joan Crawford", "Barbara Stanwyck", "Greta Garbo", "Ava Gardner", "Hedy Lamarr",
+        "Gene Tierney", "Rita Hayworth", "Mochelle Pfeiffer", "Gena Rowlands", "Jeanne Moreau"
+    ]
+    pool = mou if gender == "Male" else fem
+    anchor = random.choice(pool)
+    # Add random age for variety 
+    age = random.choice(["25", "35", "45", "55", "65"])
+    return f"{anchor} at age {age}"
 
 def process_file(input_path, args):
     # GENESIS MODE CHECK
@@ -256,31 +320,89 @@ def process_file(input_path, args):
     if not input_path or input_path == "GENERATE":
         genesis_mode = True
         logging.info("✨✨✨ GENESIS MODE ACTIVATED ✨✨✨")
-        atu, tlp = load_random_inspiration()
-        logging.info(f"   📚 Theme: {atu}")
-        logging.info(f"   🧠 Philosophy: {tlp}")
+        
+        # Genesis: No content yet, random inspiration
+        # For Painter mode, we do individual assignment later, so skip global assignment logging to avoid confusion
+        if args.vpform != "painter":
+            atu, tlp = get_best_inspiration()
+            logging.info(f"   📚 Theme: {atu}")
+            logging.info(f"   🧠 Philosophy: {tlp}")
+        else:
+            # Placeholder to be overwritten
+            atu = "Multifaceted Painter Themes"
+            tlp = "Multifaceted Wittgenstein Propositions"
         
         # Default duration 1h 40m if not set
         if not args.slength: args.slength = 6000
     else:
-        filename = Path(input_path).name
+        path_obj = Path(input_path)
+        filename = path_obj.name
         logging.info(f"📄 Ingesting: {filename}")
-        try:
-            content = Path(input_path).read_text(encoding='utf-8', errors='ignore')
-        except Exception as e:
-            logging.error(f"Failed to read file: {e}")
-            return
+        
+        # --- XML RE-INGESTION SUPPORT ---
+        if path_obj.suffix.lower() == '.xml':
+            logging.info("   🔄 Detected XMVP XML input. Flattening to text for re-processing...")
+            try:
+                # Load the XML using shared loader or manual extraction
+                # Since we want to use xmvp_converter logic on the CONTENT, we extract prompts.
+                from mvp_shared import load_xmvp
+                # load_xmvp returns a dict structure
+                # We need to use load_xmvp carefully or just regex/json parse plain text to avoid class issues
+                # Let's try to just read it as text and extract the json blocks
+                raw_xml = path_obj.read_text(encoding='utf-8', errors='ignore')
+                
+                # Extract Manifest JSON
+                import re
+                m_match = re.search(r'<Manifest>(.*?)</Manifest>', raw_xml, re.DOTALL)
+                if m_match:
+                     m_json = json.loads(m_match.group(1))
+                     segs = m_json.get('segs', [])
+                     # Reconstruct script from prompts or script_content
+                     lines = []
+                     for s in segs:
+                         # Use script_content if available and robust, else prompt
+                         txt = s.get('script_content', '')
+                         if not txt or len(txt) < 5:
+                             txt = s.get('prompt', '')
+                         lines.append(txt)
+                     
+                     content = "\n\n".join(lines)
+                     logging.info(f"   ✅ Extracted {len(segs)} segments as source text.")
+                else:
+                     logging.error("   ❌ Could not parse <Manifest> in XML.")
+                     return
+                     
+            except Exception as e:
+                logging.error(f"   ❌ XML Extraction Failed: {e}")
+                return
+        # --------------------------------
+        else:
+            try:
+                content = path_obj.read_text(encoding='utf-8', errors='ignore')
+            except Exception as e:
+                logging.error(f"Failed to read file: {e}")
+                return
+            
+        # Standard: Inspiration happens LATER after engine init so we can pass content
+        atu = None
+        tlp = None
 
     # 2. Config Engines
-    if args.vpform in ["parody-movie", "comedy", "thriller", "movies-movie"] or args.local or genesis_mode:
+    if args.vpform in ["parody-movie", "comedy", "thriller", "movies-movie", "painter"] or args.local or genesis_mode:
         logging.info("   🧠 Initializing GemmaW (Director Mode)...")
         engine = setup_gemma_director()
     else:
         engine = get_engine()
 
+    # 2b. Smart Inspiration (Standard Mode)
+    if not genesis_mode and not atu:
+         atu, tlp = get_best_inspiration(engine, content)
+         logging.info(f"   📚 Smart-Selected Theme: {atu}")
+         logging.info(f"   🧠 Philosophy: {tlp}")
+
     # 3. Analyze / Genre Concept
     rewrite_target = None
-    if args.vpform in ["parody-movie", "comedy", "thriller"]:
+    if args.vpform in ["parody-movie", "comedy", "thriller", "painter"]:
         rewrite_target = args.vpform
     # In Genesis mode, if no vpform specified, default to "Drama" or use args.vpform
     if genesis_mode and not rewrite_target:
@@ -291,70 +413,266 @@ def process_file(input_path, args):
     logline = f"The story of {title}."
     
     if genesis_mode:
-        # GENESIS CONCEPT
-        title = "Untitled Genesis Project"
-        genre_display = rewrite_target.replace("-", " ").title()
-        
-        logging.info(f"   ⚛️  Synthesizing Concept ({genre_display})...")
-        prompt = f"""
-        CREATE A MOVIE CONCEPT from scratch.
-        Genre: {genre_display}
-        Core Theme (Aarne-Thompson-Uther): {atu}
-        Philosophical Undertone (Wittgenstein): "{tlp}"
-        
-        Task:
-        1. Invent a Title.
-        2. Write a Logline.
-        3. Create a Cast of Characters (Names & Roles).
-        
-        OUTPUT JSON: {{ "new_title": "...", "logline": "...", "characters": ["Name (Role)", ...] }}
-        """
-        try:
-            raw = engine.generate(prompt, json_schema=True)
-            data = json.loads(engine._clean_json_output(raw))
-            if isinstance(data, list) and data: data = data[0]
+        if rewrite_target == "painter":
+             # PAINTER GENRE HANDLING (Genesis)
+             logging.info("   🎨 Synthesizing PAINTER Concept (Pinter-esque)...")
+             
+             # 1. Characters: 2 to 6, equal split
+             num_chars = random.choice([2, 4, 6]) 
+             half = num_chars // 2
+             genders = ["Male"] * half + ["Female"] * half
+             random.shuffle(genders)
+             
+             # 2. Assign Invisibles (ATU + TLP)
+             all_atus = []
+             atu_path = MV_ROOT / "z_training_data" / "atui_235.md"
+             if atu_path.exists():
+                 try: 
+                     all_atus = [l.replace("*", "").strip() for l in atu_path.read_text(encoding='utf-8').split('\n') if "**ATU" in l]
+                 except: pass
+             
+             all_tlps = []
+             tlp_path = MV_ROOT / "z_training_data" / "tlp.md"
+             if tlp_path.exists():
+                try:
+                    all_tlps = [p.strip() for p in tlp_path.read_text(encoding='utf-8').split('\n\n') if len(p) > 20 and not p[0].isdigit()]
+                except: pass
+                
+             # Safe sampling
+             if len(all_atus) < num_chars: all_atus = ["Generic Theme"] * num_chars
+             if len(all_tlps) < num_chars: all_tlps = ["Generic Axiom"] * num_chars
+             
+             assigned_atus = random.sample(all_atus, num_chars)
+             assigned_tlps = random.sample(all_tlps, num_chars)
+             
+             painter_chars = []
+             for i in range(num_chars):
+                 painter_chars.append({
+                     "gender": genders[i],
+                     "id": i,
+                     "atu": assigned_atus[i],
+                     "tlp": assigned_tlps[i]
+                 })
+                 
+             # 3. Prompt for Names
+             char_prompt = f"""
+             Create {num_chars} characters for a Harold Pinter style play.
+             Format: JSON list of objects {{ "name": "...", "role": "...", "id": ... }}
+             Constraints:
+             - {half} Men, {half} Women.
+             - Roles should be vague (e.g. "The Lodger", "The Wife", "The Visitor").
+             - Names should be simple, British (e.g. Stanley, Meg, Goldberg).
+             """
+             try:
+                 raw_c = engine.generate(char_prompt, json_schema=True)
+                 char_data = json.loads(engine._clean_json_output(raw_c))
+                 if isinstance(char_data, dict) and "characters" in char_data: char_data = char_data["characters"]
+                 
+                 final_chars = []
+                 for i, c_def in enumerate(char_data[:num_chars]):
+                     p_char = painter_chars[i]
+                     # Assign Visual Anchor
+                     anchor = get_celebrity_anchor(p_char["gender"])
+                     final_chars.append({
+                         "name": c_def.get("name", f"Person {i}"),
+                         "role": c_def.get("role", "Participant"),
+                         "gender": p_char["gender"],
+                         "anchor": anchor,
+                         "secret_atu": p_char["atu"],
+                         "secret_tlp": p_char["tlp"]
+                     })
+                 
+                 # {Name (Role) [Gender] {Anchor}}
+                 mapping = {c["name"]: f"{c['name']} ({c['role']}) [{c['gender']}] {{{c['anchor']}}}" for c in final_chars}
+                 painter_context = final_chars 
+                 
+                 # Generate a unique Pinter-esque title
+                 title_prompt = "Invent a title for a Harold Pinter style play. It should be obscure, mundane, or ominous. Do NOT use existing Pinter titles (e.g. No 'Homecoming', 'Caretaker', 'Birthday Party'). Examples: 'The Dumb Waiter', 'Celebration', 'The Hothouse', 'Family Voices', 'A Kind of Alaska'. Output ONLY the title."
+                 try:
+                     raw_title = engine.generate(title_prompt, json_schema=False).strip().strip('"').strip("'")
+                     if len(raw_title) > 5:
+                         title = raw_title
+                     else:
+                         title = f"The {random.choice(['Room', 'Party', 'Homecoming', 'Caretaker', 'Collection', 'Lover', 'Tea Party'])} at No. {random.randint(1,99)}"
+                 except:
+                      title = f"The {random.choice(['Room', 'Party', 'Homecoming', 'Caretaker', 'Collection', 'Lover', 'Tea Party'])} at No. {random.randint(1,99)}"
+                 
+                 logline = f"A group of {num_chars} people in a room, avoiding the truth."
+                 
+                 logging.info(f"      🎭 Pinter Cast Generated:")
+                 for c in final_chars:
+                     logging.info(f"         👤 {c['name']} ({c['role']}) [{c['gender']}]")
+                     logging.info(f"            SECRET ATU: {c['secret_atu']}")
+                     logging.info(f"            SECRET TLP: {c['secret_tlp']}")
+                 
+             except Exception as e:
+                 logging.warning(f"Failed to generate painter characters: {e}")
+                 mapping = {"Person A": "Person A (Unknown)", "Person B": "Person B (Unknown)"}
+                 painter_context = [
+                    {"name": "Person A", "gender": "Male", "secret_atu": "Generic", "secret_tlp": "Generic"},
+                    {"name": "Person B", "gender": "Female", "secret_atu": "Generic", "secret_tlp": "Generic"}
+                 ]
+        else:
+            # GENESIS CONCEPT
+            title = "Untitled Genesis Project"
+            genre_display = rewrite_target.replace("-", " ").title()
             
-            title = data.get("new_title", "Genesis Movie")
-            logline = data.get("logline", "A movie created from nothing.")
-            mapping = {c.split('(')[0].strip(): c for c in data.get("characters", [])}
-            logging.info(f"      📽️  Title: {title}")
-            logging.info(f"      📝 Logline: {logline}")
-        except Exception as e:
-            logging.warning(f"   ⚠️ Genesis Concept Failed: {e}")
+            logging.info(f"   ⚛️  Synthesizing Concept ({genre_display})...")
+            prompt = f"""
+            CREATE A MOVIE CONCEPT from scratch.
+            Genre: {genre_display}
+            Core Theme (Aarne-Thompson-Uther): {atu}
+            Philosophical Undertone (Wittgenstein): "{tlp}"
+            
+            Task:
+            1. Invent a Title.
+            2. Write a Logline.
+            3. Create a Cast of Characters (Names & Roles).
+            
+            OUTPUT JSON: {{ "new_title": "...", "logline": "...", "characters": ["Name (Role)", ...] }}
+            """
+            try:
+                raw = engine.generate(prompt, json_schema=True)
+                data = json.loads(engine._clean_json_output(raw))
+                if isinstance(data, list) and data: data = data[0]
+                
+                title = data.get("new_title", "Genesis Movie")
+                logline = data.get("logline", "A movie created from nothing.")
+                mapping = {c.split('(')[0].strip(): c for c in data.get("characters", [])}
+                logging.info(f"      📽️  Title: {title}")
+                logging.info(f"      📝 Logline: {logline}")
+            except Exception as e:
+                logging.warning(f"   ⚠️ Genesis Concept Failed: {e}")
             
     elif rewrite_target:
+        # PAINTER GENRE HANDLING
+        if rewrite_target == "painter":
+             logging.info("   🎨 Synthesizing PAINTER Concept (Pinter-esque)...")
+             
+             # 1. Characters: 2 to 6, equal split
+             num_chars = random.choice([2, 4, 6]) # user requested 2, 4, or 6
+             # Logic: "equal number of men and women if the number is even" - 
+             # Since we only chose even numbers (2,4,6), we always split equally.
+             half = num_chars // 2
+             genders = ["Male"] * half + ["Female"] * half
+             random.shuffle(genders)
+             
+             # 2. Assign Invisibles (ATU + TLP)
+             # We need to load ALL TLP/ATU options to sample unique ones
+             # Re-using the logic from get_best_inspiration but forced bulk load
+             all_atus = []
+             atu_path = MV_ROOT / "z_training_data" / "atui_235.md"
+             if atu_path.exists():
+                 try: 
+                     all_atus = [l.replace("*", "").strip() for l in atu_path.read_text(encoding='utf-8').split('\n') if "**ATU" in l]
+                 except: pass
+             
+             all_tlps = []
+             tlp_path = MV_ROOT / "z_training_data" / "tlp.md"
+             if tlp_path.exists():
+                try:
+                    all_tlps = [p.strip() for p in tlp_path.read_text(encoding='utf-8').split('\n\n') if len(p) > 20 and not p[0].isdigit()]
+                except: pass
+                
+             # Safe sampling
+             if len(all_atus) < num_chars: all_atus = ["Generic Theme"] * num_chars
+             if len(all_tlps) < num_chars: all_tlps = ["Generic Axiom"] * num_chars
+             
+             assigned_atus = random.sample(all_atus, num_chars)
+             assigned_tlps = random.sample(all_tlps, num_chars)
+             
+             painter_chars = []
+             for i in range(num_chars):
+                 painter_chars.append({
+                     "gender": genders[i],
+                     "id": i,
+                     "atu": assigned_atus[i],
+                     "tlp": assigned_tlps[i]
+                 })
+                 
+             # 3. Prompt for Names/Roles
+             char_prompt = f"""
+             Create {num_chars} characters for a Harold Pinter style play.
+             Format: JSON list of objects {{ "name": "...", "role": "...", "id": ... }}
+             Constraints:
+             - {half} Men, {half} Women.
+             - Roles should be vague (e.g. "The Lodger", "The Wife", "The Visitor").
+             - Names should be simple, British (e.g. Stanley, Meg, Goldberg).
+             """
+             try:
+                 raw_c = engine.generate(char_prompt, json_schema=True)
+                 char_data = json.loads(engine._clean_json_output(raw_c))
+                 if isinstance(char_data, dict) and "characters" in char_data: char_data = char_data["characters"]
+                 
+                 # Merge generated names with assigned invisibles
+                 final_chars = []
+                 for i, c_def in enumerate(char_data[:num_chars]):
+                     # Find matching internal struct
+                     p_char = painter_chars[i]
+                     # Assign Visual Anchor
+                     anchor = get_celebrity_anchor(p_char["gender"])
+                     final_chars.append({
+                         "name": c_def.get("name", f"Person {i}"),
+                         "role": c_def.get("role", "Participant"),
+                         "gender": p_char["gender"],
+                         "anchor": anchor,
+                         "secret_atu": p_char["atu"],
+                         "secret_tlp": p_char["tlp"]
+                     })
+                 
+                 # {Name (Role) [Gender] {Anchor}}
+                 mapping = {c["name"]: f"{c['name']} ({c['role']}) [{c['gender']}] {{{c['anchor']}}}" for c in final_chars}
+                 painter_context = final_chars # Save for beat loop
+                 title = f"The {random.choice(['Room', 'Party', 'Homecoming', 'Caretaker', 'Collection', 'Lover', 'Tea Party'])} at No. {random.randint(1,99)}"
+                 logline = f"A group of {num_chars} people in a room, avoiding the truth."
+                 
+                 logging.info(f"      🎭 Pinter Cast Generated:")
+                 for c in final_chars:
+                     logging.info(f"         👤 {c['name']} ({c['role']}) [{c['gender']}]")
+                     logging.info(f"            SECRET ATU: {c['secret_atu']}")
+                     logging.info(f"            SECRET TLP: {c['secret_tlp']}")
+                 
+             except Exception as e:
+                 logging.warning(f"Failed to generate painter characters: {e}")
+                 mapping = {"Person A": "Person A (Unknown)", "Person B": "Person B (Unknown)"}
+                 painter_context = [
+                    {"name": "Person A", "gender": "Male", "secret_atu": "Generic", "secret_tlp": "Generic"},
+                    {"name": "Person B", "gender": "Female", "secret_atu": "Generic", "secret_tlp": "Generic"}
+                 ]
+
         # REWRITE CONCEPT (Existing Logic)
-        genre_display = rewrite_target.replace("-", " ").title()
-        if rewrite_target == "parody-movie": genre_display = "Comedic Parody"
-        
-        logging.info(f"   🎭 Generating {genre_display} Concept...")
-        
-        rename_instruction = "Create unique, creative names for ALL characters and Major Locations to fit the new genre."
-        
-        prompt = f"""
-        Analyze this script snippet and create a concept for a {genre_display} version.
-        Original Title: {title}
-        Snippet: {content[:4000]}
-        
-        Task: 
-        1. Create a new Title.
-        2. Create a Logline that shifts the genre to {genre_display}.
-        3. {rename_instruction}
-        
-        OUTPUT JSON: {{ "new_title": "...", "logline": "...", "mapping": {{ "OldName": "NewName", "OldLocation": "NewLocation" }} }}
-        """
-        try:
-            raw = engine.generate(prompt, json_schema=True)
-            data = json.loads(engine._clean_json_output(raw))
-            # Handle list wrapper if any
-            if isinstance(data, list) and data: data = data[0]
+        elif rewrite_target:
+            genre_display = rewrite_target.replace("-", " ").title()
+            if rewrite_target == "parody-movie": genre_display = "Comedic Parody"
             
-            title = data.get("new_title", data.get("parody_title", f"{genre_display} of {title}"))
-            logline = data.get("logline", logline)
-            mapping = data.get("mapping", {})
-            logging.info(f"      start -> {title}")
-        except Exception as e:
-            logging.warning(f"   ⚠️ Concept Gen Failed: {e}")
+            logging.info(f"   🎭 Generating {genre_display} Concept...")
+            
+            rename_instruction = "Create unique, creative names for ALL characters and Major Locations to fit the new genre."
+            
+            prompt = f"""
+            Analyze this script snippet and create a concept for a {genre_display} version.
+            Original Title: {title}
+            Snippet: {content[:4000]}
+            
+            Task: 
+            1. Create a new Title.
+            2. Create a Logline that shifts the genre to {genre_display}.
+            3. {rename_instruction}
+            
+            OUTPUT JSON: {{ "new_title": "...", "logline": "...", "mapping": {{ "OldName": "NewName", "OldLocation": "NewLocation" }} }}
+            """
+            try:
+                raw = engine.generate(prompt, json_schema=True)
+                data = json.loads(engine._clean_json_output(raw))
+                # Handle list wrapper if any
+                if isinstance(data, list) and data: data = data[0]
+                
+                title = data.get("new_title", data.get("parody_title", f"{genre_display} of {title}"))
+                logline = data.get("logline", logline)
+                mapping = data.get("mapping", {})
+                logging.info(f"      start -> {title}")
+            except Exception as e:
+                logging.warning(f"   ⚠️ Concept Gen Failed: {e}")
 
     # 4. Chunk into 24 Beats
     logging.info("   🔪 Chunking into 24 Hero's Journey Beats...")
@@ -380,21 +698,68 @@ def process_file(input_path, args):
             if processed_segs:
                 prev_context = f"PREVIOUSLY: {processed_segs[-1]['script_content'][-500:]}"
             
-            prompt = f"""
-            WRITE A SCENE for the movie "{title}".
-            Genre: {genre_display if 'genre_display' in locals() else args.vpform}
-            Beat Function: {beat_info['name']} ({beat_info['desc']})
-            Characters: {list(mapping.values())}
+            if rewrite_target == "painter":
+                 # PAINTER SPECIFIC GENERATION
+                 # Pacing: 1 minute per page.
+                 # Total Pages = slength / 60.
+                 # Pages per beat (24 beats) = (slength/60) / 24.
+                 total_pages = (args.slength if args.slength else 6000) / 60.0
+                 pages_per_beat = max(0.5, total_pages / 24.0)
+                 
+                 # Location Logic: "one or at most two interior locations"
+                 # Let's say beats 1-12 in Room A, 13-24 in Room B (if 2 rooms) or random?
+                 # Pinter usually stays in one room. Let's flip a coin for a "Location Switch" at Midpoint (Beat 12).
+                 loc_name = "The Living Room (Bland, Featureless)"
+                 if i > 12 and random.random() > 0.5:
+                      loc_name = "The Other Room (Equally Bland)"
+                      
+                 # Character Selection: "2 to 6 characters"
+                 # In a beat, maybe not ALL are present?
+                 # Let's pick a subset (at least 2) for the argument.
+                 present_chars = random.sample(painter_context, k=random.randint(2, len(painter_context)))
+                 
+                 char_context_str = "\n".join([f"- {c['name']} ({c['gender']}): Driven by \"{c['secret_atu']}\" and believes \"{c['secret_tlp']}\"" for c in present_chars])
+                 
+                 prompt = f"""
+                 WRITE A SCENE for a Harold Pinter style play.
+                 Scene Length: EXACTLY {pages_per_beat:.1f} PAGES.
+                 Setting: {loc_name}.
+                 
+                 Characters Present:
+                 {char_context_str}
+                 
+                 Narrative Beat: {beat_info['name']} ({beat_info['desc']})
+                 
+                 STYLE GUIDE:
+                 - The room is bland and featureless. Describe NOTHING about the decor.
+                 - Structure: {pages_per_beat:.1f} pages of dialogue.
+                 - Content: An inscrutable, witty, clever, complication argument.
+                 - They are arguing about something trivial, but neither addresses the REAL issue directly.
+                 - Use the characters' HIDDEN MOTIVATIONS (ATU/TLP) to guide their subtext, but NEVER state them allowed.
+                 
+                 {prev_context}
+                 
+                 Action: Write the script. Standard Screenplay Format.
+                 """
+                 script_text = engine.generate(prompt, temperature=0.88)
             
-            Philosophical Constraint: Influence the dialogue/structure with: "{tlp}"
-            
-            {prev_context}
-            
-            Action: Write the script for this scene. 
-            Format: Standard Screenplay.
-            """
-            script_text = engine.generate(prompt, temperature=0.85)
-            
+            else:
+                # STANDARD GENESIS
+                prompt = f"""
+                WRITE A SCENE for the movie "{title}".
+                Genre: {genre_display if 'genre_display' in locals() else args.vpform}
+                Beat Function: {beat_info['name']} ({beat_info['desc']})
+                Characters: {list(mapping.values())}
+                
+                Philosophical Constraint: Influence the dialogue/structure with: "{tlp}"
+                
+                {prev_context}
+                
+                Action: Write the script for this scene. 
+                Format: Standard Screenplay.
+                """
+                script_text = engine.generate(prompt, temperature=0.85)
+
         elif not chunk.strip():
             logging.warning(f"      Beat {i+1} empty. Padding.")
             script_text = "(Action)\nTime passes..."
@@ -417,6 +782,9 @@ def process_file(input_path, args):
                 Function: {beat_info['name']} ({beat_info['desc']})
                 Mappings: {mapping} (Use these new names/locations consistently)
                 
+                Philosophical Context (Brain Logic): "{tlp}"
+                Thematic Undercurrent: "{atu}"
+
                 Original Content:
                 {chunk[:12000]}
                 
@@ -446,6 +814,10 @@ def process_file(input_path, args):
             "action": "cinematic",
             "script_content": script_text
         })
+
+    # MEMORY OPTIMIZATION: Final Unload
+    if hasattr(engine, "unload"):
+        engine.unload()
 
     # 6. Assembly
     logging.info("   📦 Assembling XMVP...")
@@ -493,10 +865,74 @@ def process_file(input_path, args):
     dialogue_lines = []
     total_offset = 0.0
     
+    # Page Tracking State
+    current_page = 0
+    lines_on_page = 0
+    LINES_PER_PAGE = 55
+    
     for seg in segs_manifest:
+        # Try JSON parsing first (New Logic)
+        try:
+             # Clean potential markdown fences
+             clean_content = seg["script_content"]
+             if "```json" in clean_content:
+                 clean_content = clean_content.split("```json")[1].split("```")[0]
+             elif "```" in clean_content:
+                 clean_content = clean_content.split("```")[1].split("```")[0]
+             
+             data_block = json.loads(clean_content)
+             
+             # Locate Dialogue List
+             dialogue_list_json = [] # Renamed to avoid conflict with outer dialogue_lines
+             if "SCENE" in data_block:
+                 s = data_block["SCENE"]
+                 if isinstance(s, list) and len(s) > 0: s = s[0] # Handle [{...}]
+                 if "DIALOGUE" in s:
+                     dialogue_list_json = s["DIALOGUE"]
+             elif "DIALOGUE" in data_block:
+                 dialogue_list_json = data_block["DIALOGUE"]
+             elif isinstance(data_block, list):
+                 # Maybe it's just a list of lines?
+                 dialogue_list_json = data_block
+
+             if dialogue_list_json:
+                 for d_item in dialogue_list_json:
+                     char_name = d_item.get("CHARACTER", "Unknown").upper().strip()
+                     line_text = d_item.get("LINE", "")
+                     if char_name and line_text:
+                         # Paging Logic (Rate Limiter: count every line of the script)
+                         lines_on_page += 1
+                         if lines_on_page >= LINES_PER_PAGE:
+                             current_page += 1
+                             lines_on_page = 0
+
+                         dialogue_lines.append({
+                             "character": char_name,
+                             "text": line_text,
+                             "start_offset": total_offset,
+                             "visual_focus": char_name,
+                             "action": "Speaking",
+                             "page_index": current_page
+                         })
+                         # Estimate duration
+                         dur = len(line_text.split()) * 0.4 # approx 0.4s per word
+                         total_offset += dur
+                 continue # Successfully parsed as JSON, skip fallback
+
+        except Exception as e:
+             # logging.debug(f"JSON Parse failed for segment {seg.get('id')}, falling back to text split: {e}")
+             pass
+
+        # Fallback: Plain Text Parsing (Legacy)
         raw_lines = seg["script_content"].split('\n')
         last_char = None
         for line in raw_lines:
+            # Paging Logic (Rate Limiter: count every line of the script)
+            lines_on_page += 1
+            if lines_on_page >= LINES_PER_PAGE:
+                current_page += 1
+                lines_on_page = 0
+                
             line = line.strip()
             if not line: continue
             
@@ -513,7 +949,8 @@ def process_file(input_path, args):
                     "text": line,
                     "start_offset": total_offset,
                     "visual_focus": last_char,
-                    "action": "Speaking"
+                    "action": "Speaking",
+                    "page_index": current_page
                 })
                 # Estimate duration
                 dur = len(line.split()) * 0.4 # approx 0.4s per word
@@ -535,6 +972,8 @@ def process_file(input_path, args):
     
     # 7. Save
     safe_name = "".join([c for c in title if c.isalnum() or c==' ']).replace(" ", "_")
+    # Append random suffix to avoid collisions (especially in batch/painter mode)
+    safe_name = f"{safe_name}_{random.randint(1000, 9999)}"
     output_path = Path(args.out) / f"{safe_name}.xml" if args.out else Path(".").resolve() / f"{safe_name}.xml" # Default to current dir if no input path/parent
     
     if args.input_file and args.input_file != "GENERATE":

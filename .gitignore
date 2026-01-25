@@ -16,11 +16,15 @@ debug_thax_rvc.sh
 debug_rvc_manual.py
 check_wan_import.py
 check_rvc_setup.py
+check_librosa.py
+debug_atu_parse.py
 z_training_data/thax_voice/dataset
 z_training_data/thax_voice/raw
 z_training_data/24_voices
 z_training_data/movies
 z_training_data/route66_voices
+nicotime_design.md
+test_wan.py
 #z_training_data/example_parodies
 
 # Setups
@@ -33,7 +37,7 @@ prepare_training_data.py
 z_training_data/parsed_scripts/
 z_training_data/parsed_scripts/*
 train_director.sh
-adapters/
+adapters/director_v1
 
 # Shells on the Batch
 run_improv.sh

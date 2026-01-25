@@ -85,7 +85,12 @@ MW_ROOT = "/Volumes/XMVPX/mw" # Standard mount point
 FLUX_MODEL_PATH = os.path.join(MW_ROOT, "flux-root")
 if not os.path.exists(FLUX_MODEL_PATH):
     # Fallback to safetensors if user moved it manually, but default populate is flux-root
-    FLUX_MODEL_PATH = os.path.join(MW_ROOT, "flux-schnell.safetensors")
+    # Try to resolve via definitions first
+    try:
+        import definitions
+        FLUX_MODEL_PATH = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE]["flux-klein"].path
+    except:
+        FLUX_MODEL_PATH = os.path.join(MW_ROOT, "flux-root/klein-9b")
 
 # --- GLOBAL STATE ---
 LOCAL_MODE = False
@@ -220,10 +225,10 @@ def generate_location_context(text_engine, args):
         print(f"    [!] Location Gen Failed: {e}. using default.")
         return "An underground black box theater"
 
-def generate_image(prompt, output_path, ts=None):
+def generate_image(prompt, output_path, ts=None, init_image=None, strength=0.65):
     """
     Generates an image using either:
-    1. Flux Schnell (Local) if LOCAL_MODE is True
+    1. Flux Klein (Local) if LOCAL_MODE is True
     2. Gemini 2.0 Flash (Cloud) otherwise
     """
     global FLUX_BRIDGE
@@ -240,7 +245,14 @@ def generate_image(prompt, output_path, ts=None):
         
         try:
             # Flux requires no specific aspect ratio args in prompt usually, handled by width/height
-            img = FLUX_BRIDGE.generate(prompt, width=1024, height=1024, steps=4) # Schnell 4 steps
+            # Pass init_image and strength for Img2Img/Context Passing
+            img = FLUX_BRIDGE.generate(
+                prompt, 
+                width=1024, height=1024, 
+                steps=12,  # Klein 12 steps
+                image=init_image, 
+                strength=strength
+            )
             if img:
                 img.save(output_path)
                 return True
@@ -1040,23 +1052,53 @@ def export_xmvp_manifest(output_dir, base_name, assets, cast_names, seeds=None, 
         
         # 2. Detailed Dialogue Script (Line-by-Line)
         dialogue_lines = []
+        
+        # Paging Logic (Improv/Podcast Emulation)
+        # We simulate how many lines of "Script" this turn would take.
+        current_page = 0
+        lines_on_page = 0
+        LINES_PER_PAGE = 55
+        
         for item in assets:
             if isinstance(item, dict):
                  # Improv Dict
+                 spk_len = 1 # Speaker Name
+                 text_len = max(1, len(item.get('text', '')) // 60) # Approx 60 chars per line
+                 act_len = 1 if item.get('action_prompt') else 0
+                 
+                 total_lines = spk_len + text_len + act_len
+                 
+                 # Update Page
+                 lines_on_page += total_lines
+                 if lines_on_page >= LINES_PER_PAGE:
+                     current_page += 1
+                     lines_on_page = 0
+                 
                  dl = mvp_shared.DialogueLine(
                      character=item['speaker'],
                      text=item.get('text', ''),
                      duration=item['duration'],
                      action=item.get('action_prompt', ''), # Stored earlier?
                      foley=item.get('foley_prompt', ''),   # Wait, need to store these in assets in main loop
-                     visual_focus=item.get('visual_focus', '')
+                     visual_focus=item.get('visual_focus', ''),
+                     page_index=current_page
                  )
             else:
                  # Podcast Segment
+                 spk_len = 1
+                 text_len = max(1, len(item.text) // 60)
+                 total_lines = spk_len + text_len
+                 
+                 lines_on_page += total_lines
+                 if lines_on_page >= LINES_PER_PAGE:
+                     current_page += 1
+                     lines_on_page = 0
+
                  dl = mvp_shared.DialogueLine(
                      character=item.speaker,
                      text=item.text,
-                     duration=item.duration
+                     duration=item.duration,
+                     page_index=current_page
                  )
             dialogue_lines.append(dl)
             
@@ -1214,45 +1256,7 @@ def run_thax_douglas_session(band_name, poem, output_dir):
     else:
         print("❌ No slides generated.")
 
-def generate_image(prompt, output_path):
-    """
-    Wrapper for Image Gen (Local Flux vs Cloud Gemini).
-    """
-    global FLUX_BRIDGE
-    if LOCAL_MODE:
-        if not FLUX_BRIDGE:
-            # Init Bridge
-            from flux_bridge import get_flux_bridge
-            FLUX_BRIDGE = get_flux_bridge(FLUX_MODEL_PATH)
-        
-        # Flux Gen
-        # Use Global Args for dims (defaults 1024x576)
-        # We need to access args from main scope or pass them. 
-        # Easier to check definitions or assume global if simple script, 
-        # but cleaner to user explicit args. 
-        # Since this is a simple wrapper, let's rely on the module-level ARGS if we store them, 
-        # OR better: update signature to accept width/height and update calls.
-        # Given the "All vpforms" request, let's use a module-level default or quick look up.
-        
-        # For this refactor, let's just use the defaults we just added to CLI, 
-        # but we need to access them. 
-        # We'll use a globally injected 'GENERATION_DIMS' tuple set in main.
-        w, h = GENERATION_DIMS if 'GENERATION_DIMS' in globals() else (1024, 576)
-        
-        print(f"   🎨 [Flux] {prompt[:40]}... ({w}x{h})")
-        img = FLUX_BRIDGE.generate(prompt, width=w, height=h, steps=4)
-        if img:
-            try:
-                # Ensure dir exists (Defensive Check)
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                img.save(output_path)
-                return True
-            except Exception as e:
-                print(f"   [!] Image Save Failed: {e}")
-                return False
-        return False
-    else:
-        return False 
+ 
 
 # --- FULLMOVIE STILL MODE ---
 
@@ -1268,6 +1272,59 @@ def get_segment_for_time(manifest: Manifest, time_sec: float, fps: float = 24.0)
     if manifest.segs:
         return manifest.segs[-1]
     return None
+
+def is_valid_character(name):
+    """
+    Filters out metadata artifacts/garbage from character names.
+    e.g. "SCENE_NUMBER", "LOCATION", "ACTION", or JSON-like keys.
+    """
+    if not name: return False
+    
+    # Pre-clean: Remove Anchor {} and Gender [] tags
+    # "Stanley [Male] {Humphrey Bogart}" -> "Stanley"
+    import re
+    clean_n = re.sub(r'\{.*?\}', '', name)
+    clean_n = re.sub(r'\[.*?\]', '', clean_n)
+    clean_n = clean_n.strip().strip('"').strip("'")
+    
+    if len(clean_n) < 2: return False
+    
+    # 1. Check for JSON-like artifacts (contains quote-colon)
+    # The user logs show '"CHARACTER": "Name",' often.
+    if '":' in name or '": ' in name: return False
+    
+    # 2. Check for Metadata Keywords (Case-Insensitive)
+    # Also filter widely known non-character tokens
+    name_upper = clean_n.upper()
+    invalid_tokens = [
+        "SCENE_NUMBER", "LOCATION", "ACTION", "SCENE_HEADING", 
+        "DIALOGUE", "LINE", "CHARACTERS", "EXT.", "INT.", 
+        "CUT TO:", "FADE IN:", "FADE OUT:", "TRANSITION:"
+    ]
+    
+    for token in invalid_tokens:
+        if token in name_upper:
+            return False
+            
+    # 3. Check for bracketed metadata that isn't a character?
+    # e.g. "CHARACTERS": [" ...
+    if name.strip().startswith('"') and name.strip().endswith('":'): return False
+    
+    return True
+
+def construct_cinematic_prompt(segment_prompt, character, action, focus):
+    # Clean inputs
+    loc = segment_prompt.strip()
+    char = character.strip()
+    act = action.strip() if action else "standing"
+    foc = focus.strip() if focus else char
+    
+    # Flux-friendly Template
+    # "Cinematic film still of [Character] [Action], [Focus]. [Location]. [Style keywords]"
+    
+    prompt = f"Cinematic film still of {char} {act}, {foc}. {loc}. "
+    prompt += "film grain, 4k, highly detailed, dramatic lighting, shallow depth of field, photorealistic, masterpiece."
+    return prompt
 
 def run_fullmovie_still_mode(xml_path, output_dir, text_engine, args):
     """
@@ -1352,14 +1409,15 @@ def run_fullmovie_still_mode(xml_path, output_dir, text_engine, args):
     session_dir = os.path.join(output_dir, f"fms_session_{session_id}")
     os.makedirs(session_dir, exist_ok=True)
     
-    # Extract Cast
-    all_chars = set(line.character for line in manifest.dialogue.lines)
+    # Extract Cast (Filtered)
+    all_chars = set(line.character for line in manifest.dialogue.lines if is_valid_character(line.character))
     print(f"    [👥] Cast Found: {all_chars}")
 
     # --- MOVIE-LEVEL LORA (MLL) LOGIC ---
     # --- MOVIE-LEVEL LORA (MLL) LOGIC ---
     movie_title = "Unknown_Movie"
     target_name = None
+    gender_map = {}
     
     try:
         # Load Story
@@ -1367,6 +1425,33 @@ def run_fullmovie_still_mode(xml_path, output_dir, text_engine, args):
         if raw_story:
             story_obj = Story.model_validate_json(raw_story)
             movie_title = story_obj.title.replace(" ", "_")
+            
+            # Build Gender Map from Story Characters
+            # Format: "Name (Role) [Gender]"
+            # We want map: "NAME" -> "Male"/"Female"
+            # Note: Cast Found in manifest often has quotes or uppercase.
+            try:
+                raw_chars = story_obj.characters if story_obj.characters else []
+                # If raw_chars is list of strings
+                for c_str in raw_chars:
+                    gender = None
+                    if "[Male]" in c_str: gender = "Male"
+                    elif "[Female]" in c_str: gender = "Female"
+                    
+                    if gender:
+                        # Extract Name
+                        # "Stanley (The Lodger) [Male]" -> "Stanley"
+                        # "Stanley [Male]" -> "Stanley"
+                        name_part = c_str.split("(")[0].split("[")[0].strip().upper()
+                        gender_map[name_part] = gender
+                        # Also map quoted versions just in case
+                        gender_map[f'"{name_part}"'] = gender
+                
+                if gender_map:
+                    print(f"    [⚧️] Gender Map Built: {len(gender_map)} entries")
+            except:
+                pass
+
             if story_obj.mll_template:
                  target_name = story_obj.mll_template
         
@@ -1404,7 +1489,10 @@ def run_fullmovie_still_mode(xml_path, output_dir, text_engine, args):
         print(f"    [+] MLL Template Active ({target_name}). Enforcing Additive Prep & Training.")
         should_train = True
         
-    if should_train and args.local:
+    if args.mll == "off":
+        print("    [Info] MLL Training Skipped (--mll off).")
+        should_train = False
+    elif should_train and args.local:
         print(f"    [⚠️] LoRA Missing: {lora_path}")
         print("    [🔨] Starting Pre-Production: Generating Character Sheets & Training MLL...")
         
@@ -1434,19 +1522,51 @@ def run_fullmovie_still_mode(xml_path, output_dir, text_engine, args):
          FLUX_BRIDGE.load_lora(lora_path)
     
     # Assign Voices (Deterministic Kokoro)
-    # Use foley_talk helper logic but we need to fetch voices locally?
-    # foley_talk.assign_kokoro_voice_deterministic takes (name, available_voices).
-    # We can pass empty list to get defaults/fallback, or try to load bridge to get list.
-    # For speed, let's just assume defaults or hardcoded safe list for now to ensure consistency without heavy init.
-    # Actually, we rely on generate_audio_asset(mode="kokoro") eventually.
-    # But we want to decide the mapping UP FRONT.
-    
-    safe_voices = ["af_bella", "af_sarah", "am_michael", "am_adam", "af_nicole", "bm_george"]
     cast_map = {}
-    for char in all_chars:
-        voice, pitch = assign_kokoro_voice_deterministic(char, safe_voices)
-        cast_map[char] = {"voice": voice, "pitch": pitch}
-        print(f"       + {char} -> {voice} (p{pitch})")
+    
+    # Route 66 Override
+    if target_name and "Route66" in target_name:
+        print("    [🎙️] Route 66 Cast Detected: Applying Canonical Voice Map...")
+        r66_cast = {
+            "Amey": {"voice": "af_bella", "pitch": 0},
+            "Jessinny": {"voice": "af_sarah", "pitch": 0},
+            "Lorrey": {"voice": "af_nicole", "pitch": 0},
+            "Mercutio": {"voice": "am_michael", "pitch": 0},
+            "Rondio": {"voice": "am_adam", "pitch": 0},
+            "Totto": {"voice": "bm_george", "pitch": 0}
+        }
+        for char in all_chars:
+            if char in r66_cast:
+                cast_map[char] = r66_cast[char]
+                print(f"       + {char} -> {r66_cast[char]['voice']} (Canonical)")
+            else:
+                 v, p = assign_kokoro_voice_deterministic(char, ["af_bella", "am_adam"])
+                 cast_map[char] = {"voice": v, "pitch": p}
+                 print(f"       + {char} -> {v} (Fallback)")
+    else:
+        # Standard Generic Assignment with Gender Support
+        safe_voices_m = ["am_michael", "am_adam", "bm_george", "bm_fable", "bm_lewis", "am_eric"]
+        safe_voices_f = ["af_bella", "af_sarah", "af_nicole", "af_sky", "af_jessica", "bf_emma"]
+        safe_voices_all = safe_voices_m + safe_voices_f
+        
+        for char in all_chars:
+            clean_char = char.strip().strip('"').strip("'").upper()
+            
+            forced_gender = gender_map.get(clean_char)
+            if forced_gender == "Male":
+                subset = safe_voices_m
+            elif forced_gender == "Female":
+                subset = safe_voices_f
+            else:
+                subset = safe_voices_all
+                
+            voice, pitch = assign_kokoro_voice_deterministic(char, subset)
+            
+            # Log gender choice
+            g_tag = f"[{forced_gender}]" if forced_gender else "[?]"
+            
+            cast_map[char] = {"voice": voice, "pitch": pitch}
+            print(f"       + {char} {g_tag} -> {voice} (p{pitch})")
         
     # 3. Generation Loop
     assets = []
@@ -1460,79 +1580,267 @@ def run_fullmovie_still_mode(xml_path, output_dir, text_engine, args):
     
     total_lines = len(manifest.dialogue.lines)
     
-    for i, line in enumerate(manifest.dialogue.lines):
-        print(f"    [{i+1}/{total_lines}] {line.character}: {line.text[:40]}...")
+    # DETECT PACING MODE
+    has_pages = any(l.page_index is not None for l in manifest.dialogue.lines)
+    
+    if has_pages:
+        print("    [⏱️] Page-Based Pacing Detected (1 Page = 1 Minute).")
+        # Sort by page to be safe for groupby
+        sorted_lines = sorted(manifest.dialogue.lines, key=lambda l: (l.page_index if l.page_index is not None else -1))
         
-        # A. Visual
-        # Find context
-        seg = get_segment_for_time(manifest, line.start_offset, fps)
-        
-        # Construct Prompt
-        # Combine: Seg Prompt + Action + Focus
-        base_prompt = seg.prompt if seg else "A cinematic scene."
-        visual_prompt = f"{base_prompt} Action: {line.action}. Focus: {line.visual_focus}. Character: {line.character}."
-        
-        # Output Path
-        img_path = os.path.join(session_dir, f"frame_{i:04d}.jpg")
-        
-        # Generate (Flux/Gemini)
-        # Use our helper
-        if not generate_image(visual_prompt, img_path):
-             create_black_frame(img_path)
+        from itertools import groupby
+        for page_idx, page_lines_iter in groupby(sorted_lines, key=lambda l: l.page_index):
+             if page_idx is None: page_idx = -1
+             page_lines = list(page_lines_iter)
              
-        # B. Audio (Kokoro)
-        wav_path = os.path.join(session_dir, f"line_{i:04d}.wav")
-        voice_info = cast_map.get(line.character, {"voice": "af_bella", "pitch": 0})
-        
-        final_wav = generate_audio_asset(
-            line.text, wav_path, 
-            voice_name=voice_info['voice'], 
-            pitch=voice_info['pitch'],
-            mode="kokoro"
-        )
-        
-        # Handle Audio Failure
-        if not final_wav:
-             print(f"       [-] Audio Gen Failed for Line {i}. Creating Silence.")
-             create_silent_wav(wav_path, duration=2.0)
-             final_wav = wav_path
-             duration = 2.0
-        else:
-             duration = get_audio_duration(final_wav) + 0.1 # Minimal padding on speech
+             # 0. Pre-Calculation Phase
+             print(f"    📄 Processing Page {page_idx} ({len(page_lines)} lines)...")
              
-        assets.append({
-            "audio": final_wav, "image": img_path, "duration": duration,
-            "speaker": line.character, "text": line.text
-        })
-        
-        # --- PAUSE / PACING SEGMENT ---
-        # Insert a silence segment between lines.
-        # Sometimes hold the last image, sometimes cut to a new one (Reaction/Atmosphere).
-        
-        pause_dur = random.uniform(1.0, 2.0) # Organic variance
-        pause_wav = os.path.join(session_dir, f"pause_{i:04d}.wav")
-        create_silent_wav(pause_wav, duration=pause_dur)
-        
-        # Decide Visual: Hold or Cut?
-        # 30% chance of a new "Reaction/Silent" shot.
-        if random.random() < 0.3:
-            pause_type = "visual"
-            # Modify prompt for silence
-            # "A cinematic scene... Action: [Action]. Focus: [Focus]... (Silent moment of reflection)"
-            pause_prompt = f"{visual_prompt} (Character is silent, listening, or reacting. Atmospheric moment.)"
-            pause_img = os.path.join(session_dir, f"frame_{i:04d}_pause.jpg")
-            
-            if not generate_image(pause_prompt, pause_img):
-                # Fallback to holding previous image if gen fails
-                pause_img = img_path
-        else:
-            pause_type = "hold"
-            pause_img = img_path
+             # We need to generate audio first to know durations, 
+             # then calculate pauses, then generate visuals and finalize assets.
+             # To save memory, we can do it in two micro-passes or just accumulate.
+             
+             page_assets = []
+             total_speech_duration = 0.0
+             
+             # PASS 1: Generate Audio
+             for j, line in enumerate(page_lines):
+                 if not is_valid_character(line.character): continue
+                 
+                 # ... Audio Gen Logic (Duplicated from Legacy but cleaner) ...
+                 wav_path = os.path.join(session_dir, f"p{page_idx}_l{j}.wav")
+                 voice_info = cast_map.get(line.character, {"voice": "af_bella", "pitch": 0})
+                 
+                 clean_text = re.sub(r'\(.*?\)', '', line.text).strip()
+                 clean_text = re.sub(r'\s+', ' ', clean_text)
+                 
+                 final_wav = generate_audio_asset(
+                    clean_text, wav_path, 
+                    voice_name=voice_info['voice'], 
+                    pitch=voice_info['pitch'],
+                    mode="kokoro"
+                 )
+                 
+                 if final_wav and line.character in RVC_MAP:
+                      run_rvc_conversion(final_wav, line.character)
+                      
+                 if not final_wav:
+                      create_silent_wav(wav_path, duration=2.0)
+                      final_wav = wav_path
+                 
+                 dur = get_audio_duration(final_wav) + 0.1
+                 total_speech_duration += dur
+                 
+                 page_assets.append({
+                     "line": line,
+                     "audio": final_wav,
+                     "speech_dur": dur,
+                     "index": j
+                 })
+                 
+             # PASS 2: Calculate Pacing
+             target_page_dur = 60.0
+             spare_time = target_page_dur - total_speech_duration
+             
+             pause_per_gap = 0.5 # Default minimum
+             if spare_time > 0:
+                 # Distribute spare time
+                 # Gaps = len(page_assets) (Post-line pauses)
+                 num_gaps = len(page_assets)
+                 if num_gaps > 0:
+                     pause_per_gap = spare_time / num_gaps
+                     print(f"       [⏱️] Pacing: Speech {total_speech_duration:.1f}s | Spare {spare_time:.1f}s | Gap {pause_per_gap:.2f}s")
+             else:
+                 print(f"       [⚠️] Page Overrun: Speech {total_speech_duration:.1f}s > 60s. Min pauses used.")
+                 pause_per_gap = 0.1
+                 
+             # PASS 3: Visuals & Assembly
+             last_img_path = None
+             
+             for asset in page_assets:
+                 line = asset['line']
+                 
+                 # Visual
+                 seg = get_segment_for_time(manifest, line.start_offset, fps)
+                 base_prompt = seg.prompt if seg else "A cinematic scene"
+                 if ":" in base_prompt and len(base_prompt) > 50: base_prompt = "A cinematic scene"
+                 
+                 char_clean = line.character.strip()
+                 act_clean = line.action.strip() if line.action else "standing"
+                 visual_prompt = f"Cinematic film still of {char_clean} {act_clean}. {base_prompt}. "
+                 visual_prompt += "film grain, 4k, highly detailed, dramatic lighting, shallow depth of field, photorealistic, masterpiece."
+                 
+                 img_path = os.path.join(session_dir, f"p{page_idx}_l{asset['index']}.jpg")
+                 
+                 # Prepare Context (Flux Img2Img)
+                 init_img = None
+                 if last_img_path and os.path.exists(last_img_path):
+                     try:
+                         # Load previous frame for temporal consistency
+                         init_img = Image.open(last_img_path).convert("RGB")
+                     except Exception as e:
+                         print(f"       [!] Failed to load previous frame for context: {e}")
+                 
+                 if generate_image(visual_prompt, img_path, init_image=init_img, strength=0.65):
+                     last_img_path = img_path
+                 else:
+                     create_black_frame(img_path)
+                     last_img_path = None # Reset sequence detection on failure
+                 
+                 # Add Speech Asset
+                 assets.append({
+                    "audio": asset['audio'], "image": img_path, "duration": asset['speech_dur'],
+                    "speaker": line.character, "text": line.text
+                 })
+                 
+                 # Add Pause Asset
+                 # Decide Visual: Hold or Cut?
+                 pause_dur = pause_per_gap
+                 pause_wav = os.path.join(session_dir, f"p{page_idx}_l{asset['index']}_pause.wav")
+                 create_silent_wav(pause_wav, duration=pause_dur)
+                 
+                 pause_img = img_path # Default hold
+                 
+                 # If long pause (> 2s), strictly do a reaction shot
+                 is_long_pause = (pause_dur > 2.0)
+                 # Or random 30%
+                 if is_long_pause or random.random() < 0.3:
+                     # Reaction Shot
+                     pause_prompt = f"{visual_prompt} (Character is silent, listening, or reacting. Atmospheric moment.)"
+                     pause_img_path = os.path.join(session_dir, f"p{page_idx}_l{asset['index']}_pause.jpg")
+                     
+                     # Context for pause shot? Yes, use the just-generated frame.
+                     pause_init = None
+                     if os.path.exists(img_path):
+                         try: pause_init = Image.open(img_path).convert("RGB")
+                         except: pass
+                         
+                     if generate_image(pause_prompt, pause_img_path, init_image=pause_init, strength=0.65):
+                         pause_img = pause_img_path
+                         last_img_path = pause_img_path # Update chain
+                 
+                 assets.append({
+                    "audio": pause_wav, "image": pause_img, "duration": pause_dur,
+                    "speaker": None, "text": "[Silence]"
+                 })
 
-        assets.append({
-            "audio": pause_wav, "image": pause_img, "duration": pause_dur,
-            "speaker": None, "text": "[Silence]"
-        })
+    else:
+        # LEGACY MODE (Linear)
+        print("    [Legacy] No Page Index found. Using Standard/Random Pacing.")
+        
+        last_img_path = None
+        for i, line in enumerate(manifest.dialogue.lines):
+            # Filter Garbage Lines
+            if not is_valid_character(line.character):
+                 # print(f"    [Skipping] Metadata Line: {line.character}")
+                 continue
+                 
+            print(f"    [{i+1}/{total_lines}] {line.character}: {line.text[:40]}...")
+            
+            # A. Visual
+            # Find context
+            seg = get_segment_for_time(manifest, line.start_offset, fps)
+            
+            # Construct Prompt
+            # Combine: Seg Prompt + Action + Focus for Cinematic Quality
+            base_prompt = seg.prompt if seg else "A cinematic scene"
+            
+            # Heuristic: If prompt looks like dialogue (Name: Text), ignore it or extract Location?
+            # For now, just ignore it to prevent "Rondio: Alright..." from polluting every frame.
+            if ":" in base_prompt and len(base_prompt) > 50:
+                 base_prompt = "A cinematic scene"
+                 
+            # Force Template Inline (Debug)
+            char_clean = line.character.strip()
+            act_clean = line.action.strip() if line.action else "standing"
+            visual_prompt = f"Cinematic film still of {char_clean} {act_clean}. {base_prompt}. "
+            visual_prompt += "film grain, 4k, highly detailed, dramatic lighting, shallow depth of field, photorealistic, masterpiece."
+    
+            print(f"       [DEBUG] Visual: {visual_prompt[:50]}...")
+            
+            # Output Path
+            img_path = os.path.join(session_dir, f"frame_{i:04d}.jpg")
+            
+            # Prepare Context (Flux Img2Img)
+            init_img = None
+            if last_img_path and os.path.exists(last_img_path):
+                try:
+                    init_img = Image.open(last_img_path).convert("RGB")
+                    print(f"       [✨] Context: Using previous frame ({os.path.basename(last_img_path)})")
+                except Exception as e:
+                    print(f"       [!] Context Load Failed: {e}")
+
+            # Generate (Flux/Gemini)
+            # Use our helper
+            if generate_image(visual_prompt, img_path, init_image=init_img, strength=0.65):
+                 last_img_path = img_path
+            else:
+                 create_black_frame(img_path)
+                 last_img_path = None # Reset
+                 
+            # B. Audio (Kokoro)
+            wav_path = os.path.join(session_dir, f"line_{i:04d}.wav")
+            voice_info = cast_map.get(line.character, {"voice": "af_bella", "pitch": 0})
+            
+            # Clean text for audio (remove parentheticals)
+            clean_text = re.sub(r'\(.*?\)', '', line.text).strip()
+            # Collapse multiple spaces
+            clean_text = re.sub(r'\s+', ' ', clean_text)
+            
+            final_wav = generate_audio_asset(
+                clean_text, wav_path, 
+                voice_name=voice_info['voice'], 
+                pitch=voice_info['pitch'],
+                mode="kokoro"
+            )
+            
+            # RVC CONVERSION (Global)
+            if final_wav and line.character in RVC_MAP:
+                 print(f"       [RVC] Found Voice Model for {line.character}. Converting...")
+                 run_rvc_conversion(final_wav, line.character)
+            
+            # Handle Audio Failure
+            if not final_wav:
+                 print(f"       [-] Audio Gen Failed for Line {i}. Creating Silence.")
+                 create_silent_wav(wav_path, duration=2.0)
+                 final_wav = wav_path
+                 duration = 2.0
+            else:
+                 duration = get_audio_duration(final_wav) + 0.1 # Minimal padding on speech
+                 
+            assets.append({
+                "audio": final_wav, "image": img_path, "duration": duration,
+                "speaker": line.character, "text": line.text
+            })
+            
+            # --- PAUSE / PACING SEGMENT ---
+            # Insert a silence segment between lines.
+            # Sometimes hold the last image, sometimes cut to a new one (Reaction/Atmosphere).
+            
+            pause_dur = random.uniform(1.0, 2.0) # Organic variance
+            pause_wav = os.path.join(session_dir, f"pause_{i:04d}.wav")
+            create_silent_wav(pause_wav, duration=pause_dur)
+            
+            # Decide Visual: Hold or Cut?
+            # 30% chance of a new "Reaction/Silent" shot.
+            if random.random() < 0.3:
+                pause_type = "visual"
+                # Modify prompt for silence
+                # "A cinematic scene... Action: [Action]. Focus: [Focus]... (Silent moment of reflection)"
+                pause_prompt = f"{visual_prompt} (Character is silent, listening, or reacting. Atmospheric moment.)"
+                pause_img = os.path.join(session_dir, f"frame_{i:04d}_pause.jpg")
+                
+                if not generate_image(pause_prompt, pause_img):
+                    # Fallback to holding previous image if gen fails
+                    pause_img = img_path
+            else:
+                pause_type = "hold"
+                pause_img = img_path
+    
+            assets.append({
+                "audio": pause_wav, "image": pause_img, "duration": pause_dur,
+                "speaker": None, "text": "[Silence]"
+            })
         
     # 4. Stitch
     final_basename = f"FMS-{session_id}"
@@ -1598,6 +1906,7 @@ def main():
     parser.add_argument("--rvc", action="store_true", help="Enable RVC (Retrieval Voice Conversion) for Cast")
     parser.add_argument("--xml", type=str, help="Input XMVP XML path (for fullmovie-still mode)")
     parser.add_argument("--xb", type=str, help="Alias for --xml (XMVP Bible/Manifest)")
+    parser.add_argument("--mll", choices=["on", "off"], default="off", help="Enable/Disable Movie-Level LoRA Training Step")
     
     args, unknown = parser.parse_known_args()
     

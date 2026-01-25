@@ -63,6 +63,7 @@ class DialogueLine(BaseModel):
     action: str = Field(default="", description="Physical action or stage direction")
     foley: str = Field(default="", description="Sound effect description")
     visual_focus: str = Field(default="", description="Camera focus or subject")
+    page_index: Optional[int] = Field(default=None, description="Script page number (0-indexed) for pacing")
 
 class DialogueScript(BaseModel):
     """
@@ -78,6 +79,7 @@ class Portion(BaseModel):
     duration_sec: float
     content: str = Field(..., description="Narrative description of this portion")
     dialogue: List[DialogueLine] = Field(default_factory=list, description="Dialogue lines in this portion")
+    page_index: Optional[int] = Field(default=None, description="Starting page number")
     
 class Seg(BaseModel):
     """
@@ -119,6 +121,24 @@ def save_cssv(cssv: CSSV, path: Union[str, Path]):
         f.write(cssv.model_dump_json(indent=2))
 
 def load_manifest(path: Union[str, Path]) -> Manifest:
+    path = Path(path)
+    if path.suffix.lower() == ".xml":
+        # Extract embedded JSON from XMVP XML
+        json_content = load_xmvp(path, "Manifest")
+        if not json_content:
+            # Fallback: Try "Portions" if Manifest missing (Legacy)
+            json_content = load_xmvp(path, "Portions")
+            if json_content:
+                # Convert Portions list to Manifest format temporarily
+                portions = json.loads(json_content)
+                # We can't easily auto-convert to full Manifest without data loss, 
+                # but let's try to wrap it if it looks like a list
+                if isinstance(portions, list):
+                    return Manifest(segs=[], files={}, dialogue=None) # Empty wrapper allowed?
+            raise ValueError(f"Could not find <Manifest> tag in {path}")
+            
+        return Manifest.model_validate_json(json_content)
+
     with open(path, 'r') as f:
         return Manifest.model_validate_json(f.read())
 
@@ -263,6 +283,66 @@ def load_xmvp(path: Union[str, Path], key: str) -> Optional[str]:
     except Exception as e:
         print(f"Error loading XMVP: {e}")
     return None
+
+def load_nicotime_context(prompt_text: str, nicotime_root: Optional[Path] = None) -> str:
+    """
+    Scans the Nicotime "Noosphere" (XML files) for entities mentioned in the prompt.
+    Returns a formatted context string if matches are found.
+    """
+    try:
+        # 1. Locate Nicotime Root
+        if not nicotime_root:
+            # Default: ../z_training_data/nicotime relative to this file
+            # mvp_shared.py is in tools/fmv/mvp/v0.5/
+            # z_training_data is in tools/fmv/mvp/v0.5/z_training_data/
+            base = Path(__file__).parent / "z_training_data" / "nicotime"
+            if base.exists():
+                nicotime_root = base
+            else:
+                return ""
+
+        if not nicotime_root.exists():
+            return ""
+
+        # 2. Extract Key Terms from Prompt (Heuristic: Long words, Capitalized words)
+        # Actually, simpler: Iterate ALL indices and check if they are in the prompt.
+        # This is efficient enough for <1000 indices.
+        
+        matches = []
+        prompt_lower = prompt_text.lower()
+        
+        for xml_file in nicotime_root.glob("*.xml"):
+            # Check filename first (fastest)
+            stem = xml_file.stem.replace("_", " ")
+            if stem.lower() in prompt_lower:
+                # HIT! Load the details.
+                try:
+                    tree = ET.parse(xml_file)
+                    root = tree.getroot()
+                    
+                    # Extract Noosphere Entities
+                    noosphere = root.find("Noosphere")
+                    if noosphere is not None:
+                        for entity in noosphere.findall("Entity"):
+                            name = entity.findtext("Name", "Unknown")
+                            vibe = entity.findtext("VisualSemiotics", "")
+                            zeit = entity.findtext("Zeitgeist", "")
+                            
+                            matches.append(f"[{name} ({entity.get('type')}): {vibe}. {zeit}]")
+                except Exception as e:
+                    print(f"Error parsing {xml_file}: {e}")
+                    
+        if matches:
+            # Deduplicate and Format
+            full_context = " ".join(matches)
+            # Truncate if massive
+            if len(full_context) > 1000: full_context = full_context[:1000] + "..."
+            return f"\n[NOOSPHERIC CONTEXT: {full_context}]"
+            
+    except Exception as e:
+        print(f"Nicotime Lookup Failed: {e}")
+        
+    return ""
 
 # --- Shared Helpers ---
 

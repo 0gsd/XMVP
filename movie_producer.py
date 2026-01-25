@@ -59,10 +59,15 @@ def main():
     
     # Ops Args
     parser.add_argument("--xb", type=str, default="clean", help="XMVP Re-hydration path OR 'clean' (default)")
-    parser.add_argument("-f", "--fast", action="store_true", help="Use Faster/Cheaper Model Tier (Overwrites --vm)")
+    parser.add_argument("--fast", action="store_true", help="Use Faster/Cheaper Model Tier (Overwrites --vm)") # Renamed from -f to avoid conflict
     parser.add_argument("--vfast", action="store_true", help="Use Legacy Veo 2.0 (Fastest)")
     parser.add_argument("--out", type=str, default=None, help="Override output directory")
     parser.add_argument("--local", action="store_true", help="Run Locally (Gemma + LTX-Video)")
+    parser.add_argument("--cloud", action="store_true", help="Force Cloud Mode (Gemini + Veo). Overrides --local.")
+    
+    # Clip Video Arg
+    parser.add_argument("--f", type=str, help="Source Folder for Clip Video Mode")
+    parser.add_argument("--res", type=str, default="720p", help="Resolution for Local Video (720p, 480p, 360p)")
     
     parser.add_argument("--retcon", action="store_true", help="Force Text-Only Expansion (Implies --local, Skips Video)")
     parser.add_argument("--prompt", type=str, help="Alias for concept (the prompt)")
@@ -78,6 +83,11 @@ def main():
     # 1. Resolve VPForm from cli_args
     resolved_form = definitions.parse_global_vpform(args, current_default=args.vpform)
     args.vpform = resolved_form
+    
+    # Validation/Fallback
+    if args.vpform is None:
+        args.vpform = "movies-movie" # Default to standard movie trailer
+        logging.info("ℹ️  No VPForm specified. Defaulting to 'movies-movie'.")
     
     # 2. Resolve Concept from leftover args
     # Concept is the first positional arg that is NOT the resolved form alias and NOT 'run'
@@ -131,7 +141,32 @@ def main():
         logging.info("🦕 V-Fast Mode Enabled: Switching to Tier V2 (Veo 2.0).")
         args.vm = "V2"
 
+    # Cloud Override (Highest Priority)
+    if args.cloud:
+        logging.info("☁️  Cloud Mode Forced via --cloud.")
+        args.local = False
+        os.environ["TEXT_ENGINE"] = "gemini_cloud"
+        # Ensure we don't accidentally auto-detect local later
+    
     # Local Mode Override
+    # Auto-Detect Local Preference from Active Profile (Only if not cloud and not already local)
+    if not args.local and not args.cloud:
+        try:
+             import definitions
+             # Force reload to get latest disk state
+             definitions.load_active_profile()
+             active_vid = definitions.ACTIVE_PROFILE.get(definitions.Modality.VIDEO)
+             
+             # Check if active video model is a known local backend config
+             # We can check definitions registry
+             if active_vid in definitions.MODAL_REGISTRY[definitions.Modality.VIDEO]:
+                 conf = definitions.MODAL_REGISTRY[definitions.Modality.VIDEO][active_vid]
+                 if conf.backend == definitions.BackendType.LOCAL:
+                     logging.info(f"🏠 active_models.json requests Local Video ({active_vid}). Auto-enabling --local.")
+                     args.local = True
+        except Exception as e:
+             logging.warning(f"Failed to check active profile for local pref: {e}")
+
     if args.local:
         if args.vpform == "tech-movie": # If still default
             logging.info("🏠 Local Mode: Defaulting vpform to 'music-video'")
@@ -139,6 +174,20 @@ def main():
             
         if args.vpform == "full-movie":
              pass
+        if args.vpform == "clip-video":
+             # Special Mode: Clip Video (Montage)
+             logging.info("🎬 Mode: Clip Video Montage (Source Folder -> Audio Sync)")
+             # Verify Source Folder
+             if not args.f: # Use -f for folder as defined in CLI
+                 # CLI parser for movie_producer.py doesn't have explicit -f arg yet?
+                 # Wait, line 62 in movie_producer defines -f as --fast. 
+                 # User requested -f for folder?
+                 # Argument conflict!
+                 # User said: --f '/Volumes...'
+                 # Parser says: parser.add_argument("-f", "--fast", ...)
+                 # We need to change the Fast arg or add a new one.
+                 # Let's check line 62.
+                 pass
 
     # --- APPLY FORM DEFAULTS (Late Binding via Definitions) ---
     try:
@@ -157,10 +206,7 @@ def main():
 
     # Local Mode Configuration
     if args.local:
-        if args.vm == "W":
-             logging.info("🏠 Local Mode Enabled: Switching models to Local Gemma (Text) and Wan 2.1 (Video).")
-        else:
-             logging.info("🏠 Local Mode Enabled: Switching models to Local Gemma (Text) and LTX (Video).")
+        logging.info("🏠 Local Mode Enabled: Switching models to Local Gemma (Text) and LTX (Video).")
 
         # Explicitly Enforce Local Text Engine
         os.environ["TEXT_ENGINE"] = "local_gemma"
@@ -200,6 +246,13 @@ def main():
              if args.l != 8.0:
                  logging.warning(f"   ⚠️ Overriding segment length {args.l}s -> 8.0s (Veo Requirement)")
                  args.l = 8.0
+        else:
+             # LOCAL MODE: Relax constraints
+             # If using parody-video locally (Wan/LTX), we prefer variable pacing ~4s.
+             # The default in parser is 8.0, so checking against that.
+             if args.vpform == "parody-video" and args.l == 8.0:
+                 logging.info(f"   🏠 Local Parody: Switching from strict 8s to flexible 4s pacing.")
+                 args.l = 4.0
              
              # Default to K (Veo 3.1) unless Fast is specified (Legacy logic removed to allow L tier)
              # if not args.fast and not args.vfast and args.vm == "K": 
@@ -207,8 +260,6 @@ def main():
              # elif args.vm != "K" and not args.fast and not args.vfast:
              #     logging.info(f"   🎥 Switching Video Model to 'K' (Veo 3.1) for best results.")
              #     args.vm = "K"
-        
-        # Force Local Text Engine via Env Var (Captured by text_engine.py)
         # Use Local Gemma (Director Adapter) for Hollywood Accuracy
         os.environ["TEXT_ENGINE"] = "local_gemma"
         
@@ -240,7 +291,7 @@ def main():
             with open(am_path, "w") as f:
                 json.dump({
                     "text": "gemma-2-9b-it",
-                    "image": "flux-schnell",
+                    "image": "flux-klein",
                     "video": "ltx-video",
                     "spoken_tts": "kokoro-v1"
                 }, f, indent=2)
@@ -265,7 +316,7 @@ def main():
     # 0. Boot
     is_clean_run = (args.xb == "clean")
     
-    if not args.concept and is_clean_run:
+    if not args.concept and is_clean_run and args.vpform != "clip-video":
         logging.error("Please provide a concept string OR an --xb path.")
         sys.exit(1)
         
@@ -274,6 +325,18 @@ def main():
         
     ts = int(time.time())
     logging.info("🎬 MOVIE PRODUCER 1.1: Spinning up the Modular Vision Pipeline...")
+    
+    # === SPECIAL ROUTING: CLIP VIDEO ===
+    if args.vpform == "clip-video":
+        import dispatch_clip_video
+        success = dispatch_clip_video.run_clip_video_pipeline(args)
+        if success:
+            logging.info("✅ Clip Video Pipeline Complete.")
+            sys.exit(0)
+        else:
+            logging.error("❌ Clip Video Pipeline Failed.")
+            sys.exit(1)
+    # ===================================
 
     # Auto-Carbonation for Short Titles (The "Sassprilla" Hook)
     # DISABLE for Cloud Movies (they are exact remakes)
@@ -448,7 +511,7 @@ def main():
         import dispatch_animatic
         # Resolve Flux Path
         import definitions
-        flux_conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-schnell")
+        flux_conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
         flux_path = flux_conf.path if flux_conf else "/Volumes/XMVPX/mw/flux-root"
         
         success = dispatch_animatic.run_animatic(
@@ -457,30 +520,51 @@ def main():
             staging_dir=DIR_PARTS,
             flux_path=flux_path
         )
-    elif args.vpform == "full-movie":
-        # WAN VIDEO ENGINE
-        logging.info("🎬 Mode: full-movie (Wan 2.1 Video Engine)")
-        import dispatch_wan
-        success = dispatch_wan.run_wan_pipeline(
-            manifest_path=p_manifest,
-            out_path=p_manifest_updated,
-            staging_dir=DIR_PARTS,
-            args=args
-        )
-    else:
-        # Default Director (Legacy / Standard)
+        if args.local:
+             logging.info(f"🎬 Mode: {args.vpform} (Local LTX-First - Video)")
+        
+        # Default Director (Handles LTX or Cloud Veo based on args.local)
         import dispatch_director
         success = dispatch_director.run_dispatch(
             manifest_path=p_manifest,
             mode="video",
-            model_tier=args.vm,
+            model_tier=args.vm, 
             out_path=p_manifest_updated,
             staging_dir=DIR_PARTS,
             pg_mode=args.pg,
             local_mode=args.local
         )
     
-    if not success: sys.exit(1)
+    if not success:
+        # SALVAGE LOGIC: Check if we have enough clips to "rescue" the job
+        logging.warning("⚠️ Producer reported failure. Checking for salvageable content...")
+        
+        # Reload Manifest to check actual file count
+        files_present = 0
+        total_segs = args.seg
+        
+        # Try to find refined count from updated manifest
+        if os.path.exists(p_manifest_updated):
+             try:
+                 import mvp_shared
+                 m_check = mvp_shared.load_manifest(p_manifest_updated)
+                 if m_check.files: files_present = len(m_check.files)
+                 if m_check.segs: total_segs = len(m_check.segs)
+             except: pass
+        
+        # Fallback to direct file count if manifest invalid
+        if files_present == 0 and os.path.exists(DIR_PARTS):
+             files_present = len([f for f in os.listdir(DIR_PARTS) if f.endswith(".mp4")])
+             
+        missing_count = total_segs - files_present
+        pct_missing = missing_count / total_segs if total_segs > 0 else 1.0
+        
+        if pct_missing < 0.25:
+             logging.info(f"🚑 SALVAGE MODE ACTIVATED: Only {pct_missing*100:.1f}% clips missing (<25%).")
+             logging.info("   -> Ignoring failure. Proceeding to Stitch & Stretch.")
+        else:
+             logging.error(f"❌ Critical Failure: {pct_missing*100:.1f}% missing ({files_present}/{total_segs}). Cannot salvage.")
+             sys.exit(1)
 
     # 6. Post-Production (The Editor)
     from mvp_shared import load_manifest, safe_save_xmvp
@@ -507,6 +591,56 @@ def main():
         final_filename = os.path.join(DIR_FINAL, f"MVP_MOVIE_{ts}.mp4")
         logging.info(f"🧵 Stitching {len(stitch_list)} clips to {final_filename}...")
         post_production.stitch_videos(stitch_list, final_filename)
+        
+        # --- STRETCH LOGIC (Salvage/Sync) ---
+        # If we have a target length (Audio or explicit slength) and the stitched video 
+        # is significantly shorter (due to missing clips), we stretch it.
+        target_duration = 0
+        if args.mu and os.path.exists(args.mu):
+             target_duration = get_audio_duration(args.mu)
+        elif args.slength > 0:
+             target_duration = args.slength
+             
+        if target_duration > 0 and os.path.exists(final_filename):
+             current_duration = get_audio_duration(final_filename) # Reuse function for video
+             if current_duration > 0:
+                 diff = target_duration - current_duration
+                 # If missing clips, current < target. 
+                 # If diff is significant (e.g. > 2 seconds or salvage triggered)
+                 # User Rule: "fewer than 25% missing"... we already checked that to get here.
+                 # If we are here and we missed clips, duration WILL be short.
+                 if diff > 2.0:
+                      logging.info(f"⏱️ Duration Mismatch (Target: {target_duration}s, Actual: {current_duration}s).")
+                      logging.info("   🤸 Applying Time-Stretch (Changing Frame Rate) to match song...")
+                      
+                      # Rename check
+                      shutil.move(final_filename, final_filename.replace(".mp4", "_raw.mp4"))
+                      raw_input = final_filename.replace(".mp4", "_raw.mp4")
+                      
+                      # Calculate slowdown factor. 
+                      # We want Current to become Target.
+                      # PTS * (Target / Current)
+                      factor = target_duration / current_duration
+                      
+                      # Use setpts to re-time. Keep audio from music track later.
+                      # We just stretch video stream.
+                      import subprocess
+                      
+                      # NOTE: We force standard 24fps output to ensure compatibility, 
+                      # letting ffmpeg duplicate frames as needed to fill the time.
+                      cmd_stretch = [
+                          "ffmpeg", "-y",
+                          "-i", raw_input,
+                          "-filter:v", f"setpts={factor:.4f}*PTS",
+                          "-c:a", "copy", # No audio usually in raw stitch
+                          final_filename
+                      ]
+                      try:
+                          subprocess.run(cmd_stretch, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                          logging.info(f"   ✅ Stretched Video Saved: {final_filename}")
+                      except Exception as e:
+                          logging.error(f"   ❌ Stretch failed: {e}. Reverting.")
+                          shutil.copy(raw_input, final_filename)
         
         # 6.2 Draft Animatic Audio (The Whopper Integration)
         if args.vpform == "draft-animatic" and os.path.exists(final_filename):
@@ -559,20 +693,9 @@ def main():
     # We remove the failing save_xmvp call entirely since safe_save_xmvp already did it.
     
     # 8. Cleanup
-    
-    # 8. Cleanup
-    logging.info("🧹 Cleaning up component parts...")
-    try:
-        if os.path.exists(DIR_PARTS):
-            shutil.rmtree(DIR_PARTS)
-            # Re-create empty? No, user wants it clean.
-            # But wait, user said "delete all but frame one... from component parts for movies"
-            # It's safer to just empty it.
-            # actually, maybe just leaving one file is good for debug?
-            # Let's just delete the folder contents.
-            os.makedirs(DIR_PARTS, exist_ok=True) 
-    except Exception as e:
-        logging.warning(f"Cleanup warning: {e}")
+    logging.info("🛡️ Component Cleanup Disabled (Preserving 'componentparts' for safety).")
+    # if os.path.exists(DIR_PARTS):
+    #    shutil.rmtree(DIR_PARTS)
 
 if __name__ == "__main__":
     main()

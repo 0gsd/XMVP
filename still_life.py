@@ -22,6 +22,8 @@ import subprocess
 import glob
 import logging
 import time
+import gc
+
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -29,7 +31,7 @@ import xml.etree.ElementTree as ET
 try:
     import definitions
     from text_engine import TextEngine
-    from wan_bridge import get_wan_bridge
+    from hunyuan_video_bridge import HunyuanVideoBridge
 except ImportError as e:
     print(f"[-] Import Error: {e}")
     sys.exit(1)
@@ -177,6 +179,27 @@ def slice_segment(input_mp4, start_time, duration, output_dir, idx):
     
     return seg_audio, seg_frame
 
+def mux_audio_video(video_path, audio_path, output_path, duration):
+    """
+    Loops/Extends video to match audio duration and muxes them.
+    """
+    # 1. Loop video to match duration
+    # stream_loop -1 loops indefinitely, -t cuts it.
+    cmd = [
+        "ffmpeg", "-y",
+        "-stream_loop", "-1",
+        "-i", video_path,
+        "-i", audio_path,
+        "-map", "0:v", "-map", "1:a",
+        "-t", str(duration),
+        "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac", "-b:a", "192k",
+        "-shortest",
+        output_path,
+        "-loglevel", "error"
+    ]
+    subprocess.run(cmd)
+    return os.path.exists(output_path)
+
 def main():
     parser = argparse.ArgumentParser(description="Still Life: Movie-fy Static Storyboards with Wan 2.1")
     parser.add_argument("--input", required=True, help="Input MP4 file (from content_producer)")
@@ -223,10 +246,18 @@ def main():
     os.environ["TEXT_ENGINE"] = "local_gemma" # Force local for speed/privacy
     txt_engine = TextEngine()
     
-    # Video Engine (Wan)
-    wan_bridge = get_wan_bridge()
-    wan_bridge.load_model()
+    # Video Engine (Hunyuan via Comfy)
+    video_bridge = HunyuanVideoBridge()
+    if not video_bridge.comfy.check_server():
+        logging.error("❌ ComfyUI Server not reachable. Please run 'sh start_comfyui.sh' first.")
+        return
     
+    # 5. Loop
+    current_time = 0.0
+    clips = []
+    
+
+
     # 5. Loop
     current_time = 0.0
     clips = []
@@ -247,45 +278,45 @@ def main():
             continue
             
         # B. Prompt Engineering (Sassprilla)
-        # We need to turn the dialogue context into a visual motion prompt.
         prompt_request = (
-            f"Convert this scene description into a CINEMATIC VIDEO PROMPT for an AI generator.\n"
-            f"Context: {content}\n"
-            f"Style: Photorealistic, 4k, cinematic lighting.\n"
-            f"Action: Describe subtley facial movements, speaking, emotion matching the dialogue.\n"
-            f"Return ONLY the prompt string."
+            f"You are a film director. Convert this script context into a vivid, photorealistic AI Video Prompt.\n"
+            f"Script Context: {content}\n"
+            f"Requirements: Describe the visual action, lighting, and camera movement. No text overlays.\n"
+            f"Output: A single concise prompt string."
         )
         
         try:
             wan_prompt = txt_engine.generate(prompt_request).strip().strip('"')
-            # Fallback if empty
-            if len(wan_prompt) < 10: wan_prompt = f"A cinematic close up of {content}, photorealistic, speaking."
+            if len(wan_prompt) < 10: raise Exception("Empty prompt")
         except:
-            wan_prompt = f"Cinematic shot of {content}, photorealistic, detailed."
+            wan_prompt = f"Cinematic shot of {content}, photorealistic, detailed, 4k, slow motion."
             
         logging.info(f"   ✨ Prompt: {wan_prompt[:50]}...")
         
-        # C. Generate Video
-        clip_name = f"clip_{i:03d}.mp4"
-        clip_path = os.path.join(staging_dir, clip_name)
+        # C. Generate Video (Silent Raw)
+        raw_clip_name = f"raw_{i:03d}.mp4"
+        raw_clip_path = os.path.join(staging_dir, raw_clip_name)
         
-        # Wan does ~2-5s usually. If dur > 5s, we might need to loop or extend?
-        # For now, let Wan generate its standard length (likely 2s or 4s) 
-        # and we stretch/loop/pad in post?
-        # Ideally Wan output matches audio length? Hard with S2V models sometimes.
-        # Let's assume Wan generates a clip and we trust it handles the audio length OR we conform later.
-        
-        success = wan_bridge.generate(
-            prompt=wan_prompt, 
-            image_path=s_frame, 
-            audio_path=s_audio, 
-            output_path=clip_path,
+        success = video_bridge.generate(
+            prompt=wan_prompt,
+            # image_path=s_frame, # Hunyuan is T2V only for now
+            output_dir=staging_dir,
             width=args.w,
             height=args.h
         )
         
-        if success:
-            clips.append(clip_path)
+        if success and os.path.exists(raw_clip_path):
+            # D. Mux & Extend
+            final_clip_name = f"clip_{i:03d}.mp4"
+            final_clip_path = os.path.join(staging_dir, final_clip_name)
+            
+            mux_ok = mux_audio_video(raw_clip_path, s_audio, final_clip_path, dur)
+            
+            if mux_ok:
+                clips.append(final_clip_path)
+                logging.info(f"   ✅ Clip {i} Ready ({dur:.1f}s)")
+            else:
+                logging.error("   ❌ Mux Failed.")
         else:
             logging.error("   ❌ Wan Generation Failed.")
             
@@ -294,6 +325,9 @@ def main():
         # Safety save list
         with open(os.path.join(out_dir, "clips.txt"), 'w') as f:
             for c in clips: f.write(f"file '{c}'\n")
+            
+        # Memory Cleanup
+        gc.collect()
 
     # 6. Concat
     if clips:
@@ -318,7 +352,7 @@ def main():
         else:
             logging.error("❌ Stitch failed.")
     
-    wan_bridge.unload()
+
 
 if __name__ == "__main__":
     main()

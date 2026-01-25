@@ -8,10 +8,9 @@ import gc # Garbage Collection
 import numpy as np
 import io
 import io
-GEMINI_AVAILABLE = False
 try:
-    import google.generativeai as genai
-    from google.genai import types # V2 Types for Image Gen
+    # V2 SDK (Safe)
+    from google.genai import types 
     GEMINI_AVAILABLE = True
 except ImportError:
     pass
@@ -37,143 +36,96 @@ except ImportError:
 # 1. Configuration & Setup
 # -----------------------------------------------------------------------------
 
-def setup_gemini(api_key):
-    if not GEMINI_AVAILABLE: return None
-    if not api_key:
-        print("Error: API Key is missing. Set GOOGLE_API_KEY env var or use --api_key.")
-        sys.exit(1)
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel('gemini-2.0-flash')
+# -----------------------------------------------------------------------------
+# 1. Configuration & Setup
+# -----------------------------------------------------------------------------
 
 def get_gemini_logic(model, stage, context, current_res, text_engine=None):
     """
-    Constructs the prompt and gets the code from Gemini.
+    Constructs the prompt and gets the code from text_engine (Local or Cloud).
     """
     
+    # SYSTEM PROMPT (Simplified for Local LLMs like Gemma)
     prompt = f"""
-    You are an expert Python coder specializing in Numpy and Scipy.ndimage.
-    Goal: Write a SINGLE Python function to generate/modify an image based on the context.
+    You are a Python Expert.
+    Task: Write a Python function using `numpy` (as np) and `scipy.ndimage` (as ndimage) to process an image.
     
-    Context: {context}
-    Current Resolution: {current_res}x{current_res}
-    Task: Write a standard Python function using 'numpy' (as np) and 'scipy.ndimage' (as ndimage) 
-    to manipulate image data based on the parameters below.
+    CONTEXT: {context}
+    TARGET RESOLUTION: {current_res} (This is a label, use img.shape dynamically!)
     
-    Current Stage: {stage}
-    
-    Constraint Checklist & Confidence Score:
-    1. Return ONLY the raw Python code (no markdown, no explanations).
-    2. Assume input arrays are float32 (0.0 to 1.0).
-    3. Ensure math is safe (no division by zero).
-    4. INDENTATION IS CRITICAL: Use 4 spaces. Ensure valid Python block structure.
+    RULES:
+    1. Output ONLY raw Python code. No markdown. No comments.
+    2. Input `img` is (H, W, 3) float32 array (0.0 to 1.0).
+    3. Return `img` of same shape and dtype.
+    4. NO hallucinated functions. Use standard numpy operations.
+    5. Handle shapes dynamically: `h, w = img.shape[:2]`
     """
 
     if stage == "pixel_pass":
         prompt += """
-        Function Name: `def logic_pixel_redraw(img):`
-        Input: `img` is (H, W, 3) float32 array.
-        Logic: Simulate redrawing pixels one by one. 
-        - If Level < 10: Tiny quantization or very subtle noise.
-        - If Level > 50: Significant color jitter, channel drift, or static.
-        Return: Modified img array.
+        Function: `def logic_pixel_redraw(img):`
+        Goal: Analog Pixel Drift.
+        Logic: 
+        1. Add slight noise: `img += np.random.normal(0, 0.02, img.shape)`
+        2. Shift channels slightly if Level > 50.
+        3. Clamp to [0,1].
         """
         
     elif stage == "refine_pass":
         prompt += """
-        Function Name: `def logic_refine_block(block, avg_color):`
-        Input: 
-          - `block`: (H, W, 3) float32 array (the current section).
-          - `avg_color`: (3,) float32 array (the average color of this section).
-        Logic: Refine the block by blending it with the average color or sharpening it.
-        - Level 0-20: Smooth/correct the block (blend towards average).
-        - Level 50+: Add texture or high contrast.
-        Return: Modified block array.
+        Function: `def logic_refine_block(block, avg_color):`
+        Goal: Coherence.
+        Logic: 
+        1. Blend block towards avg_color by 0.1 factor.
+        2. If variance is high, sharpen slightly using `block + (block - ndimage.gaussian_filter(block, 1)) * 0.2`.
         """
         
     elif stage == "degrade_pass":
         prompt += """
-        Function Name: `def logic_degrade(img):`
-        Input: `img` is (H, W, 3) float32 array.
-        Logic: Apply global degradation.
-        - Chromatic aberration (roll channels).
-        - Blur (gaussian_filter).
-        - Noise (random.normal).
-        Make effects proportional to the Degradation Level.
-        Return: Modified img array.
+        Function: `def logic_degrade(img):`
+        Goal: VHS/Retro Effect.
+        Logic:
+        1. Blur slightly: `img = ndimage.gaussian_filter(img, sigma=0.5)`
+        2. Add noise: `img += np.random.uniform(-0.05, 0.05, img.shape)`
         """
     
     elif stage == "pixel_painter":
-        h, w = context.get('h', 64), context.get('w', 64)
+        h = context.get('h', 64) if isinstance(context, dict) else 64
+        w = context.get('w', 64) if isinstance(context, dict) else 64
         prompt += f"""
-        Function Name: `def paint_base(img):`
-        Input: `img` is ({h}, {w}, 3) float32 array.
-               - Check `if np.mean(img) < 0.01:` -> Treat as Blank Canvas.
-               - Else -> Treat as Previous Frame (Evolve).
-        Logic: Generate the {h}x{w} pixel representation using Numpy.
-        - If Evolving: PRESERVE existing shapes. Apply only necessary motion (pan/zoom).
-        - Avoid Noise: Do NOT just add random noise. Draw STRUCTURES.
-        - Math Safety: `(x + 1e-6)`.
-        - AFFINE SAFETY: If using `ndimage.affine_transform`, iterating per-channel is safest. Do NOT apply 2D matrix to 3D array.
-        - Do NOT fade to black. Keep brightness typically > 0.4.
-        - CRITICAL: NO hallucinated functions.
-        Return: Modified img array ({h}, {w}, 3).
+        Function: `def paint_base(img):`
+        Goal: Draw the prompt description from scratch.
+        Canvas: {h}x{w} pixels.
+        Logic:
+        1. Initialize `canvas` as zeros ({h}, {w}, 3).
+        2. Draw simple shapes (rectangles/gradients) based on prompt context using numpy slicing.
+        3. Example: `canvas[10:50, 10:50] = [1.0, 0.0, 0.0]` (Red Box).
+        4. Return `canvas`.
         """
-
 
     elif stage == "detail_pass":
         prompt += """
-        Function Name: `def logic_detail_pass(img_array):`
-        Input: `img_array` is (H, W, 3) float32 array.
-        Logic: Add DETAIL appropriate for this resolution.
-        - Analyze the broad shapes.
-        - Add texture, shading, noise, or refining strokes.
-        
-        CRITICAL CONSTRAINTS:
-        1. USE THE INPUT SHAPE: `h, w = img_array.shape[:2]`. NEVER hardcode dimensions like (8,8) or (512,512).
-        2. BROADCASTING SAFETY: If adding a texture, ensure it is `(h, w, 1)` or `(h, w, 3)`.
-        3. NO BLOCK MISMATCH: Do not try to reshape arrays into 5D tensors. Keep it simple (H, W, 3).
-        4. PER-CHANNEL Filters: `ndimage` filters often flatten 3D arrays. Use:
-           `for c in range(3): img_array[:,:,c] = filter(img_array[:,:,c])`
-        5. NO HALLUCINATIONS: `ndimage.detail_enhance` DOES NOT EXIST. Use Unsharp Mask:
-           `blurred = ndimage.gaussian_filter(img, sigma=1)`
-           `sharpened = img + (img - blurred) * amount`
-        
-        Return: Modified img_array.
+        Function: `def logic_detail_pass(img):`
+        Goal: Enhance Details.
+        Logic:
+        1. Unsharp Mask: `detail = img - ndimage.gaussian_filter(img, 2)`
+        2. Add detail back: `img += detail * 0.3`
+        3. Add grain: `img += np.random.choice([-0.02, 0.02], img.shape)`
         """
 
-    retries = 4
-    for attempt in range(retries):
-        try:
-            # 1. PREFERRED: Use TextEngine (Supports Local/Cloud abstraction)
-            if text_engine:
-                 # Local Mode passes here now
-                 text = text_engine.generate(prompt, temperature=0.7)
-            
-            # 2. LEGACY: Use raw model object (Cloud Only fallback)
-            elif model:
-                 response = model.generate_content(prompt)
-                 text = response.text
-            else:
-                 return None # No engine available
-            
-            if not text: return None
-
-            # Strip markdown code blocks if present (Centralized list stripping)
+    # GENERATION
+    # Prioritize TextEngine (Handles Local/Cloud/Keys)
+    if text_engine:
+        # Lower temp for code accuracy
+        text = text_engine.generate(prompt, temperature=0.2)
+        if text:
+            # Clean Markdown
             if "```python" in text:
                 text = text.split("```python")[1].split("```")[0]
             elif "```" in text:
                 text = text.split("```")[1].split("```")[0]
             return text.strip()
             
-        except Exception as e:
-            if "429" in str(e) or "ResourceExhausted" in str(e):
-                wait = 30 + (attempt * 5)
-                print(f"(!) 429 Quota hit. Backing off {wait}s...")
-                time.sleep(wait)
-                continue 
-            else:
-                print(f"(!) Reasoning Error: {e}")
-                return None
     return None
 
 def compile_ai_code(code_str, func_name):
@@ -522,7 +474,7 @@ def perform_stage_pass(img_arr, stage_name, prompt, model, res, text_engine=None
              return img_arr
     return img_arr
 
-def stage_1_pixels(img_array, model, degrade):
+def stage_1_pixels(img_array, model, degrade, text_engine=None):
     """
     Pass 1: Pixel Redraw.
     We use vectorization to simulate the "one by one" process efficiently.
@@ -530,7 +482,8 @@ def stage_1_pixels(img_array, model, degrade):
     print(f"\n--- Pass 1: Pixel Redraw (Level {degrade}) ---")
     print("Asking Gemini for pixel logic...")
     
-    code = get_gemini_logic(model, "pixel_pass", "Simulate analog pixel placement", degrade)
+    code = get_gemini_logic(model, "pixel_pass", "Simulate analog pixel placement", degrade, text_engine)
+    print(f"--- [DEBUG] Generated Pixel Logic ---\n{code}\n-------------------------------------")
     func = compile_ai_code(code, "logic_pixel_redraw")
 
     if func:
@@ -546,7 +499,7 @@ def stage_1_pixels(img_array, model, degrade):
     print("Using fallback pixel logic.")
     return np.clip(img_array + np.random.normal(0, 0.02, img_array.shape), 0, 1)
 
-def stage_2_refinement(img_array, original_array, model, degrade):
+def stage_2_refinement(img_array, original_array, model, degrade, text_engine=None):
     """
     Pass 2: Recursive Group Refinement.
     We iterate through block sizes and PHYSICALLY process the image in chunks.
@@ -566,7 +519,8 @@ def stage_2_refinement(img_array, original_array, model, degrade):
         context = f"Processing image in {size}x{size} chunks."
         
         # 1. Get Logic for this specific scale
-        code = get_gemini_logic(model, "refine_pass", context, degrade)
+        code = get_gemini_logic(model, "refine_pass", context, degrade, text_engine)
+        print(f"--- [DEBUG] Generated Refine Logic ({size}x{size}) ---\n{code}\n-------------------------------------")
         func = compile_ai_code(code, "logic_refine_block")
         
         if not func:
@@ -599,14 +553,15 @@ def stage_2_refinement(img_array, original_array, model, degrade):
                     
     return np.clip(canvas, 0.0, 1.0)
 
-def stage_3_flourishes(img_array, model, degrade):
+def stage_3_flourishes(img_array, model, degrade, text_engine=None):
     """
     Pass 3: Final Degradation & Perspective Errors.
     """
     print(f"\n--- Pass 3: Flourishes & Degradation ---")
     
     # 1. Image Processing Effects (Blur, Aberration) via Gemini
-    code = get_gemini_logic(model, "degrade_pass", "Final artistic touches", degrade)
+    code = get_gemini_logic(model, "degrade_pass", "Final artistic touches", degrade, text_engine)
+    print(f"--- [DEBUG] Generated Degrade Logic ---\n{code}\n-------------------------------------")
     func = compile_ai_code(code, "logic_degrade")
     
     if func:
@@ -618,38 +573,47 @@ def stage_3_flourishes(img_array, model, degrade):
     img_array = np.clip(img_array, 0.0, 1.0)
     
     # 2. Perspective / Lens Errors (Breaking the illusion)
-    # We use PIL for geometric transforms as it's cleaner than raw numpy for warping
-    if degrade > 0:
-        print("Applying perspective errors...")
-        pil_img = Image.fromarray((img_array * 255).astype(np.uint8))
-        w, h = pil_img.size
+    # DISABLED: User feedback indicated this caused unwanted "keystone" distortion.
+    # if degrade > 0:
+    #     print("Applying perspective errors...")
+    #     pil_img = Image.fromarray((img_array * 255).astype(np.uint8))
+    #     w, h = pil_img.size
         
-        # Calculate distortion intensity (0.0 to 0.3)
-        intensity = (degrade / 100.0) * 0.2
+    #     # Calculate distortion intensity (0.0 to 0.3)
+    #     intensity = (degrade / 100.0) * 0.2
         
-        if intensity > 0.01:
-            # Create a subtle Perspective Warp (Quad Transform)
-            # We skew the "source" rectangle slightly
-            dx = int(w * intensity)
-            dy = int(h * intensity)
+    #     if intensity > 0.01:
+    #         # Create a subtle Perspective Warp (Quad Transform)
+    #         # We skew the "source" rectangle slightly
+    #         dx = int(w * intensity)
+    #         dy = int(h * intensity)
             
-            # Source Quad: Top-Left, Bottom-Left, Bottom-Right, Top-Right
-            # We squeeze the corners to simulate a lens warp or paper bend
-            quad = (
-                -dx, -dy,         # TL
-                0, h + dy,        # BL
-                w, h + dy,        # BR
-                w + dx, -dy       # TR
-            )
+    #         # Source Quad: Top-Left, Bottom-Left, Bottom-Right, Top-Right
+    #         # We squeeze the corners to simulate a lens warp or paper bend
+    #         quad = (
+    #             -dx, -dy,         # TL
+    #             0, h + dy,        # BL
+    #             w, h + dy,        # BR
+    #             w + dx, -dy       # TR
+    #         )
             
-            try:
-                # Transform: We map the distorted quad back to the original rectangle
-                pil_img = pil_img.transform((w, h), Image.QUAD, quad, resample=Image.BICUBIC)
-                img_array = np.array(pil_img).astype(np.float32) / 255.0
-            except Exception as e:
-                print(f"Perspective warp skipped: {e}")
+    #         try:
+    #             # Transform: We map the distorted quad back to the original rectangle
+    #             pil_img = pil_img.transform((w, h), Image.QUAD, quad, resample=Image.BICUBIC)
+    #             img_array = np.array(pil_img).astype(np.float32) / 255.0
+    #         except Exception as e:
+    #             print(f"Perspective warp skipped: {e}")
 
     return img_array
+
+# -----------------------------------------------------------------------------
+# 3. Main
+# -----------------------------------------------------------------------------
+
+try:
+    from text_engine import get_engine
+except ImportError:
+    pass
 
 # -----------------------------------------------------------------------------
 # 3. Main
@@ -673,19 +637,28 @@ def main():
     
     # Setup
     t0 = time.time()
-    model = setup_gemini(args.api_key)
+    
+    # NEW: Use TextEngine
+    text_engine = None
+    try:
+        text_engine = get_engine()
+        print("🧠 Text Engine Connected.")
+    except Exception as e:
+        print(f"(!) Failed to connect Text Engine: {e}")
+        # Soft fail if just testing logic without AI?
+        
+    model = None # Legacy model object is no longer used directly
 
     # Mode 1: Code Painter (Generate from scratch)
     if args.prompt:
         print(f"--- Code Painter Mode ---")
         img_arr = None
-        pil_img = generate_via_code(args.prompt, model=model)
+        pil_img = generate_via_code(args.prompt, text_engine=text_engine)
         
         if pil_img:
             # Convert to array for pipeline consistency
             img_arr = np.array(pil_img).astype(np.float32) / 255.0
             original_arr = img_arr.copy()
-            original_dpi = (72, 72)
         else:
             print("(!) Code Painter failed to generate image.")
             sys.exit(1)
@@ -711,7 +684,8 @@ def main():
         original_arr = img_arr.copy()
         
         # Pipeline Stage 1 (only for reconstruction)
-        img_arr = stage_1_pixels(img_arr, model, args.degrade)
+        # Note: We pass model as None, relying on text_engine internally
+        img_arr = stage_1_pixels(img_arr, model=None, degrade=args.degrade, text_engine=text_engine)
 
     # Common Pipeline (Refinement)
     # Even generated images can benefit from refinement if we want, or we skip?
@@ -719,10 +693,15 @@ def main():
     # User said: "have python math workers actually draw it out and refine it"
     # So maybe we SHOULD run refinement? Let's run it.
     
-    img_arr = stage_2_refinement(img_arr, original_arr, model, args.degrade)
+    # Must update function signatures in main loop to accept text_engine explicitly if they don't default it
+    # Currently stage_1_pixels calls get_gemini_logic(model, ...)
+    # We need to make sure stage_1_pixels etc pass text_engine down.
+    
+    # I need to update the wrapper functions (stage_1, stage_2, stage_3) to accept/pass text_engine.
+    img_arr = stage_2_refinement(img_arr, original_arr, model=None, degrade=args.degrade, text_engine=text_engine)
     
     if args.degrade > 0:
-        img_arr = stage_3_flourishes(img_arr, model, args.degrade)
+        img_arr = stage_3_flourishes(img_arr, model=None, degrade=args.degrade, text_engine=text_engine)
     else:
         print("\n--- Pass 3: Skipped (Degrade = 0) ---")
 

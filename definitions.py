@@ -68,12 +68,13 @@ MODAL_REGISTRY: Dict[Modality, Dict[str, ModelConfig]] = {
     Modality.IMAGE: {
         "gemini-2.5-flash-image": ModelConfig("gemini-2.5-flash-image", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
         "imagen-3": ModelConfig("imagen-3.0-generate-001", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
-        "flux-schnell": ModelConfig("flux-schnell", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root")
+        "flux-schnell": ModelConfig("flux-schnell", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root"),
+        "flux-klein": ModelConfig("flux-klein", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root/klein-9b")
     },
     Modality.VIDEO: {
         "veo-3.1-fast": ModelConfig("veo-3.1-fast-generate-preview", BackendType.CLOUD, Modality.VIDEO, api_key_env="GEMINI_API_KEY"),
         "veo-3.1-4k": ModelConfig("veo-3.1-generate-preview", BackendType.CLOUD, Modality.VIDEO, api_key_env="GEMINI_API_KEY"),
-        "ltx-video": ModelConfig("ltx-video", BackendType.LOCAL, Modality.VIDEO, path="/Volumes/XMVPX/mw/LT2X-root")
+        "ltx-video": ModelConfig("ltx-video", BackendType.LOCAL, Modality.VIDEO, path="/Volumes/XMVPX/mw/LT2X-root/ltxv-13b-0.9.8-dev.safetensors")
     },
     Modality.SPOKEN_TTS: {
         "google-journey": ModelConfig("en-US-Journey-F", BackendType.CLOUD, Modality.SPOKEN_TTS, api_key_env="GOOGLE_CLOUD_ACCESS_TOKEN"),
@@ -84,7 +85,7 @@ MODAL_REGISTRY: Dict[Modality, Dict[str, ModelConfig]] = {
 # Defaults
 DEFAULT_PROFILE = {
     Modality.TEXT: "gemini-2.0-flash",
-    Modality.IMAGE: "gemini-2.5-flash-image",
+    Modality.IMAGE: "flux-klein",
     Modality.VIDEO: "veo-3.1-fast",
     Modality.SPOKEN_TTS: "google-journey"
 }

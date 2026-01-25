@@ -15,6 +15,7 @@ import pyloudnorm as pyln
 from pathlib import Path
 import librosa
 import numpy as np
+import torch
 # Monkeypatch for Scipy 1.13+ vs Librosa < 0.10 compatibility
 try:
     import scipy.signal
@@ -28,18 +29,275 @@ from google import genai
 from google.genai import types
 from text_engine import TextEngine
 from truth_safety import TruthSafety
-from mvp_shared import VPForm, CSSV, Constraints, Story, Portion, save_xmvp, load_xmvp, load_manifest
+from mvp_shared import VPForm, CSSV, Constraints, Story, Portion, save_xmvp, load_xmvp, load_manifest, load_nicotime_context
 from vision_producer import get_chaos_seed
 import frame_canvas # Support FC Mode
 try:
     from flux_bridge import get_flux_bridge
 except ImportError:
     pass # Handle locally inside function if missing
+try:
+    from wan_bridge import get_wan_bridge
+except ImportError:
+    pass
 import definitions
 from definitions import Modality, BackendType, get_active_model
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def plan_shots(total_frames, fps, bpm=None):
+    """
+    Generates a list of shots (StartFrame, EndFrame) covering the total duration.
+    - Average Duration: 4.0s
+    - Range: 1.0s - 6.0s
+    - Beat Sync: If BPM provided, snaps cut points to nearest beat.
+    """
+    shots = []
+    current_frame = 0
+    
+    # Calculate frames per beat
+    frames_per_beat = None
+    if bpm and bpm > 0:
+        frames_per_beat = fps * (60.0 / bpm)
+        logging.info(f"   🥁 Beat Sync Active: {frames_per_beat:.1f} frames/beat")
+        
+    while current_frame < total_frames:
+        # 1. Propose generic duration (1s-6s, avg 4s)
+        # Weight towards 4s
+        base_sec = random.triangular(1.0, 6.0, 4.0)
+        dur_frames = int(base_sec * fps)
+        
+        target_end = current_frame + dur_frames
+        
+        # 2. Beat Snap (The "Loose Coupling")
+        if frames_per_beat:
+            # Find nearest beat boundary to target_end
+            raw_beat = target_end / frames_per_beat
+            nearest_beat = round(raw_beat)
+            # Don't snap if it makes clip too short (<1s)
+            valid_snap = int(nearest_beat * frames_per_beat)
+            if valid_snap > current_frame + fps:
+                target_end = valid_snap
+                
+        # 3. Cap at total
+        if target_end >= total_frames:
+            target_end = total_frames
+            dur_frames = target_end - current_frame
+            shots.append((current_frame, target_end))
+            break
+            
+        # 4. Enforce Wan Constraints (Length % 4 == 1)
+        # Wan FLF generates N frames between A and B (inclusive).
+        # We need the SEGMENT length (End - Start + 1) to be 4n+1?
+        # Actually Wan logic: num_frames = (end - start) + 1?
+        # Wait, if we have Frame 0 and Frame 24.
+        # We generate 0..24. Total 25 frames.
+        # 25 = 4*6 + 1. Valid.
+        # So (End - Start) must be divisible by 4.
+        
+        seg_len = target_end - current_frame
+        remainder = seg_len % 4
+        if remainder != 0:
+            target_end -= remainder # Round down to nearest mod 4
+            
+        if target_end <= current_frame:
+             # If rounding killed it, force forward
+             target_end = current_frame + 4
+        
+        shots.append((current_frame, target_end))
+        current_frame = target_end
+        
+    return shots
+
+def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration, bpm=None):
+    """
+    Orchestrates the Wan 2.1 Keyframe Animation workflow using Variable Shot Lengths.
+     1. Plan Shots (Variable duration, beat-synced)
+     2. Generate Keyframes (Flux) for Shot Boundaries.
+     3. Generate Intervals (Wan FLF).
+     4. Stitch.
+    """
+    kf_dir = out_root / "keyframes"
+    ensure_dir(kf_dir)
+    vid_dir = out_root / "segments"
+    ensure_dir(vid_dir)
+    
+    # 0. Plan Shots
+    total_frames = int(duration * project_fps)
+    shot_list = plan_shots(total_frames, project_fps, bpm)
+    
+    logging.info(f"\\n=== PHASE 0: SHOT PLANNING ({len(shot_list)} Shots) ===")
+    logging.info(f"   Avg Duration: {duration/len(shot_list):.2f}s")
+    
+    # 1. Generate Keyframes (Flux)
+    logging.info("\\n=== PHASE 1: GENERATING KEYFRAMES (FLUX) ===")
+    
+    # Collect unique boundary frames needed (Start of Shot 0, End of Shot 0/Start of Shot 1...)
+    # Actually, distinct shots might NOT share frames if we want "Cuts".
+    # But Wan FLF needs First and Last.
+    # If Shot A is 0-96. Shot B is 96-144.
+    # Frame 96 is the end of A and start of B.
+    # So yes, they share keyframes for continuity.
+    # UNLESS we want hard cuts?
+    # User said: "not like a crazy collage of morphing... make it feel like a real movie composed of clips"
+    # If we share frames, Wan will morph A->B.
+    # If we want a CUT, Shot A (0-96) and Shot B (97-150) should be distinct.
+    # But Wan FLF generates the video *between* the frames.
+    # If we want a continuous video file, we need continuity?
+    # Actually, real movies have CUTS.
+    # So Shot A ends. CUT. Shot B starts.
+    # Frame 96 (End of A) and Frame 97 (Start of B) can be totally different images!
+    # They don't need to morph.
+    # So we should generate:
+    # Keyframe A_Start, Keyframe A_End -> Output Video A
+    # Keyframe B_Start, Keyframe B_End -> Output Video B
+    # Concatenate.
+    # This avoids the "Morphing World" problem entirely!
+    # Frame A_End and B_Start will be sequential in the final video but visual discontinuities (Cuts).
+    
+    # So... we need 2 keyframes per shot.
+    # Shot 1: KF_0_Start, KF_0_End.
+    # Shot 2: KF_1_Start, KF_1_End.
+    
+    # Load Flux Bridge
+    try:
+        from flux_bridge import get_flux_bridge
+        flux_bridge = get_flux_bridge("/Volumes/XMVPX/mw/flux-root")
+        if not flux_bridge: raise ImportError("No Flux Bridge")
+    except Exception as e:
+        logging.error(f"Failed to load Flux: {e}")
+        return
+
+    shot_assets = [] # Stores (output_path, num_frames)
+    
+    for i, (start_f, end_f) in enumerate(shot_list):
+        logging.info(f"\\n   🎬 Shot {i}: Frames {start_f}-{end_f} ({(end_f-start_f)/project_fps:.1f}s)")
+        
+        # Define Keyframe Paths
+        kf_start_path = kf_dir / f"shot_{i:03d}_start_f{start_f}.png"
+        kf_end_path = kf_dir / f"shot_{i:03d}_end_f{end_f}.png"
+        
+        # Get Prompts
+        # We use the prompt at the START time for the whole shot?
+        # Or Start prompt and End prompt?
+        # If prompts change 1/sec, and shot is 4s.
+        # Start Prompt = P[0]. End Prompt = P[4].
+        # Wan interpolates P[0]->P[4].
+        
+        p_idx_start = min(start_f, len(prompts)-1)
+        p_idx_end = min(end_f, len(prompts)-1)
+        
+        prompt_start = prompts[p_idx_start]
+        prompt_end = prompts[p_idx_end]
+        
+        # Generate Start Keyframe (If not exists)
+        if not kf_start_path.exists():
+            clean_s = re.sub(r"\(Frame \d+/\d+\)", "", prompt_start).strip()
+            scold_s = f"{clean_s} {ANI_INSTRUCTION} --no text --no letters --no watermarks"
+            logging.info(f"      🖼️  KF Start: {clean_s[:30]}...")
+            img = flux_bridge.generate(prompt=scold_s, width=args.w, height=args.h, steps=12)
+            if img: img.save(kf_start_path)
+            
+        # Generate End Keyframe
+        if not kf_end_path.exists():
+            clean_e = re.sub(r"\(Frame \d+/\d+\)", "", prompt_end).strip()
+            scold_e = f"{clean_e} {ANI_INSTRUCTION} --no text --no letters --no watermarks"
+            # Optimization: If Start/End prompts are identical (static shot), maybe Flux varies it slightly?
+            # Yes, Flux seed is random. So it will look like "Time passing".
+            logging.info(f"      🖼️  KF End:   {clean_e[:30]}...")
+            img = flux_bridge.generate(prompt=scold_e, width=args.w, height=args.h, steps=12)
+            if img: img.save(kf_end_path)
+            
+        shot_assets.append({
+            "id": i,
+            "start_img": kf_start_path,
+            "end_img": kf_end_path,
+            "prompt": prompt_start, # Use start prompt for Wan conditioning
+            "num_frames": end_f - start_f + 1,
+            "out_video": vid_dir / f"shot_{i:03d}.mp4"
+        })
+
+    del flux_bridge
+    import gc; gc.collect()
+    if torch.backends.mps.is_available(): torch.mps.empty_cache()
+    
+    # 2. Generate Intervals (Wan FLF)
+    logging.info("\\n=== PHASE 2: GENERATING SHOTS (WAN FLF) ===")
+    
+    try:
+        from wan_bridge import get_wan_bridge
+        wan_bridge = get_wan_bridge(task_type="flf")
+        wan_bridge.load_model()
+    except Exception as e:
+        logging.error(f"Failed to load Wan: {e}")
+        return
+        
+    final_segments = []
+    
+    for shot in shot_assets:
+        out_path = shot["out_video"]
+        final_segments.append(out_path)
+        
+        if out_path.exists(): continue
+        
+        logging.info(f"   📹 Rendering Shot {shot['id']} ({shot['num_frames']} frames)...")
+        
+        clean_p = re.sub(r"\(Frame \d+/\d+\)", "", shot["prompt"]).strip()
+        
+        # Enforce 4n+1 Constraint again just in case
+        valid_n = shot["num_frames"]
+        if (valid_n - 1) % 4 != 0:
+             # Should be handled by planner, but safety net
+             valid_n = round((valid_n - 1) / 4) * 4 + 1
+             
+        success = wan_bridge.generate_flf(
+            prompt=clean_p,
+            first_frame_path=str(shot["start_img"]),
+            last_frame_path=str(shot["end_img"]),
+            output_path=str(out_path),
+            width=args.w,
+            height=args.h,
+            num_frames=valid_n
+        )
+        if not success:
+            logging.error(f"Failed Shot {shot['id']}")
+
+    wan_bridge.unload()
+
+    # 3. Stitch
+    logging.info("\\n=== PHASE 3: STITCHING ===")
+    list_path = out_root / "shot_list.txt"
+    final_video = out_root / "final_feature.mp4"
+    
+    with open(list_path, 'w') as f:
+        for seg in final_segments:
+            f.write(f"file '{seg}'\\n")
+            # No inpoint needed if we are doing hard cuts.
+            # We want the FULL clip.
+            
+    cmd_stitch = [
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", str(list_path),
+        "-c", "copy", str(final_video)
+    ]
+    subprocess.run(cmd_stitch, check=False)
+    
+    if args.mu and os.path.exists(args.mu) and final_video.exists():
+        logging.info("   🎵 Adding Audio...")
+        final_with_audio = out_root / "final_with_audio.mp4"
+        cmd_audio = [
+            "ffmpeg", "-y",
+            "-i", str(final_video),
+            "-i", str(args.mu),
+            "-map", "0:v", "-map", "1:a",
+            "-c:v", "copy", "-shortest",
+            str(final_with_audio)
+        ]
+        subprocess.run(cmd_audio, check=False)
+        logging.info(f"✅ COMPLETE: {final_with_audio}")
+    elif final_video.exists():
+        logging.info(f"✅ COMPLETE: {final_video}")
 
 # Default Paths (Can be overridden by args)
 DEFAULT_TF = Path("/Users/0gs/METMcloud/METMroot/tools/fmv/fbf_data")
@@ -48,15 +306,17 @@ DEFAULT_VF = Path("/Volumes/XMVPX/fmv_corpus")
 # Model Configuration
 # Model Configuration
 # IMAGE_MODEL = "gemini-2.5-flash-image" # Default (Fast/Capable) - DEPRECATED for Registry
-FLIPBOOK_STYLE_PROMPT = "You are a commercial animator working in a large production house with Fortune 500 clients in the 1990's. though you have SOME room for artistic expression and deviating from the frame prompt you are given, in order to fulfill your job as an animator, you need to ensure that you reference the previous frame (provided helpfully as context) and draw the exact next frame in the scene's (and thus the narrative's) trajectory. VISUAL:"
+FLIPBOOK_STYLE_PROMPT = "You are a commercial animator. DRAW ONLY VISUALS. NO TEXT. NO NUMBERS. NO METADATA OVERLAYS. VISUAL:"
 
 ANI_INSTRUCTION = """
 CRITICAL VISUAL INSTRUCTION:
 - This is a sequential frame in a HAND-DRAWN animation.
 - STRICTLY NO TEXT, NO TIMECODES, NO "FRAME XX/YY" OVERLAYS.
+- DO NOT INCLUDE ANY WORDS, NUMBERS, LOGOS, or WATERMARKS.
 - The image must be pure visual content.
 - Match the style of the previous frame (if provided) EXACTLY.
 - Motion should be incremental and fluid.
+- IF YOU ARE TEMPTED TO WRITE TEXT, DRAW A cloud INSTEAD.
 """
 
 def load_keys(env_path):
@@ -209,6 +469,257 @@ def analyze_audio_profile(audio_path, duration):
         logging.warning(f"   ⚠️ Could not generate audio profile: {e}")
         return "Audio Profile Unavailable."
 
+def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration):
+    """
+    Orchestrates the Wan 2.1 Keyframe Animation workflow:
+    1. Generate Keyframes (Flux)
+    2. Generate Intervals (Wan FLF)
+    3. Stitch
+    """
+    kf_dir = out_root / "keyframes"
+    ensure_dir(kf_dir)
+    vid_dir = out_root / "segments"
+    ensure_dir(vid_dir)
+    
+    # 1. Generate Keyframes (Flux)
+    logging.info("\n=== PHASE 1: GENERATING KEYFRAMES (FLUX) ===")
+    
+    # Keyframe Strategy:
+    # If project_fps = 8, then we need 1 keyframe per second?
+    # Or 1 keyframe every N frames?
+    # User said: "generate frame 1... generate frame 8... Wan 1-8".
+    # This implies Keyframes are at 1s intervals (if 8fps).
+    # Prompts list usually matches frames or beats.
+    # In 'music-video', 'prompts' logic depends on source.
+    # If source_content (XML) -> one per beat/description.
+    # If auto-generated -> one per frame (music-visualizer) or one per beat.
+    
+    # We need to sub-sample prompts if they are dense.
+    # Let's assume 'prompts' corresponds to the target timeline.
+    # If 'prompts' has N items, we treat them as keyframes?
+    # No, usually prompts list in 'music-video' logic is populated PER FRAME if visualizer, or PER BEAT.
+    
+    # Let's standardize: We generate a Keyframe every X seconds (e.g. 1s).
+    # Interval = int(project_fps) frames.
+    
+    interval = int(project_fps) if project_fps >= 1 else 24
+    num_keyframes = math.ceil(len(prompts) / interval) if len(prompts) > interval else len(prompts)
+    # Actually if prompts are descriptions (beats), we might have fewer prompts than frames.
+    
+    # Re-evaluate 'prompts' variable from process_project.
+    # In 'music-video', prompts were not fully populated in the snippets I saw? 
+    # Let's look at process_project logic (Lines 800+).
+    # ... It iterates target_frames.
+    
+    # Simplification: We will sample the provided prompts at Keyframe Indices.
+    # If prompts list is short (beats), we cycle?
+    # Let's assume prompts[i] corresponds to time t=i/fps?
+    # No, prompts in music-video seems to be frame-by-frame text list (target_content = ...).
+    
+    # We will generate Keyframe images 0, Interval, 2*Interval...
+    kf_paths = []
+    
+    # Load Flux Bridge
+    try:
+        from flux_bridge import get_flux_bridge
+        flux_bridge = get_flux_bridge("/Volumes/XMVPX/mw/flux-root") # Default local path
+        if not flux_bridge: raise ImportError("No Flux Bridge")
+    except Exception as e:
+        logging.error(f"Failed to load Flux for keyframes: {e}")
+        return
+
+    prev_kf = None
+    
+    total_frames = int(duration * project_fps)
+    key_indices = range(0, total_frames, interval)
+    
+    for i, frame_idx in enumerate(key_indices):
+        kf_path = kf_dir / f"kf_{i:04d}_f{frame_idx}.png"
+        kf_paths.append(kf_path)
+        
+        if kf_path.exists():
+            prev_kf = kf_path
+            continue
+            
+        # Get Prompt
+        # Map frame_idx to prompt list
+        p_idx = min(frame_idx, len(prompts)-1)
+        prompt = prompts[p_idx]
+        
+        # Strip "Frame X" meta
+        clean_prompt = re.sub(r"\(Frame \d+/\d+\)", "", prompt).strip()
+        
+        logging.info(f"   🖼️  Generating Keyframe {i} (Frame {frame_idx}): {clean_prompt[:40]}...")
+        
+        # Generate with Flux
+        # using 'prev_kf' as Img2Img input?
+        # User said: "use Flux to generate frame 1 (using knowledge)... generate frame 8... using knowledge".
+        # Might benefit from slight img2img or just pure txt2img with consistent seed/style.
+        # Let's use Txt2Img for KF1, and maybe weak Img2Img for KF2 to keep consistency?
+        # Actually user implied frame-to-frame logic in Wan. Flux frames should be distinct poses?
+        # Let's allow Flux to be creative. Txt2Img (img=None).
+        # OR using prev_kf with low strength?
+        # Let's implement Txt2Img for now to ensure we hit the prompts.
+        
+        img = flux_bridge.generate(
+            prompt=clean_prompt,
+            width=args.w if args.w else 1280, 
+            height=args.h if args.h else 720,
+            image=None, # Pure Gen
+            steps=8
+        )
+        if img:
+            img.save(kf_path)
+            prev_kf = kf_path
+        else:
+            logging.error("Flux failed.")
+            return
+
+    # Unload Flux
+    del flux_bridge
+    import gc; gc.collect()
+    if torch.backends.mps.is_available(): torch.mps.empty_cache()
+    
+    # 2. Generate Intervals (Wan FLF)
+    logging.info("\n=== PHASE 2: GENERATING INTERVALS (WAN FLF) ===")
+    
+    try:
+        from wan_bridge import get_wan_bridge
+        wan_bridge = get_wan_bridge(task_type="flf")
+        wan_bridge.load_model()
+    except Exception as e:
+        logging.error(f"Failed to load Wan: {e}")
+        return
+        
+    segment_paths = []
+    
+    # Iterate pairs
+    for i in range(len(kf_paths) - 1):
+        start_img = kf_paths[i]
+        end_img = kf_paths[i+1]
+        seg_path = vid_dir / f"seg_{i:04d}.mp4"
+        segment_paths.append(seg_path)
+        
+        if seg_path.exists(): continue
+        
+        # Calculate Number of Frames needed
+        # Interval is e.g. 8 frames.
+        # We have Frame 0 and Frame 8.
+        # We need frames 0, 1, 2, 3, 4, 5, 6, 7, 8. (9 frames).
+        # Wan FLF expects Start/End.
+        # frame_num=9.
+        # If interval=8, we need 8+1=9 frames.
+        num_frames_needed = interval + 1
+        
+        # Ensure 4n+1 constraint?
+        # 9 is 4(2)+1. Good.
+        # 49 is 4(12)+1. Good.
+        # If interval=24, n=25. 25 = 4(6)+1. Good.
+        # If interval=12, n=13. 13 = 4(3)+1. Good.
+        # Seems standard FPS values align well!
+        
+        # Prompt: Use the Start prompt? Or average?
+        # Use Start Prompt.
+        key_idx = key_indices[i]
+        prompt = prompts[min(key_idx, len(prompts)-1)]
+        clean_prompt = re.sub(r"\(Frame \d+/\d+\)", "", prompt).strip()
+        
+        success = wan_bridge.generate_flf(
+            prompt=clean_prompt,
+            first_frame_path=str(start_img),
+            last_frame_path=str(end_img),
+            output_path=str(seg_path),
+            width=args.w if args.w else 1280,
+            height=args.h if args.h else 720,
+            num_frames=num_frames_needed
+        )
+        
+        if not success:
+            logging.error(f"Wan failed on segment {i}")
+            # continue?
+            
+    # Unload Wan
+    wan_bridge.unload()
+    
+    # 3. Stitch
+    logging.info("\n=== PHASE 3: STITCHING ===")
+    
+    list_path = out_root / "segments.txt"
+    final_video = out_root / "final_output.mp4"
+    
+    unique_segments = []
+    # Logic: Segment 0 includes Frame 0..8.
+    # Segment 1 includes Frame 8..16.
+    # Frame 8 is duplicated!
+    # We need to trim the FIRST frame of subsequent segments?
+    # Or keep overlap for smoothness?
+    # Strictly, Segment 0: 0,1..8. Segment 1: 8,9..16.
+    # If we concat, we get 0..8, 8..16. Double frame 8.
+    # We should trim.
+    # ffmpeg concat filter can trim?
+    # Or complex filter.
+    # Easier: Just accept 1 duplicate frame per second (minor jitter) or fix.
+    # Fix: use 'inpoint' in concat list? (Requires concat demuxer advanced syntax? No, duration/inpoint).
+    # Concat Demuxer supports 'inpoint'.
+    # file 'seg_0.mp4'
+    # file 'seg_1.mp4'
+    # inpoint 0.04 (approx 1 frame duration)
+    
+    # Actually, simpler: Wan FLF2V usually generates the End Frame as the Last Frame.
+    # So duplicating it is real.
+    # Let's generate the file list.
+    
+    with open(list_path, 'w') as f:
+        for i, seg in enumerate(segment_paths):
+            f.write(f"file '{seg}'\n")
+            if i > 0:
+                # Skip first frame of subsequent segments to avoid duplication
+                # Frame duration at 24fps (Wan native output) is ~0.0416s
+                # wait, Wan outputs 24fps file usually.
+                # If we want 8fps output, we need to correct speed or just extract frames?
+                # If we Stitch first, we get a 24fps video.
+                # Then we can retiming it.
+                # The 'inpoint' directive works.
+                # Assuming 24fps output from Bridge:
+                # 1 frame = 1/24 sec.
+                f.write("inpoint 0.041666 \n") 
+                
+    # Stitch Command
+    logging.info("   🧵 Stitching...")
+    # ffmpeg concat demuxer
+    # Note: 'inpoint' works for the PRECEDING file or following?
+    # Syntax: 
+    # file A
+    # file B
+    # inpoint X
+    # Applies to B.
+    
+    cmd_stitch = [
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", str(list_path),
+        "-c", "copy", str(final_video)
+    ]
+    subprocess.run(cmd_stitch, check=False)
+    
+    # Add Audio if --mu
+    if args.mu and os.path.exists(args.mu) and final_video.exists():
+        logging.info("   🎵 Adding Audio...")
+        # Audio Muxing
+        final_with_audio = out_root / "final_with_audio.mp4"
+        cmd_audio = [
+            "ffmpeg", "-y",
+            "-i", str(final_video),
+            "-i", str(args.mu),
+            "-map", "0:v", "-map", "1:a",
+            "-c:v", "copy", "-shortest",
+            str(final_with_audio)
+        ]
+        subprocess.run(cmd_audio, check=False)
+        logging.info(f"✅ COMPLETE: {final_with_audio}")
+    elif final_video.exists():
+        logging.info(f"✅ COMPLETE: {final_video}")
+
+
 def run_ascii_forge(input_video, output_video):
     """
     Runs the ascii_forge.py script on the input video.
@@ -284,7 +795,7 @@ def blend_videos(base_video, overlay_video, output_path, opacity=0.33):
         
     return None
 
-def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=None, prev_frame_path=None, pg_mode=False, force_local=False):
+def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=None, prev_frame_path=None, pg_mode=False, force_local=False, strength=0.65):
     """
     Worker function using Universal Backend (Flux Local or Gemini/Imagen Cloud).
     """
@@ -300,12 +811,18 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
     else:
         is_local = (config.backend == definitions.BackendType.LOCAL)
 
-    # STRICT LOCAL ENFORCEMENT
+        # STRICT LOCAL ENFORCEMENT
     if force_local and not is_local:
         logging.error(f"❌ STRICT LOCAL ENFORCEMENT FAILED: Model '{model}' is not configured as LOCAL.")
-        logging.error("   Please update active_models.json or definitions.py to point to a local model (e.g. flux-schnell).")
+        logging.error("   Please update active_models.json or definitions.py to point to a local model (e.g. flux-klein).")
         # Fail hard
         raise RuntimeError("Local execution enforced but model is cloud-based/unknown.")
+
+    # --- NICOTIME INJECTION ---
+    nico_context = load_nicotime_context(prompt)
+    if nico_context:
+        logging.info(f"   🧠 Nicotime Context Found: {nico_context[:60]}...")
+        prompt += nico_context
 
     target_path = output_dir / f"frame_{index:04d}.png"
     if target_path.exists():
@@ -330,11 +847,75 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                 # config.path is the path to weights
                 bridge = get_flux_bridge(config.path)
                 
+                # --- DIRECTOR MODE (LOCAL) ---
+                # Use Local Text Engine (Gemma) to "Direct" the shot before Rendering
+                # This matches the Cloud "Two-Pass" logic (Describe -> Render)
+                
+                final_prompt = prompt
+                img_input = None
+                
+                # 1. Restore Feedback (Img2Img) for Sequential Consistency
+                if prev_frame_path and prev_frame_path.exists():
+                    try:
+                        from PIL import Image
+                        img_input = Image.open(prev_frame_path).convert("RGB")
+                        logging.info(f"   🔄 Feedback: Using {prev_frame_path.name} as Img2Img input.")
+                    except Exception as e:
+                        logging.warning(f"   ⚠️ Failed to load previous frame for feedback: {e}")
+
+                # 2. Director Mode (Gemma)
+                try:
+                    from text_engine import get_engine
+                    te = get_engine()
+                    if te:
+                        # Context-Aware Directing
+                        ctx = "This is the FIRST frame."
+                        if img_input:
+                            ctx = "Previous frame exists. You MUST describe the NEXT sequential frame in a continuous animation."
+                            
+                        director_instruction = (
+                            f"You are a Lead Animator. {ctx}\n"
+                            f"Action: '{prompt}'.\n"
+                            "Task: Output a dense, 20-30 word visual description for the renderer. "
+                            "Focus on lighting, composition, and style. \n"
+                            "CRITICAL: If the action is similar to previous, describe MINOR changes only (flipbook consistency). NO FILLER."
+                        )
+                        # Quick generation
+                        visual_desc = te.generate(director_instruction, temperature=0.7)
+                        
+                        # CLEANUP: Handle JSON output if Director decides to be structured
+                        if visual_desc and visual_desc.strip().startswith("{"):
+                             try:
+                                 import json
+                                 # Try to find the first { and last }
+                                 start = visual_desc.find("{")
+                                 end = visual_desc.rfind("}")
+                                 if start != -1 and end != -1:
+                                     json_str = visual_desc[start:end+1]
+                                     data = json.loads(json_str)
+                                     # Extract best key
+                                     for key in ["description", "Description", "action", "Action", "visual", "Visuals"]:
+                                          if key in data:
+                                              visual_desc = data[key]
+                                              break
+                             except:
+                                 pass # Fallback to raw text
+                        
+                        if visual_desc and len(visual_desc) > 10:
+                            logging.info(f"   🎬 Local Director: {visual_desc[:60]}...")
+                            final_prompt = visual_desc
+                except Exception as e_dir:
+                    logging.warning(f"   ⚠️ Local Director failed: {e_dir}. Using raw prompt.")
+
                 # Generate
-                # Flux Schnell doesn't support aspect_ratio arg directly usually, depends on bridge
-                # We'll stick to square for now unless width/height set
+                # Flux Klein typically benefits from more steps than Schnell (4). 8 is a good balance, 12 is better.
                 # Standardize to requested dimensions
-                img = bridge.generate(prompt, width=width, height=height) 
+                # CRITICAL FIX: Ensure 'image' is passed to enable Img2Img Feedback Loop
+                # If img_input is None (First Frame), it acts as Txt2Img.
+                logging.info(f"   🚀 Flux Generating with Image Input: {img_input is not None}")
+                
+                # Use passed strength argument (default 0.65 from signature)
+                img = bridge.generate(prompt=final_prompt, width=width, height=height, steps=12, image=img_input, strength=strength)
                 
                 if img:
                     # Save (No resize needed if generated at target)
@@ -482,6 +1063,30 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
     logging.error(f"Frame {index} failed after {max_retries} attempts.")
     return False
 
+    return False
+
+def load_full_xmvp(path):
+    """
+    Parses an entire XMVP XML file and returns a dict with keys like 'Story', 'Portions', etc.
+    Reconstructs Pydantic models where possible/necessary, or return dicts.
+    """
+    try:
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(path)
+        root = tree.getroot()
+        data = {}
+        
+        for child in root:
+            if child.text:
+                try:
+                    data[child.tag] = json.loads(child.text)
+                except:
+                    data[child.tag] = child.text
+        return data
+    except Exception as e:
+        logging.error(f"Failed to parse XMVP XML: {e}")
+        return None
+
 def scan_projects(tf_dir):
     """
     Scans the transcript folder for subdirectories containing 'analysis.json'.
@@ -517,11 +1122,65 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
     metadata_file = project_dir / "metadata.json"
     
     descriptions = []
+    manifest_segments = [] # Store full segment objects if available
     
     # Bypass for Creative Agency / XB
     # Bypass for Creative Agency / XB / Music Visualizer / Music Agency
+    # Bypass for Creative Agency / XB / Music Visualizer / Music Agency
     if args.vpform in ["creative-agency", "music-visualizer", "music-video", "cartoon-video"] or args.xb:
-        descriptions = ["Placeholder"] # Will be overwritten by logic below
+        # Check if we have an explicit XML to load
+        if args.xb and os.path.exists(args.xb):
+             try:
+                 logging.info(f"   📂 Loading XMVP from: {args.xb}")
+                 xmvp_data = load_full_xmvp(args.xb)
+                 # Extract 'Portions' as descriptions/beats (Legacy) OR 'Manifest' (New)
+                 if xmvp_data:
+                     # 1. Try Portions (Legacy)
+                     if xmvp_data.get("Portions"):
+                         # Handle list of dicts (if loaded from JSON)
+                         raw_portions = xmvp_data["Portions"]
+                         if raw_portions and isinstance(raw_portions[0], dict):
+                            descriptions = [p.get('content', 'Placeholder') for p in raw_portions]
+                         else:
+                            descriptions = [] # fallback
+                         logging.info(f"   ✅ Loaded {len(descriptions)} beats from XML Portions.")
+                     
+                     # 2. Try Manifest (New Standard)
+                     elif xmvp_data.get("Manifest") and isinstance(xmvp_data["Manifest"], dict) and xmvp_data["Manifest"].get("segs"):
+                         raw_segs = xmvp_data["Manifest"]["segs"]
+                         descriptions = [s.get('prompt', 'Placeholder') for s in raw_segs]
+                         # Capture full segments for timeline logic
+                         manifest_segments = raw_segs
+                         logging.info(f"   ✅ Loaded {len(descriptions)} beats from XML Manifest (with timing data).")
+
+                     # RETCON PATH: If --retcon, we ignore these descriptions (or use them as seed?)
+                     # For now, if --retcon, we treat them as 'Old Draft' and rewrite.
+                     if args.retcon and len(descriptions) > 0 and descriptions[0] != "Placeholder":
+                          logging.info("   🌀 Retcon Mode Active: Ignoring XML beats, rewriting based on Concept...")
+                          descriptions = ["Placeholder (Retconning)"] 
+                     
+                     # STORY CONTEXT: Always check for Story to inform the prompt, especially for Retcon
+                     if xmvp_data.get("Story") and not args.prompt:
+                         s = xmvp_data["Story"]
+                         # Handle if it's a dict (parsed JSON) or string
+                         if isinstance(s, dict):
+                             title = s.get("title", "Untitled")
+                             synopsis = s.get("synopsis", "")
+                             if synopsis:
+                                 args.prompt = f"{title}: {synopsis}"
+                                 logging.info(f"   🧠 Retcon Context (Story): {args.prompt}")
+                         elif isinstance(s, str):
+                             # Maybe it didn't parse as JSON?
+                             args.prompt = s[:200]
+                             logging.info(f"   🧠 Retcon Context (Raw Story): {args.prompt}")
+
+                 if not descriptions:
+                      descriptions = ["Placeholder"]
+             except Exception as e:
+                 logging.error(f"   ❌ Failed to load XMVP: {e}")
+                 descriptions = ["Placeholder"]
+        else:
+            descriptions = ["Placeholder"] # Will be overwritten by logic below
     else:    
         with open(analysis_file, 'r') as f:
             descriptions = json.load(f)
@@ -702,7 +1361,18 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         logging.info(f"   🎹 Music Agency Target: {target_frames} frames @ {fps:.2f} FPS ({duration:.1f}s) | BPM: {bpm}")
         
         # 2. Generate Story (Content)
-        logging.info("   🧠 Agency Brain: Dreaming up a narrative for this track...")
+        # IF WE HAVE DESCRIPTIONS FROM XML (and NOT retconning), USE THEM.
+        source_content = []
+        
+        # Check if descriptions were loaded from XML (and are not just "Placeholder")
+        xml_loaded = False
+        if len(descriptions) > 0 and descriptions[0] != "Placeholder" and descriptions[0] != "Placeholder (Retconning)":
+             logging.info("   📜 Using existing beats from XMVP XML.")
+             source_content = descriptions
+             xml_loaded = True
+             
+        if not xml_loaded:
+            logging.info("   🧠 Agency Brain: Dreaming up a narrative for this track...")
         # te is already initialized
         text_engine = te
         
@@ -718,57 +1388,172 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         logging.info(f"      Prompt: {prompt_concept}")
         
         # Determine number of 'beats' to ask for.
-        # If we have target_frames, we don't want a unique description for EVERY frame (too jittery).
-        # We want scenes/beats. 
-        # Let's say 1 beat every 2-4 seconds?
-        # Duration / 3?
         est_beats = max(5, int(target_duration / 3.0))
         
-        # AUDIO PROFILE
-        sonic_map = analyze_audio_profile(args.mu, target_duration)
-        logging.info(f"      🎵 Sonic Map: {sonic_map}")
-        
-        story_req = (
-            f"Create a VISUAL SCREENPLAY for a {target_duration}s music video (Animated).\n"
-            f"Concept: {prompt_concept}\n"
-            f"Chaos Seeds to weave in: {seeds}\n"
-            f"Music Vibe: {bpm} BPM.\n"
-            f"Audio Profile (Energy/Mood over time): {sonic_map}\n"
-            f"Constraints: We need approx {est_beats} distinct visual scenes/beats to span the song.\n"
-            f"Critical: Match the visual intensity to the Audio Profile (e.g. Calm visuals for 'Quiet', Intense for 'High Energy').\n"
-            "Output JSON: { 'title': '...', 'synopsis': '...', 'beats': ['Visual description 1', 'Visual description 2', ...] }"
-        )
-        
-        try:
-            raw = text_engine.generate(story_req, json_schema=True)
-            story_data = json.loads(raw)
-            if isinstance(story_data, list):
-                story_data = story_data[0]
-            source_content = story_data.get('beats', [])
-            context_str = f"Music Video: {story_data.get('title')}"
-            logging.info(f"   📜 Generated {len(source_content)} story beats.")
+        if not xml_loaded:
+            # AUDIO PROFILE
+            sonic_map = analyze_audio_profile(args.mu, target_duration)
+            logging.info(f"      🎵 Sonic Map: {sonic_map}")
             
-        except Exception as e:
-            logging.error(f"   ❌ Writer Failed: {e}")
-            return
+            story_req = (
+                f"Create a VISUAL SCREENPLAY for a {target_duration}s music video (Animated).\n"
+                f"Concept: {prompt_concept}\n"
+                f"Chaos Seeds to weave in: {seeds}\n"
+                f"Music Vibe: {bpm} BPM.\n"
+                f"Audio Profile (Energy/Mood over time): {sonic_map}\n"
+                f"Constraints: We need approx {est_beats} distinct visual scenes/beats to span the song.\n"
+                f"Critical: Match the visual intensity to the Audio Profile (e.g. Calm visuals for 'Quiet', Intense for 'High Energy').\n"
+                "Output JSON: { 'title': '...', 'synopsis': '...', 'beats': ['Visual description 1', 'Visual description 2', ...] }"
+            )
+            
+            try:
+                # RETRY LOOP for Story Generation (Stochastic Guard)
+                max_writer_retries = 3
+                story_data = None
+                
+                for attempt in range(max_writer_retries):
+                    try:
+                        logging.info(f"      ✍️  Calling Writer (Attempt {attempt+1}/{max_writer_retries})...")
+                        raw = text_engine.generate(story_req, json_schema=True)
+                        story_data = json.loads(raw)
+                        if isinstance(story_data, list):
+                            story_data = story_data[0]
+                            
+                        # Validate keys
+                        if 'beats' not in story_data:
+                            raise ValueError("Missing 'beats' in JSON.")
+                            
+                        break # Success
+                    except Exception as e_inner:
+                         logging.warning(f"      ⚠️ Writer Attempt {attempt+1} Failed: {e_inner}")
+                         if attempt == max_writer_retries - 1: raise e_inner
+                         time.sleep(1)
+
+                source_content = story_data.get('beats', [])
+                context_str = f"Music Video: {story_data.get('title')}"
+                logging.info(f"   📜 Generated {len(source_content)} story beats.")
+                
+            except Exception as e:
+                logging.error(f"   ❌ Writer Failed: {e}")
+                return
 
         # 3. Distribute Beats
-        if not source_content:
-             source_content = ["Band performing on stage."]
-
-        num_beats = len(source_content)
-        frames_per_beat = target_frames / num_beats
         
         # Style
-        style_prefix = args.style
+        # Override default style for Music Video to "Saturday Morning Cartoon"
+        base_style_default = "Indie graphic novel artwork. Precise, uniform, dead-weight linework. Highly stylized, elegantly sophisticated, and with an explosive, highly saturated pop-color palette."
+        style_prefix = "high resolution 4K video" if args.style.strip() == base_style_default else args.style
         
-        prompts = []
-        for i in range(target_frames):
-             beat_idx = int(i / frames_per_beat)
-             beat_idx = min(beat_idx, num_beats - 1)
+        # 3. Distribute Beats (Shot-Aware Timeline Construction)
+        timeline = [] # List of dicts: { 'prompt': str, 'is_cut': bool, 'shot_idx': int }
+        
+        # Check if we have Manifest Segments with valid durations
+        has_rich_manifest = (xml_loaded and len(manifest_segments) > 0 and 'duration' in manifest_segments[0])
+        
+        if has_rich_manifest:
+             logging.info("   🎬 detailed Manifest detected. Constructing Shot-Aware Timeline...")
              
-             raw_desc = source_content[beat_idx]
-             prompts.append(f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames})")
+             current_frame_count = 0
+             
+             for idx, seg in enumerate(manifest_segments):
+                 # Get duration
+                 dur = seg.get('duration', 4.0)
+                 story_beat = seg.get('prompt', getattr(seg, 'content', 'Action'))
+                 
+                 # Calculate frames for this shot
+                 shot_frames = int(dur * project_fps)
+                 if shot_frames < 1: shot_frames = 1
+                 
+                 # Append to timeline
+                 for f in range(shot_frames):
+                     # Stop if we exceed target
+                     if len(timeline) >= target_frames: break
+                     
+                     is_cut = (f == 0) # First frame of shot is a CUT
+                     
+                     # Style Injection
+                     # Use the specific shot style if available, else global
+                     # Actually cartoon mode uses global style usually.
+                     full_prompt = f"Style: {style_prefix}. Action: {story_beat}"
+                     
+                     timeline.append({
+                         'prompt': full_prompt,
+                         'is_cut': is_cut,
+                         'shot_idx': idx
+                     })
+                     
+                 if len(timeline) >= target_frames: break
+                 
+             # FILLER: If timeline is shorter than target_frames (e.g. manifest explicitly sums to less than audio)
+             # We extend the last shot
+             if len(timeline) < target_frames:
+                 missing = target_frames - len(timeline)
+                 logging.warning(f"   ⚠️ Timeline underflow: {len(timeline)} frames generated vs {target_frames} target. Extending final shot.")
+                 last_entry = timeline[-1] if timeline else {'prompt': "Static", 'is_cut': True, 'shot_idx': -1}
+                 extra_entry = last_entry.copy()
+                 extra_entry['is_cut'] = False # Extension is not a cut
+                 
+                 for _ in range(missing):
+                     timeline.append(extra_entry)
+                     
+             # SYNC: Populate 'prompts' list for compatibility with FC/Recursive modes
+             prompts = [item['prompt'] for item in timeline]
+             logging.info(f"   ✅ Synchronized {len(prompts)} prompts from Timeline.")
+                     
+        else:
+             # LEGACY "PEANUT BUTTER" MODE (Average Distribution)
+             if not source_content:
+                  source_content = ["Band performing on stage."]
+
+             # BEAT EXPANSION (Granularity Check)
+             # If beats are too sparse (e.g. >10s per beat), we need to expand them for animation.
+             avg_beat_duration = target_duration / len(source_content)
+             if avg_beat_duration > 10.0 and args.wan:
+                 logging.info(f"   🤏 Beats are sparse ({avg_beat_duration:.1f}s/beat). Expanding granularity...")
+                 
+                 # Target ~5s per beat
+                 target_beat_count = int(target_duration / 5.0)
+                 expansion_prompt = (
+                     f"The current visual script has {len(source_content)} beats, but we need {target_beat_count} distinct visual moments for the animation (one every ~5s).\n"
+                     f"Current Script: {json.dumps(source_content)}\n"
+                     f"Task: Expand this into {target_beat_count} detailed, sequential visual descriptions. Maintain the narrative flow but break it down into smaller, granular actions.\n"
+                     "Output JSON: { 'beats': ['Detailed beat 1', 'Detailed beat 2', ...] }"
+                 )
+                 
+                 try:
+                     raw_exp = text_engine.generate(expansion_prompt, json_schema=True)
+                     exp_data = json.loads(raw_exp)
+                     if 'beats' in exp_data and len(exp_data['beats']) > len(source_content):
+                         source_content = exp_data['beats']
+                         logging.info(f"   ✨ Expanded to {len(source_content)} beats ({target_duration/len(source_content):.1f}s/beat).")
+                 except Exception as e_exp:
+                     logging.warning(f"   ⚠️ Beat expansion failed: {e_exp}. Using original beats.")
+     
+             num_beats = len(source_content)
+             frames_per_beat = target_frames / num_beats
+             
+             logging.info(f"   🥜 Constructing Average Pacing Timeline ({len(source_content)} beats over {target_frames} frames)...")
+             
+             prompts = []
+             for i in range(target_frames):
+                  beat_idx = int(i / frames_per_beat)
+                  beat_idx = min(beat_idx, num_beats - 1)
+                  
+                  raw_desc = source_content[beat_idx]
+                  
+                  # Determine Cut (heuristic)
+                  # If beat_idx changed from previous frame
+                  prev_beat_idx = int((i-1) / frames_per_beat) if i > 0 else -1
+                  is_cut = (beat_idx != prev_beat_idx)
+                  
+                  full_prompt = f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames})"
+                  
+                  timeline.append({
+                      'prompt': full_prompt,
+                      'is_cut': is_cut,
+                      'shot_idx': beat_idx
+                  })
+
 
     elif args.vpform == "cartoon-video":
         # CARTOON VIDEO (Img2Img Video Redraw)
@@ -809,6 +1594,20 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         prompt = "exactly precise reproduction of this image in terms of content and image/scene structure, but improved to a different asethetic style and standard, like an uncanny Octane Render Unreal Engine 3D real-life photorealistic artistic reimagining. 8k, highly detailed."
         if args.prompt: prompt = args.prompt
         
+        # --- MEMORY OPTIMIZATION ---
+        # Ensure Img2Img is loaded, then dump Txt2Img if it's a separate (redundant) model
+        # This prevents holding 2x Model Weights in RAM, which causes severe thrashing (30m per frame)
+        bridge.load_img2img()
+        if bridge.pipeline and bridge.img2img_pipeline and bridge.pipeline is not bridge.img2img_pipeline:
+            logging.info("   📉 Optimizing Memory: Unloading duplicate Txt2Img pipeline to make room for Img2Img...")
+            del bridge.pipeline
+            bridge.pipeline = None
+            import gc
+            gc.collect()
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+        # ---------------------------
+        
         from PIL import Image
         
         # Scaling Logic (50% Default)
@@ -836,20 +1635,43 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             if target_w != orig_w or target_h != orig_h:
                  logging.warning(f"   ⚠️ Snapping resolution to 16px grid: {orig_w}x{orig_h} -> {target_w}x{target_h}")
 
+        # 4. Img2Img Loop
+        last_output_img = None
+        
         for i, src in enumerate(source_frames):
             idx = i + 1
             dst = frames_dir / f"frame_{idx:04d}.png"
             
             if dst.exists(): 
+                # If existing, load it into memory for next frame's blending
+                try: 
+                    last_output_img = Image.open(dst).convert("RGB")
+                    # Ensure size match for blending later
+                    if last_output_img.size != (target_w, target_h):
+                        last_output_img = last_output_img.resize((target_w, target_h), Image.LANCZOS)
+                except:
+                    pass
                 continue
                 
             logging.info(f"   🎨 Redrawing Frame {idx}/{len(source_frames)}...")
             try:
                 src_img = Image.open(src).convert("RGB")
                 
+                # Resize src to target if needed (to match last_output/target)
+                if src_img.size != (target_w, target_h):
+                    src_img = src_img.resize((target_w, target_h), Image.LANCZOS)
+                
+                # TEMPORAL BLENDING (Stability Hack)
+                # Blend 30% of previous output into current source
+                input_img = src_img
+                if last_output_img:
+                    # alpha=0.3 means 30% image2 (last_output), 70% image1 (src)
+                    logging.info(f"      🌀 Blending 30% of Frame {idx-1} for stability...")
+                    input_img = Image.blend(src_img, last_output_img, alpha=0.3)
+                
                 out_img = bridge.generate_img2img(
                     prompt=prompt,
-                    image=src_img,
+                    image=input_img,
                     strength=0.65, 
                     width=target_w,
                     height=target_h,
@@ -858,6 +1680,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 
                 if out_img:
                     out_img.save(dst)
+                    last_output_img = out_img
             except Exception as e:
                 logging.error(f"Frame {idx} fail: {e}")
                 
@@ -1216,9 +2039,44 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             # Advance loop: The End Frame becomes the new Start Frame
             i_idx = next_i
             last_generated_img = end_img
+            
+    # WAN 2.1 KEYFRAME ANIMATION WORKFLOW
+    if args.wan and args.local:
+        logging.info("🚀 Starting Wan 2.1 Keyframe Animation Workflow...")
+        run_wan_keyframe_anim(args, prompts, project_fps, project_out, duration) # Passed project_out is 'output_root' equivalent?
+        # Note: process_project args: (project_dir, vf_dir, key_cycle, args, output_root, keys, text_engine)
+        # We need check output_root variable name. usually 'project_out' or similar.
+        # Let's check context. 'frames_dir' is used in loop.
+        # 'project_out' usually defined earlier.
+        # Actually in scan view, output_dir passed to generate_frame_universal is frames_dir.
+        # Let's assume 'frames_dir' parent is project root.
+        return
 
-    legacy_prompts = [] if recursive_mode else prompts
-    for i, p in enumerate(legacy_prompts):
+    legacy_prompts = []
+    # If timeline exists (New Logic), use it. If not (Legacy modes like visualizer), construct pseudo-timeline or handling.
+    if 'timeline' in locals() and timeline:
+        pass # We will use timeline in loop
+    else:
+        # Fallback for modes that didn't generate a timeline (e.g. fbf-cartoon, creative-agency, legacy interpolation)
+        # We wrap the 'prompts' list into a basic timeline
+        timeline = []
+        for i, p in enumerate(prompts):
+            timeline.append({
+                'prompt': p,
+                'is_cut': (i==0), # Only cut on first frame? Or just standard flow
+                'shot_idx': 0
+            })
+            
+    # Normalize Prompt Source
+    # The loop below uses 'timeline'.
+    
+    for i, frame_data in enumerate(timeline):
+        if recursive_mode: break # Skip standard generation if recursive mode handled it
+        
+        index = i + 1
+        p = frame_data['prompt']
+        is_cut = frame_data.get('is_cut', False)
+
         index = i + 1
         
         # Pass model from args
@@ -1229,9 +2087,18 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         # Define Previous Frame Path
         prev_frame = None
         if i > 0:
-             prev_frame = frames_dir / f"frame_{i:04d}.png" # Wait, this looks for i (0-based) named frame_i? No frame_{i:04d} is frame i. 
-             # Logic earlier: index = i+1. So frame_{index:04d} is CURRENT.
-             # So prev_frame is frame_{i:04d} (index-1). Correct.
+             # ORIGINAL: Grab previous frame
+             prev_frame = frames_dir / f"frame_{i:04d}.png" 
+             
+             # HARD CUT IMPLEMENTATION
+             if is_cut:
+                 logging.info(f"   ✂️  HARD CUT DETECTED at Frame {index}. Clearing context.")
+                 prev_frame = None # Force Flux to generate fresh
+             elif prev_frame and prev_frame.exists():
+                 # Normal flow
+                 pass
+             else:
+                 prev_frame = None
         
         # FC MODE CHECK
         if args.fc:
@@ -1377,10 +2244,10 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 model=model_to_use,
                 prev_frame_path=prev_frame,
                 pg_mode=args.pg,
-                # Custom Resolution Logic: If Local, allow override. Else KID.
                 width=args.w if (args.local and args.w) else args.kid,
                 height=args.h if (args.local and args.h) else args.kid,
-                force_local=args.local
+                force_local=args.local,
+                strength=getattr(args, "strength", 0.65)
             )
             
             if success:
@@ -1825,7 +2692,14 @@ def main():
     parser.add_argument("--xb", type=str, help="Path to XMVP XML Manifest for re-rendering")
     parser.add_argument("--mu", type=str, help="Path to Music/Audio file for sync")
     parser.add_argument("--prompt", type=str, help="Creative Prompt for Agency Mode")
-    parser.add_argument("--style", type=str, default="Indie graphic novel artwork. Precise, uniform, dead-weight linework. Highly stylized, elegantly sophisticated, and with an explosive, highly saturated pop-color palette.", help="Visual Style Definition")
+    parser.add_argument("--style", type=str, default="high resolution 4K UHD video", help="Visual Style Definition")
+    
+    # Sanitization Helper
+    def sanitize_arg(val):
+        if not val: return val
+        for q in ['"', "'", "“", "”", "‘", "’"]:
+             val = val.strip(q)
+        return val
     parser.add_argument("--slength", type=float, default=60.0, help="Target length in seconds (if no music)")
     parser.add_argument("--cs", type=int, default=0, choices=[0, 1, 2, 3], help="Chaos Seeds Level (0=None, 0-3)")
     parser.add_argument("--bpm", type=float, help="Manual BPM override for music modes (bypasses detection)")
@@ -1834,6 +2708,8 @@ def main():
     # v1.2 FC Integration
     parser.add_argument("--vspeed", type=float, default=8.0, help="Visualizer Speed (FPS) for music-agency. Default 8. Supports 2, 4, 16.")
     parser.add_argument("--fc", action="store_true", help="Enable Frame & Canvas (Code Painter) Mode")
+    parser.add_argument("--retcon", action="store_true", help="Retcon Mode: Rewrite the script/beats of the input XML")
+    parser.add_argument("--wan", action="store_true", help="Use Wan 2.1 Keyframe Animation workflow (Local Only)")
     parser.add_argument("--kid", type=int, default=512, help="Keyframe Init Dimension (default: 512). Higher = Better composition before downscale.")
     parser.add_argument("--local", action="store_true", help="Local Mode (Use Gemma + Flux)") # NEW
     parser.add_argument("--w", type=int, help="Override width (Local Only, e.g. 1920)")
@@ -1862,9 +2738,32 @@ def main():
     
     logging.info(f"   CLI: Resolved VPForm: {args.vpform}")
 
+    # CLI Polish: Inferred Prompt from Positional Args
+    # If explicit --prompt is missing, check if we have any 'orphan' string in cli_args 
+    # that wasn't used as a VPForm alias.
+    if not args.prompt and getattr(args, "cli_args", None):
+        orphans = []
+        for val in args.cli_args:
+            if val.lower() == "run": continue
+            # If it's not a known alias/form, assume it's the prompt
+            if not definitions.resolve_vpform(val):
+                orphans.append(val)
+        
+        if orphans:
+            args.prompt = " ".join(orphans)
+            logging.info(f"   📝 Inferred Prompt from args: '{args.prompt}'")
+
+    # Sanitize inputs
+    args.style = sanitize_arg(args.style)
+    if args.prompt: args.prompt = sanitize_arg(args.prompt)
+
     # Auto-Carbonation (Sassprilla)
     # Check for "Song Title Case" prompts (Short, Title Case, No Periods)
     if args.prompt:
+        # Sanitization: Strip quotes (Standard & Smart) just in case shell passed them
+        for q in ['"', "'", "“", "”", "‘", "’"]:
+             args.prompt = args.prompt.strip(q)
+        
         p_clean = args.prompt.strip()
         # Heuristic: Title Case, No periods (not a sentence), relatively short (< 60 chars)
         if p_clean.istitle() and "." not in p_clean and len(p_clean) < 80:
@@ -1931,8 +2830,8 @@ def main():
                 os.environ["LOCAL_MODEL_PATH"] = "mlx-community/gemma-2-9b-it-4bit"
                 logging.info(f"   📍 Text Model Path: {os.environ['LOCAL_MODEL_PATH']}")
                 
-            # Switch Image -> Flux
-            definitions.set_active_model(Modality.IMAGE, "flux-schnell")
+            # Switch Image -> Flux (Upgrade to Klein for Quality)
+            definitions.set_active_model(Modality.IMAGE, "flux-klein")
             # Switch Video -> LTX (Future proofing)
             definitions.set_active_model(Modality.VIDEO, "ltx-video")
         except Exception as e:

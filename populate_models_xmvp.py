@@ -38,6 +38,11 @@ MODELS = {
         "type": "snapshot",
         "target": MW_ROOT / "flux-root"
     },
+    "Flux-Klein": {
+        "repo": "black-forest-labs/FLUX.2-klein-9B",
+        "type": "snapshot",
+        "target": MW_ROOT / "flux-root" / "klein-9b"
+    },
     "IndexTTS": {
         "repo": "IndexTeam/IndexTTS-2",
         "type": "snapshot",
@@ -82,6 +87,29 @@ MODELS = {
         "repo": "Wan-AI/Wan2.1-I2V-14B-720P",
         "type": "snapshot", 
         "target": MW_ROOT / "wan-root"
+    },
+    "Hunyuan-CLIP": {
+        "repo": "Comfy-Org/HunyuanVideo_repackaged",
+        "type": "files",
+        "filenames": [
+            "split_files/text_encoders/clip_l.safetensors" 
+        ],
+        "target": MW_ROOT / "comfyui-root" / "models" / "clip"
+    },
+    "Hunyuan-T5": {
+        "repo": "city96/t5-v1_1-xxl-encoder-bf16",
+        "type": "files",
+        "filenames": ["model.safetensors"], # It's usually named model.safetensors in this repo
+        # We need to rename it to t5xxl_fp8_e4m3fn.safetensors on arrival? 
+        # Actually, let's stick to Comfy-Org if possible, but it wasn't in the list?
+        # Let's try downloading from the MAIN city96 repo but saving to models/clip
+        "target": MW_ROOT / "comfyui-root" / "models" / "clip"
+    },
+    "Hunyuan-VAE": {
+        "repo": "Comfy-Org/HunyuanVideo_repackaged",
+        "type": "files",
+        "filenames": ["split_files/vae/hunyuan_video_vae_bf16.safetensors"],
+        "target": MW_ROOT / "comfyui-root" / "models" / "vae"
     },
 }
 

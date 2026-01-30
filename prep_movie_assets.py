@@ -49,7 +49,7 @@ LIGHTING = [
     "soft studio lighting", "dramatic cinematic lighting", "natural window light", "hard rim lighting"
 ]
 
-def generate_char_prompts(char_name, movie_style, count=20, anchor=None):
+def generate_char_prompts(char_name, movie_style, count=20, anchor=None, wardrobe=None):
     """Generates prompts for characters."""
     prompts = []
     combined = []
@@ -65,10 +65,12 @@ def generate_char_prompts(char_name, movie_style, count=20, anchor=None):
     for i, (view, expr) in enumerate(selected):
         light = random.choice(LIGHTING)
         desc = char_name
+        
         if anchor:
-            # Mix Name + Anchor
-            # "A portrait of Stanley, resembles Humphrey Bogart at age 45..."
             desc = f"{char_name} (resembling {anchor})"
+            
+        if wardrobe:
+            desc += f" {wardrobe}"
             
         p = f"A {view} of {desc}, {expr}, {light}. {STYLE_PREFIX} {movie_style}"
         prompts.append(p)
@@ -124,21 +126,32 @@ def is_valid_clean_char(c):
     c = re.sub(r'\{.*?\}', '', c)
     c = c.split('[')[0] # Strip gender tags too if present
     c = c.strip().strip('"').strip("'")
-    if len(c) < 2: return False
+    if len(c) < 1: return False # Allow single letters like 'P'
     if len(c) > 30: return False
     
     # Reject syntactical junk (JSON artifacts often leave these)
-    if any(x in c for x in [":", "{", "}", "[", "]", "SCRIPT", "SCENE"]): return False
+    if len(c) < 2: return False
     
-    # Blacklist common false positives from JSON dumps
-    blacklist = [
-        "ACTION", "DIALOGUE", "CUT TO", "FADE IN", "FADE OUT", 
-        "INT.", "EXT.", "CAMERA", "SFX", "MUSIC", 
-        "TIME_OF_DAY", "SETTING", "CHARACTER", "CHARACTERS", 
-        "TITLE", "SCENE_NUMBER", "SCENE_CONTENT", "LINES",
-        "SCENE", "SHEET"
+    # Check for metadata/transitions
+    invalid = [
+        "SCENE", "CUT TO", "FADE IN", "FADE OUT", "TRANSITION", "TIME", "SETTING", 
+        "INT.", "EXT.", "LOCATION", "ACTION", "DISSOLVE TO", "FADE TO"
     ]
-    if c.upper() in blacklist: return False
+    for x in invalid:
+        if x in c: return False
+        
+    # Check for JSON artifact
+    if '":' in c: return False
+    
+    # Check for Markdown/Header
+    if c.startswith('#'): return False
+    if c.startswith('**'): return False
+    if c.endswith(" TO"): return False
+    if c.endswith(" TO:"): return False
+    
+    # Check for Anchor/Gender tags if not cleaned
+    if "{" in c or "[" in c: return False
+    
     return True
 
 def main():
@@ -229,7 +242,32 @@ def main():
     except:
         pass
         
-    # Extract Chars
+    # --- ENHANCED ANCHOR EXTRACTION (CAST: Headers) ---
+    # Many scripts (Painter/BlackBox) define cast in the content header: "CAST: PAT is Gene Tierney..."
+    if not anchor_map:
+         print("    [🔍] Scanning for 'CAST:' headers in content...")
+         regex_cast = r"([A-Z0-9]+)\s+is\s+([^.]+)"
+         
+         # Scan first 5 segments max
+         scan_segs = manifest.segs[:5]
+         for seg in scan_segs:
+             if "CAST:" in seg.prompt:
+                 # Extract the line
+                 line = seg.prompt.split("CAST:")[1].split("\n")[0]
+                 # Find matches: "PAT is Gene Tierney"
+                 matches = re.findall(regex_cast, line)
+                 for name, desc in matches:
+                     clean_name = name.strip().upper()
+                     clean_desc = desc.strip()
+                     if clean_name not in anchor_map:
+                          anchor_map[clean_name] = clean_desc
+                          print(f"       + Found: {clean_name} -> {clean_desc}")
+
+    # BLACK BOX COSTUME OVERRIDE
+    wardrobe_override = ""
+    if bible and "black box" in bible.vision.lower():
+        wardrobe_override = ", wearing simple black rehearsal clothes"
+        print("    [🎭] Black Box Mode Detected: Enforcing rehearsal wardrobe.")
     chars = set()
     if manifest.dialogue and manifest.dialogue.lines:
         for line in manifest.dialogue.lines:
@@ -443,7 +481,9 @@ def main():
         if anchor_text:
             print(f"       ⚓ Anchor Found: {anchor_text}")
         
-        prompts = generate_char_prompts(char, style_core, count=10, anchor=anchor_text) # Reduced from 20 -> 10
+        
+        prompts = generate_char_prompts(char, style_core, count=10, anchor=anchor_text, wardrobe=wardrobe_override) # Reduced from 20 -> 10
+        print(f"       [DEBUG] Generated {len(prompts)} prompts for {char}")
         
         generated_files = []
         

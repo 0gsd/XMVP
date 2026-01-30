@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE" # Prevent OpenMP crash on Mac
 import torch
 import logging
-# Direct submodule import to bypass broken auto_pipeline / transformers glue
-from diffusers.pipelines.ltx import LTXPipeline, LTXImageToVideoPipeline
-from diffusers.utils import export_to_video
 import gc
+# Standard diffusers import
+from diffusers import LTXPipeline, LTXImageToVideoPipeline
+from diffusers.utils import export_to_video
+from transformers import T5EncoderModel
 
 logging.basicConfig(level=logging.INFO)
 
@@ -21,49 +23,53 @@ class LTXBridge:
             logging.warning("⚠️ MPS not available. Falling back to CPU.")
             self.device = "cpu"
             
+    def _get_loading_kwargs(self):
+        """Helper to get common loading arguments."""
+        return {
+            "torch_dtype": torch.bfloat16, # Optimized for Mac M3
+            "use_safetensors": True
+        }
+
     def load_txt2vid(self):
         """Loads the Text-to-Video pipeline."""
         if self.txt2vid_pipe: return
         
         logging.info(f"   🌊 Loading LTX Pipeline (Txt2Vid) from: {self.model_path}...")
         try:
+            kwargs = self._get_loading_kwargs()
+            
             if self.model_path.endswith(".safetensors"):
-                # Load T5 Encoder separately (required for this checkpoint)
-                from transformers import T5EncoderModel, T5Tokenizer
+                # Use standard T5 encoder - LTX uses google/t5-v1_1-xxl
+                # We can try to load it from cache or download it.
+                # Assuming standard t5-v1_1-xxl is fine or if user has a local path.
+                t5_path = "city96/t5-v1_1-xxl-encoder-bf16" # Small safe bet or full T5?
+                # Actually, diffusers usually handles this if we don't hold it wrong. 
+                # But single_file loading is tricky.
                 
-                base_dir = os.path.dirname(self.model_path)
-                te_path = os.path.join(base_dir, "text_encoder")
-                tok_path = os.path.join(base_dir, "tokenizer")
-                
-                if os.path.exists(te_path):
-                     logging.info(f"   🧩 Loading T5 Encoder from: {te_path}...")
-                     text_encoder = T5EncoderModel.from_pretrained(te_path, torch_dtype=torch.float16, use_safetensors=True)
-                     tokenizer = T5Tokenizer.from_pretrained(tok_path)
-                     
-                     self.txt2vid_pipe = LTXPipeline.from_single_file(
-                        self.model_path,
-                        text_encoder=text_encoder,
-                        tokenizer=tokenizer,
-                        torch_dtype=torch.float16,
-                        use_safetensors=True
-                     ).to(self.device)
-                else:
-                     # Fallback if no specific TE path found (will likely fail same as before)
-                     self.txt2vid_pipe = LTXPipeline.from_single_file(
-                        self.model_path,
-                        torch_dtype=torch.float16,
-                        use_safetensors=True
-                     ).to(self.device)
+                # Check for local text encoder path in model_path directory if exists 
+                # or just use the hub id.
+                text_encoder = T5EncoderModel.from_pretrained(
+                    "city96/t5-v1_1-xxl-encoder-bf16", 
+                    torch_dtype=torch.bfloat16
+                )
+
+                self.txt2vid_pipe = LTXPipeline.from_single_file(
+                    self.model_path,
+                    text_encoder=text_encoder,
+                    **kwargs
+                )
             else:
                 self.txt2vid_pipe = LTXPipeline.from_pretrained(
                     self.model_path,
-                    torch_dtype=torch.float16, 
-                    use_safetensors=True
-                ).to(self.device)
+                    **kwargs
+                )
             
             # CPU Offload for Mac
-            self.txt2vid_pipe.enable_model_cpu_offload()
-            # self.txt2vid_pipe.enable_vae_tiling() # Not supported on LTXPipeline yet via diffusers
+            self.txt2vid_pipe.enable_model_cpu_offload(device=self.device)
+            
+            # Enable Memory Optimizations
+            self.txt2vid_pipe.enable_vae_tiling()
+            self.txt2vid_pipe.enable_attention_slicing()
             
             logging.info("   ✅ LTX Txt2Vid Ready.")
         except Exception as e:
@@ -76,31 +82,62 @@ class LTXBridge:
         
         logging.info(f"   🌊 Loading LTX Pipeline (Img2Vid) from: {self.model_path}...")
         try:
-            self.img2vid_pipe = LTXImageToVideoPipeline.from_pretrained(
-                self.model_path,
-                torch_dtype=torch.float16,
-                use_safetensors=True
-            ).to(self.device)
+            kwargs = self._get_loading_kwargs()
             
-            self.img2vid_pipe.enable_model_cpu_offload()
+            if self.model_path.endswith(".safetensors"):
+                # Ensure T5 loaded (reuse from txt2vid if available? No, safe to reload/cache)
+                text_encoder = T5EncoderModel.from_pretrained(
+                    "city96/t5-v1_1-xxl-encoder-bf16", 
+                    torch_dtype=torch.bfloat16
+                )
+                
+                self.img2vid_pipe = LTXImageToVideoPipeline.from_single_file(
+                    self.model_path,
+                    text_encoder=text_encoder,
+                    **kwargs
+                )
+            else:
+                self.img2vid_pipe = LTXImageToVideoPipeline.from_pretrained(
+                    self.model_path,
+                    **kwargs
+                )
+            
+            self.img2vid_pipe.enable_model_cpu_offload(device=self.device)
+            
+            # Enable Memory Optimizations
+            self.img2vid_pipe.enable_vae_tiling()
+            self.img2vid_pipe.enable_attention_slicing()
             
             logging.info("   ✅ LTX Img2Vid Ready.")
         except Exception as e:
             logging.error(f"   ❌ Failed to load LTX Img2Vid: {e}")
             raise e
 
+    def free_memory(self):
+        """Frees up memory aggressively."""
+        gc.collect()
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+        elif torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
     def generate(self, prompt, output_path, width=768, height=512, num_frames=121, fps=24, seed=None, image_path=None, num_inference_steps=40, guidance_scale=3.0):
         """
-        Generates video.
-        If image_path is provided, uses Img2Vid.
-        num_frames: LTX default is often 121 (for 4s at 24fps?)
+        Generates video using standard diffusers pipelines.
         """
         try:
             logging.info(f"   🎬 LTX Generating: {prompt[:40]}... (Image: {bool(image_path)})")
+            logging.info(f"      ⚙️  Config: Device={self.device}, DType={self._get_loading_kwargs()['torch_dtype']}, Steps={num_inference_steps}")
+            if self.device == "mps":
+                try:
+                    is_built = torch.backends.mps.is_built()
+                    is_avail = torch.backends.mps.is_available()
+                    logging.info(f"      🍎 MPS Status: Built={is_built}, Available={is_avail}")
+                except:
+                    pass
             
             # Cleanup
-            gc.collect()
-            if torch.backends.mps.is_available(): torch.mps.empty_cache()
+            self.free_memory()
             
             generator = None
             if seed is not None:
@@ -114,7 +151,7 @@ class LTXBridge:
                 if not self.img2vid_pipe: return False
                 
                 from diffusers.utils import load_image
-                img = load_image(image_path).resize((width, height)) # Resize input to match target
+                img = load_image(image_path).resize((width, height))
                 
                 output = self.img2vid_pipe(
                     prompt=prompt,
@@ -122,10 +159,12 @@ class LTXBridge:
                     height=height,
                     width=width,
                     num_frames=num_frames,
-                    num_inference_steps=30,
-                    guidance_scale=3.0,
+                    num_inference_steps=num_inference_steps,
+                    guidance_scale=guidance_scale,
                     max_sequence_length=512,
-                    generator=generator
+                    generator=generator,
+                    decode_timestep=0.0, # Optimized decoding
+                    decode_noise_scale=None
                 )
                 video_frames = output.frames[0]
                 
@@ -142,7 +181,9 @@ class LTXBridge:
                     num_inference_steps=num_inference_steps, 
                     guidance_scale=guidance_scale, 
                     max_sequence_length=512,
-                    generator=generator
+                    generator=generator,
+                    decode_timestep=0.0,
+                    decode_noise_scale=None
                 )
                 video_frames = output.frames[0]
             
@@ -156,6 +197,8 @@ class LTXBridge:
                 
         except Exception as e:
             logging.error(f"   ❌ LTX Generation Error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
 # Singleton
@@ -168,7 +211,7 @@ def get_ltx_bridge(path):
 
 if __name__ == "__main__":
     # Test
-    path = "/Volumes/XMVPX/mw/LT2X-root" # Assuming directory structure
+    path = "/Volumes/XMVPX/mw/LT2X-root"
     if os.path.exists(path):
         bridge = LTXBridge(path)
-        bridge.generate("A cinematic shot of a cyberpunk city, rain, neon lights", "test_ltx.mp4", width=512, height=384, num_frames=32, fps=8)
+        bridge.generate("A cinematic shot of a cyberpunk city", "test_ltx.mp4", width=512, height=320, num_frames=32)

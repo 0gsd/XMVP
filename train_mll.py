@@ -20,7 +20,10 @@ from diffusers import FluxPipeline, FlowMatchEulerDiscreteScheduler
 from peft import LoraConfig, get_peft_model
 
 # Standard Paths
-FLUX_ROOT = "/Volumes/XMVPX/mw/flux-root"
+# Prioritize Flux 2 Klein
+FLUX_ROOT = "/Volumes/XMVPX/mw/flux-root/klein-9b"
+if not os.path.exists(FLUX_ROOT):
+    FLUX_ROOT = "/Volumes/XMVPX/mw/flux-root"
 
 # Device Selection
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")

@@ -90,6 +90,7 @@ class Seg(BaseModel):
     end_frame: int
     prompt: str
     action: str = Field(default="static", description="Camera/Subject movement (e.g. 'pan_zoom')")
+    audio_asset: Optional[str] = Field(default=None, description="Path to pre-generated audio asset (for Audio-to-Video)")
     model_overrides: Dict[str, Any] = Field(default_factory=dict, description="Model-specific overrides")
 
 class Indecision(BaseModel):

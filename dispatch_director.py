@@ -23,6 +23,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 import requests
 import base64
+import io
+from PIL import Image
+from huggingface_hub import InferenceClient
 from google import genai
 from google.genai import types
 import definitions # Ensure definitions is available (it was imported inside run_dispatch, likely need it global or locally)
@@ -307,23 +310,20 @@ class VideoDirectorAdapter:
         logging.info(f"   🎥 Rolling Video: {prompt[:50]}...")
         
         # 0. Pre-emptive Sanitization (Proactive Safety)
-        try:
-            # Pick a key for sanitizer (peek at next without consuming, or just consume)
-            # Sanitizer is cheap (Flash), let's just use one from the cycle or a random one?
-            # User wants strict cycle. But sanitizer might burn a request. 
-            # Let's simple use a random choice for sanitizer to avoid advancing the main video cycle "off beat"?
-            # Or just advance it. It's fine.
-            # Use round-robin key for TruthSafety too
-            sanitizer_key = next(self.key_cycle) 
-            cleaner = TruthSafety(api_key=sanitizer_key)
-            
-            
-            # This will replace "Nicolas Cage" with "impersonator", etc.
-            # TruthSafety Refine
-            prompt = cleaner.refine_prompt(prompt, context_dict={"Task": f"Video", "Model": self.model_name}, pg_mode=self.pg_mode)
-            
-        except Exception as e:
-            logging.warning(f"   ⚠️ Sanitizer unreachable: {e}. Proceeding with raw prompt.")
+        # ONLY if PG Mode is active. If not, we trust the prompt (or let Veo filter it natively).
+        if self.pg_mode:
+            try:
+                # Pick a key for sanitizer
+                sanitizer_key = next(self.key_cycle) 
+                cleaner = TruthSafety(api_key=sanitizer_key)
+                
+                # TruthSafety Refine
+                prompt = cleaner.refine_prompt(prompt, context_dict={"Task": f"Video", "Model": self.model_name}, pg_mode=self.pg_mode)
+                logging.info(f"   🛡️ Sanitized Prompt: {prompt[:60]}...")
+            except Exception as e:
+                logging.warning(f"   ⚠️ Safety Check failed: {e}. Proceeding with raw prompt.")
+        else:
+             logging.info("   🛡️ Safety Filters: OFF (Sending Raw Prompt)")
 
         max_retries = 3
         backoff = 10 
@@ -448,10 +448,106 @@ class VideoDirectorAdapter:
         logging.error("   ❌ All retries failed.")
         return False
 
+class LTXCloudDirector:
+    """
+    Cloud-based LTX Director using HF InferenceClient (fal-ai provider).
+    """
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        # Use fal-ai provider for LTX-Video (Image-to-Video optimized)
+        self.client = InferenceClient(provider="fal-ai", api_key=self.api_key)
+        
+    def generate(self, prompt, output_path, num_frames=121, fps=24, image_path=None, audio_path=None):
+        logging.info(f"   ☁️ Rolling LTX Cloud (Hybrid): {prompt[:50]}... ({num_frames} frames) Audio: {bool(audio_path)}")
+        
+        if not image_path or not os.path.exists(image_path):
+            logging.error("      ❌ Hybrid Mode requires an input image!")
+            return False
+            
+        try:
+             # Load Image Bytes
+             with open(image_path, "rb") as f:
+                 img_bytes = f.read()
+                 
+             # Call Image-to-Video
+             # Note: client.image_to_video returns bytes of the video
+             # We pass 'num_frames' and 'fps' as kwargs which InferenceClient forwards to the provider.
+             
+             # Audio Logic (Audio-to-Video)
+             extra_params = {
+                 "num_frames": num_frames,
+                 "fps": fps,
+                 "num_inference_steps": 30
+             }
+             
+             if audio_path and os.path.exists(audio_path):
+                 logging.info(f"      🎤 Attaching Audio: {os.path.basename(audio_path)}")
+                 with open(audio_path, "rb") as af:
+                     audio_b64 = base64.b64encode(af.read()).decode('utf-8')
+                     # Use Data URI for Fal
+                     extra_params["audio_url"] = f"data:audio/wav;base64,{audio_b64}"
+             
+             video_bytes = self.client.image_to_video(
+                 image=img_bytes,
+                 prompt=prompt,
+                 model="Lightricks/LTX-Video",
+                 **extra_params
+             )
+             
+             if video_bytes:
+                 with open(output_path, "wb") as f:
+                     f.write(video_bytes)
+                 logging.info("      ✓ Saved from Cloud (fal-ai).")
+                 return True
+             else:
+                 logging.error("      ❌ Cloud Gen returned empty bytes.")
+                 return False
+                 
+        except Exception as e:
+             logging.error(f"      ❌ Cloud Gen Exception: {e}")
+             return False
+
+class FluxCloudDirector:
+    """
+    Cloud-based Flux Director using HF InferenceClient (fal-ai).
+    """
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        # Use fal-ai provider for Flux.1-dev or similar standard endpoint
+        self.client = InferenceClient(provider="fal-ai", api_key=self.api_key)
+        
+        # Cloud Mapping: "Klein" is likely a local finetune/quant. 
+        # For Cloud, we map it to the upstream reference (Flux.1-dev) to ensure provider support.
+        target_model = FLUX_REPO
+        if "klein" in target_model.lower():
+             logging.info(f"   ☁️ Mapping Local '{target_model}' -> Cloud 'black-forest-labs/FLUX.1-dev'")
+             target_model = "black-forest-labs/FLUX.1-dev"
+             
+        self.model = target_model
+        
+    def generate(self, prompt, width=1280, height=720, seed=None):
+        logging.info(f"   ☁️ Flux Cloud: Generating '{prompt[:40]}...' ({width}x{height})")
+        
+        try:
+            # InferenceClient text_to_image returns a PIL Image by default
+            image = self.client.text_to_image(
+                prompt=prompt,
+                model=self.model,
+                width=width,
+                height=height,
+                num_inference_steps=28, # Standard dev steps
+                guidance_scale=3.5,
+                seed=seed
+            )
+            return image
+        except Exception as e:
+            logging.error(f"   ❌ Flux Cloud Error: {e}")
+            return None
+
 def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J", out_path: str = "manifest_updated.json", staging_dir: str = "componentparts", pg_mode: bool = False, **kwargs) -> bool:
     """
     Executes the Dispatch pipeline.
-    mode: "image" (Flux) or "video" (Veo)
+    mode: "image" (Flux) or "video" (Veo/LTX)
     """
     # 1. Load Data
     try:
@@ -461,7 +557,9 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
         return False
         
     width = kwargs.get('width', 768)
-    height = kwargs.get('height', 768)
+    height = kwargs.get('height', 512) # Use 512 default for Video if not passed
+    # Note: caller passes args.height which defaults to 768. 
+    # For video, LTX prefers 512 height usually (768x512).
         
     # 2. Setup Staging
     staging_path = Path(staging_dir)
@@ -469,42 +567,63 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
         
     # 3. Init Director
     director = None
-    director = None
+    local_mode = kwargs.get('local_mode', False)
+    
     if mode == "image":
-        # FLUX with Bridge
-        logging.info(f"   🌊 Initializing Flux Bridge from {FLUX_CACHE}...")
-        # Resolve Path via registry or default
-        try:
-            director = get_flux_bridge(FLUX_CACHE) # Using cache path as model path? 
-            # Wait, FLUX_CACHE is defined as definitions.MODAL_REGISTRY...path.
-            # If that path is a directory containing model, it works.
-        except Exception as e:
-            logging.error(f"Failed to load Flux Bridge: {e}")
-            return False
+        # FLUX
+        if local_mode:
+            logging.info(f"   🌊 Initializing Flux Bridge from {FLUX_CACHE}...")
+            try:
+                director = get_flux_bridge(FLUX_CACHE) 
+            except Exception as e:
+                logging.error(f"Failed to load Flux Bridge: {e}")
+                return False
+        else:
+             logging.info("   ☁️  Mode: Image (Cloud Flux)")
+             _ = load_api_keys()
+             hf_token = os.environ.get("HF_TOKEN")
+             if not hf_token:
+                 logging.error("❌ HF_TOKEN missing for Cloud Flux.")
+                 return False
+             director = FluxCloudDirector(api_key=hf_token)
+            
     elif mode == "video":
-        local_mode = kwargs.get('local_mode', False)
         
         if local_mode:
             logging.info("🎥 Mode: Video (Local LTX-First)")
             director = LTXDirector()
             director.load()
-        else:
-            keys = load_api_keys()
-            if not keys:
-                logging.error("No API Keys for Video Dispatch.")
-                return False
             
-            # Resolve Model Name using action/definitions logic if possible, 
-            # or hardcode fallback? 
-            # We'll use definitions if available
-            try:
-                import definitions
-                model_name = definitions.get_video_model(model_tier)
-            except:
-                model_name = "veo-2.0-generate-001"
+            # Local Hybrid: Connect Flux for Keyframes (JIT MODE - DO NOT LOAD YET)
+            logging.info("   🔌 JIT Hybrid Mode: Flux will be loaded on-demand.")
+            director.aux_director = "JIT_FLUX_TOKEN" # Marker to trigger JIT logic
+        else:
+            logging.info("☁️ Mode: Video (Cloud LTX-Video)")
+            
+            # Prime Environment Variables from YAML
+            _ = load_api_keys() 
+            ltx_api_key = os.environ.get("HF_TOKEN")
+            if not ltx_api_key:
+                logging.error("❌ HF_TOKEN not found in env_vars.yaml or environment.")
+                return False
                 
-            # Pass ALL keys to the adapter for rotation
-            director = VideoDirectorAdapter(keys, model_name=model_name, pg_mode=pg_mode)
+            director = LTXCloudDirector(api_key=ltx_api_key)
+            
+            # HYBRID MODE: We ALSO need Flux for Keyframes
+            logging.info("   🔌 Connecting Hybrid Link (Flux Keyframes)...")
+            try:
+                if local_mode:
+                    aux_director = get_flux_bridge(FLUX_CACHE)
+                else:
+                    # Cloud Hybrid -> NOW USING LOCAL FLUX per user request (Hybrid Fal/Local)
+                    logging.info("   🏠 Hybrid Override: Using Local Flux Bridge for Cloud LTX Keyframes.")
+                    aux_director = get_flux_bridge(FLUX_CACHE)
+                    # aux_director = FluxCloudDirector(api_key=ltx_api_key) # Users same token
+                    
+                director.aux_director = aux_director
+            except Exception as e:
+                logging.warning(f"   ⚠️ Could not load Flux for Hybrid Keyframes: {e}")
+                director.aux_director = None
 
     else:
         logging.error(f"Unknown mode: {mode}")
@@ -514,26 +633,24 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
     logging.info(f"🎬 Director calling action on {len(manifest.segs)} segments (Mode: {mode})...")
     
     last_file = None
-    
-    # Sort segments by ID to ensure sequence (critical for video context)
     sorted_segs = sorted(manifest.segs, key=lambda s: s.id)
-    
     consecutive_failures = 0
     MAX_CONSECUTIVE_FAILURES = 3
     
     for seg in sorted_segs:
-        # Check if done
-        if seg.id in manifest.files:
-            if os.path.exists(manifest.files[seg.id]):
-                logging.info(f"   ⏩ Skipping Seg {seg.id} (Already wrapped).")
-                last_file = manifest.files[seg.id]
-                consecutive_failures = 0 # Reset on success/skip
-                continue
+        # Check if done (unless Reshoot forced)
+        reshoot_mode = kwargs.get('reshoot', False)
+        
+        if not reshoot_mode and seg.id in manifest.files and os.path.exists(manifest.files[seg.id]):
+             logging.info(f"   ⏩ Skipping Seg {seg.id} (Already wrapped).")
+             last_file = manifest.files[seg.id]
+             consecutive_failures = 0 
+             continue
                 
-        print(f"\n🎥 SEGMENT {seg.id}: {seg.prompt[:60]}...")
+        print(f"\n🎥 SEGMENT {seg.id} {'(RESHOOT)' if reshoot_mode else ''}: {seg.prompt[:60]}...")
         
         if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-            logging.error(f"❌ Aborting Dispatch: {consecutive_failures} consecutive failures (Likely API Quota or Outage).")
+            logging.error(f"❌ Aborting Dispatch: {consecutive_failures} consecutive failures.")
             return False
         
         base_name = f"seg_{seg.id:03d}_{int(time.time())}"
@@ -542,87 +659,114 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
         filepath = staging_path / filename
         
         success = False
+        
         if mode == "image":
              # Flux Logic
-             # Flux Logic
              seed = 42 + seg.id
-             
-             # Call Bridge
              img = director.generate(
                 prompt=seg.prompt,
                 width=width,
                 height=height,
-                seed=seed,
-                # Default steps=4, guidance=3.5
+                seed=seed
             )
-             
              if img:
                  img.save(filepath)
                  success = True
-             else:
-                 success = False
+        
         elif mode == "video":
-            # Veo Logic
-            # Context Logic: Use last wrapper file?
-            # Issue: Veo context needs to be a specific URI (File API or GCS).
-            # Local file path doesn't work directly for Veo unless we upload it or base64 it.
-            # action.VeoDirector supports "context_uri" as a local path if it handles Base64.
-            # Let's check action.VeoDirector implementation...
-            # Yes, it checks: if context_uri and os.path.exists(context_uri) ... base64 encode.
-            # So pass the local filepath of the previous segment.
+            # LTX Logic (Local OR Cloud)
             
-            # BUT: Video-to-Video context? 
-            # realize.py extracts the last frame to use as Image context.
-            # Let's verify if we need to do that here or if VeoDirector handles it.
-            # action.VeoDirector expects "image" context usually.
+            # Use Argument Dimensions (Default 1280x720)
+            # LTX prefers multiples of 32. 
+            t_width = (width // 32) * 32
+            t_height = (height // 32) * 32
             
-            # action.VeoDirector expects "image" context usually.
+            # Calculate Target Frames
+            target_frames = seg.end_frame - seg.start_frame
+            if target_frames < 33: target_frames = 33 # Min ~1.5s
+            
+            # Snap to 8k+1 logic (LTX Preference)
+            remainder = (target_frames - 1) % 8
+            if remainder != 0:
+                target_frames = target_frames - remainder
+                
+            # Context Logic (Img2Vid)
+            context_arg = str(last_file) if last_file and os.path.exists(str(last_file)) else None
             
             if local_mode:
-                # LTX Logic with TruthSafety Fattening (Local Mode = True)
-                logging.info(f"   ✨ Enhancing Prompt for Local LTX (PG: {pg_mode})...")
-                try:
-                    # We need an API key for TruthSafety (uses TextEngine internally)
-                    cleaner = TruthSafety() 
-                    fat_prompt = cleaner.refine_prompt(
-                        seg.prompt, 
-                        context_dict={"Task": "Cinematic Video"}, 
-                        pg_mode=pg_mode, 
-                        local_mode=True
-                    )
-                    logging.info(f"   💪 Fattened Prompt: {fat_prompt[:60]}...")
-                except Exception as e:
-                    logging.warning(f"   ⚠️ Fattening failed: {e}. Using raw prompt.")
-                    fat_prompt = seg.prompt
+                # Local LTX Logic (with Fattening + Context)
+                ltx_context_image = None
+                if context_arg:
+                    if context_arg.endswith(".mp4") or context_arg.endswith(".mov"):
+                         frame = extract_last_frame(context_arg)
+                         if frame and os.path.exists(frame): ltx_context_image = frame
+                    else:
+                         ltx_context_image = context_arg
 
-                seed = 42 + seg.id
-                
-                # Calculate Duration/Frames
-                # LTX prefers 8k + 1 frames usually (e.g. 121, 97, etc.)
-                # Seg has start_frame/end_frame (at assumed 24fps)
-                target_frames = seg.end_frame - seg.start_frame
-                
-                # Ensure acceptable LTX length
-                # Common LTX training buckets: 121 (~5s). 
-                # Let's try to match requested length but snap to 8k+1
-                # if target_frames < 16: target_frames = 17 
-                
-                # Snap to nearest 8k + 1
-                # k = round((target_frames - 1) / 8)
-                # snapped_frames = (k * 8) + 1
-                # Allow strictly what is requested if reasonable, else snap.
-                # Actually, LTX might handle arbitrary if not strict. 
-                # Let's enforce 8k+1 to be safe based on architecture.
-                
-                if target_frames < 33: target_frames = 33 # Minimum ~1.5s
-                
-                remainder = (target_frames - 1) % 8
-                if remainder != 0:
-                    target_frames = target_frames - remainder # Snap down
-                    
-                # Fix dimensions (must be divisible by 32)
-                t_width = (width // 32) * 32
-                t_height = (height // 32) * 32
+                # IF NO CONTEXT, GENERATE KEYFRAME (Local Hybrid JIT)
+                if not ltx_context_image and hasattr(director, 'aux_director') and director.aux_director == "JIT_FLUX_TOKEN":
+                     logging.info(f"   🎨 Local Hybrid (JIT): Flux -> Keyframe...")
+                     keyframe_path = str(filepath).replace(".mp4", "_key.png")
+                     cinematic_prompt = f"Cinematic wide shot, high quality, {seg.prompt}"
+                     
+                     try:
+                         # 1. Unload LTX (Free VRAM)
+                         # We can't easily unload 'director' itself as it holds the state, but we can tell bridge to unload pipelines?
+                         # ltx_bridge has free_memory() but pipelines are persistent.
+                         # We need to manually nuke pipes if we need space.
+                         # But wait, LTXDirector wraps the bridge.
+                         
+                         # Hack: Use deep private access or just rely on OS paging? 
+                         # No, 96GB fails. We must be aggressive.
+                         # LTX Bridge holds 'txt2vid_pipe' and 'img2vid_pipe'.
+                         if director.bridge:
+                              # Manually delete pipes
+                              if director.bridge.txt2vid_pipe: 
+                                  del director.bridge.txt2vid_pipe
+                                  director.bridge.txt2vid_pipe = None
+                              if director.bridge.img2vid_pipe:
+                                  del director.bridge.img2vid_pipe
+                                  director.bridge.img2vid_pipe = None
+                              director.bridge.free_memory()
+                              logging.info("      📉 JIT: LTX Unloaded.")
+
+                         # 2. Load Flux
+                         aux_director = get_flux_bridge(FLUX_CACHE)
+                         
+                         # 3. Generate
+                         kf_img = aux_director.generate(
+                             prompt=cinematic_prompt,
+                             width=t_width,
+                             height=t_height,
+                             seed=42 + seg.id
+                         )
+                         
+                         if kf_img:
+                             kf_img.save(keyframe_path)
+                             ltx_context_image = keyframe_path
+                             logging.info(f"      ✓ JIT: Keyframe Ready: {keyframe_path}")
+                             
+                         # 4. Unload Flux
+                         aux_director.unload()
+                         logging.info("      📉 JIT: Flux Unloaded.")
+
+                     except Exception as e:
+                         logging.error(f"      ❌ Flux JIT Failed: {e}")
+
+                     # 5. Reload LTX (Will happen automatically in director.generate via lazy load or we trigger it?)
+                     # LTXDirector.generate calls bridge.generate -> load_img2vid()
+                     # So it handles reload. Perfect.
+
+                # Fatten Prompt (DISABLED per user request for continuity/speed)
+                # "the 'fattening' seems to break continuity from clip to clip... and makes everything take longer."
+                fat_prompt = seg.prompt 
+                # try:
+                #     cleaner = TruthSafety() 
+                #     fat_prompt = cleaner.refine_prompt(...)
+                # except:
+                #     fat_prompt = seg.prompt
+
+                # Fix dims (Already calculated above as t_width, t_height)
                 
                 success = director.generate(
                     prompt=fat_prompt,
@@ -630,33 +774,59 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
                     width=t_width, 
                     height=t_height,
                     num_frames=target_frames,
-                    seed=seed,
-                    image_path=context_arg if context_arg else None # Img2Vid
+                    seed=42 + seg.id,
+                    image_path=ltx_context_image 
                 )
             else:
+                # Cloud LTX Live (Hybrid)
+                # 1. Generate Keyframe (Flux)
+                keyframe_path = str(filepath).replace(".mp4", "_key.png")
+                
+                if hasattr(director, 'aux_director') and director.aux_director:
+                     logging.info(f"   🎨 Hybrid: Generating Keyframe (Flux)...")
+                     # Enhance Prompt for Cinematic Quality (User Request)
+                     cinematic_prompt = f"Cinematic wide shot, high quality, {seg.prompt}"
+                     
+                     # Use Flux Bridge
+                     seed = 42 + seg.id
+                     try:
+                         kf_img = director.aux_director.generate(
+                             prompt=cinematic_prompt,
+                             width=t_width,
+                             height=t_height, 
+                             seed=seed
+                         )
+                         if kf_img:
+                             kf_img.save(keyframe_path)
+                             logging.info(f"      ✓ Keyframe Ready: {keyframe_path}")
+                         else:
+                             logging.error("      ❌ Flux returned no image.")
+                             keyframe_path = None
+                     except Exception as e:
+                         logging.error(f"      ❌ Flux Keyframe Gen Failed: {e}")
+                         keyframe_path = None
+                else:
+                    logging.warning("   ⚠️ No Flux Bridge available for keyframe. LTX might fail if text-to-video is unsupported.")
+                    keyframe_path = None
+
+                # 2. Animate (LTX Cloud)
                 success = director.generate(
                     prompt=seg.prompt,
                     output_path=str(filepath),
-                    context_uri=context_arg
+                    num_frames=target_frames,
+                    fps=24,
+                    image_path=keyframe_path,
+                    audio_path=seg.audio_asset # Pass the pre-generated audio!
                 )
             
         if success:
             manifest.files[seg.id] = str(filepath)
             last_file = filepath
-            consecutive_failures = 0 # Reset
+            consecutive_failures = 0
             logging.info(f"   ✅ Wrapped: {filepath}")
-            
-            # Rate Limit Protection (Veo 3 Preview is very strict)
-            if mode == "video":
-                cooldown = 30
-                logging.info(f"   ⏳ Cooling down for {cooldown}s to protect Key/Project Quota...")
-                time.sleep(cooldown)
         else:
             logging.warning(f"   ❌ Failed to shoot Seg {seg.id}")
             consecutive_failures += 1
-            # If video fails, maybe we should stop? 
-            # Or continue without context? 
-            # For MVP, we continue.
             
     # 5. Wrap
     save_manifest(manifest, out_path)
@@ -671,9 +841,10 @@ def main():
     parser.add_argument("--mode", type=str, default="image", choices=["image", "video"], help="Generation Mode")
     parser.add_argument("--vm", type=str, default="J", help="Video Model Tier (if mode=video)")
     parser.add_argument("--pg", action="store_true", help="Enable PG Mode (Relaxed Celebrity/Strict Child Safety)")
-    parser.add_argument("--width", type=int, default=768, help="Output width (Image Mode)")
-    parser.add_argument("--height", type=int, default=768, help="Output height (Image Mode)")
+    parser.add_argument("--width", type=int, default=1280, help="Output width (Image Mode)")
+    parser.add_argument("--height", type=int, default=720, help="Output height (Image Mode)")
     parser.add_argument("--local", action="store_true", help="Force Local Mode (LTX for Video)")
+    parser.add_argument("--reshoot", action="store_true", help="Force Re-shoot (Ignore existing files)")
     
     args = parser.parse_args()
     
@@ -686,7 +857,8 @@ def main():
         pg_mode=args.pg,
         width=args.width,
         height=args.height,
-        local_mode=args.local
+        local_mode=args.local,
+        reshoot=args.reshoot
     )
     
     if not success:

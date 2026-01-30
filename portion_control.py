@@ -10,11 +10,17 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 def load_portions(path: str) -> list[dict]:
     with open(path, 'r') as f:
         data = json.load(f)
-        return data.get("portions", [])
+        # Handle both wrapped dict (legacy) and direct list (XML)
+        if isinstance(data, list):
+            return data
+        elif isinstance(data, dict):
+             return data.get("portions", [])
+        return []
 
-def run_portion(bible_path: str, portions_path: str, out_path: str = "manifest.json") -> bool:
+def run_portion(bible_path: str, portions_path: str, out_path: str = "manifest.json", max_seg_dur: float = 5.0) -> bool:
     """
     Executes the Portion Control pipeline.
+    max_seg_dur: Maximum duration per segment (default 5.0 for LTX safety). Set to 0 to disable splitting.
     """
     # 1. Load Data
     try:
@@ -25,7 +31,7 @@ def run_portion(bible_path: str, portions_path: str, out_path: str = "manifest.j
         return False
 
     fps = cssv.constraints.fps
-    logging.info(f"📐 Calculating segments @ {fps} FPS...")
+    logging.info(f"📐 Calculating segments @ {fps} FPS... (Max Dur: {max_seg_dur}s)")
     
     segs = []
     all_dialogue_lines = []
@@ -39,22 +45,56 @@ def run_portion(bible_path: str, portions_path: str, out_path: str = "manifest.j
         
         # Calculate frames
         frame_count = int(duration * fps)
-        start = current_frame
-        end = current_frame + frame_count
         
-        # Construct Seg
-        seg = Seg(
-            id=p_id,
-            start_frame=start,
-            end_frame=end,
-            prompt=content,
-            action="static" 
-        )
-        segs.append(seg)
+        # Track portion start for dialogue offsets
+        portion_start_frame = current_frame
+
+        # LTX SAFETY SPLIT
+        # If duration > max_seg_dur, split into chunks.
+        # Check if splitting is enabled (max_seg_dur > 0)
+        should_split = (max_seg_dur > 0 and duration > max_seg_dur)
         
-        # Extract Dialogue
+        if should_split:
+            # Number of chunks
+            import math
+            num_chunks = math.ceil(duration / max_seg_dur)
+            chunk_frames = frame_count // num_chunks
+            
+            for k in range(num_chunks):
+                # Sub-segment
+                s_start = current_frame
+                s_end = current_frame + chunk_frames
+                if k == num_chunks - 1: s_end = current_frame + frame_count - (chunk_frames * (num_chunks-1)) # Remainder
+                
+                # Suffix ID for uniqueness (e.g. 101, 102...) or just increment?
+                # Portions usually 1..N. Segs can be 1..M.
+                # Let's just append to segs list.
+                seg = Seg(
+                    id=p_id * 100 + k, # Pseudo-ID: Portion 5 -> Seg 500, 501
+                    start_frame=s_start,
+                    end_frame=s_end,
+                    prompt=content + f" (Part {k+1})",
+                    action="static"
+                )
+                segs.append(seg)
+                current_frame = s_end
+        else:
+            # Standard 1:1
+            start = current_frame
+            end = current_frame + frame_count
+            seg = Seg(
+                id=p_id,
+                start_frame=start,
+                end_frame=end,
+                prompt=content,
+                action="static" 
+            )
+            segs.append(seg)
+            current_frame = end
+
         if 'dialogue' in p_data:
-            scene_start_time = float(start) / float(fps)
+            # Use portion_start_frame (which equals start of first segment)
+            scene_start_time = float(portion_start_frame) / float(fps)
             line_offset_accumulator = 0.5 # Start 0.5s into scene
             
             for d in p_data['dialogue']:
@@ -73,7 +113,8 @@ def run_portion(bible_path: str, portions_path: str, out_path: str = "manifest.j
                 line_offset_accumulator += (est_duration + 0.5)
 
         # Advance cursor
-        current_frame = end
+        # Advance cursor - already done in if/else blocks above.
+
         
     logging.info(f"✅ Generated {len(segs)} segments. Total Frames: {current_frame}. Dialogue Lines: {len(all_dialogue_lines)}")
     

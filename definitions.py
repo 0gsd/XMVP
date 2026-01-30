@@ -259,6 +259,24 @@ FORM_REGISTRY = {
         default_args={},
         description="6-Person Improv Narrative (66 Minutes)"
     ),
+    "3d-movie": VPFormConfig(
+        key="3d-movie",
+        aliases=["3d", "blender", "cgi"],
+        default_args={"fps": 24, "local": True},
+        description="3D Animated Movie via Blender/bpy."
+    ),
+    "black-box": VPFormConfig(
+        key="black-box",
+        aliases=["bb", "theater", "stage", "min"],
+        default_args={},
+        description="Minimalist Theater/Black Box Mode"
+    ),
+    "audio-play": VPFormConfig(
+        key="audio-play",
+        aliases=["ap", "audioplay", "play"],
+        default_args={"local": True},
+        description="Audio-Only Play Generator (MP3 Output)"
+    ),
 }
 
 def resolve_vpform(input_string: str) -> Optional[VPFormConfig]:

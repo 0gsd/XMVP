@@ -213,7 +213,7 @@ def refine_tween(img_tween, prompt, model=None, width=1024, height=1024, text_en
     
     # Helper
     def get_model():
-        if text_engine: return text_engine.get_model_instance()
+        # if text_engine: return text_engine.get_model_instance() 
         return model
     
     print(f"   [Tween] Refining ghost frame ({width}x{height}px)...")
@@ -337,7 +337,7 @@ def generate_recursive(prompt, width=1024, height=1024, context=None, model=None
     
     # Helper to clean/get model
     def get_model():
-        if text_engine: return text_engine.get_model_instance()
+        # if text_engine: return text_engine.get_model_instance()
         return model
 
     # STAGE 1: Low-Res Pixel Art Base

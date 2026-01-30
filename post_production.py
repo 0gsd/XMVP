@@ -383,21 +383,22 @@ class FrameUpscaler:
                 img = img.resize((target_w, target_h), Image.LANCZOS)
                 
                 # Flux Denoise (Add Detail)
-                # Use Flux Schnell for Img2Img (Klein Img2Img is broken/unsupported for this pipeline)
-                flux_root = "/Volumes/XMVPX/mw/flux-root"
-                guidance_val = 0.0
+                # Use Flux 2 Klein for Img2Img
+                flux_root = "/Volumes/XMVPX/mw/flux-root" # Base root, bridge resolves Klein
+                guidance_val = 3.5 # Klein needs guidance
                 
-                logging.info(f"   ✨ using Flux Schnell for Upscaling: {flux_root}")
+                logging.info(f"   ✨ using Flux 2 Klein for Upscaling: {flux_root}")
+                # Ensure we ask for the heavy gear
                 bridge = get_flux_bridge(flux_root)
                 
                 # Prompt? "High resolution, sharp details, 4k"
                 enhanced = bridge.generate_img2img(
-                    prompt="high resolution, sharp focus, detailed, cinematic, best quality, 4k",
+                    prompt="high resolution, sharp focus, detailed, cinematic, best quality, 4k, 8k",
                     image=img,
                     width=target_w,
                     height=target_h,
-                    strength=0.30, # Low strength to preserve geometry but add texture
-                    steps=4,
+                    strength=0.25, # Low strength to preserve geometry but add texture
+                    steps=20, # Klein needs steps (Schnell was 4)
                     guidance_scale=guidance_val
                 )
                 
@@ -484,22 +485,22 @@ class FrameInterpolator:
                 blended = Image.blend(img_a, img_b, 0.5)
                 
                 # 3. Flux Img2Img Tweening
-                # Use Flux Schnell (Klein is broken for Img2Img)
+                # Use Flux 2 Klein
                 flux_root = "/Volumes/XMVPX/mw/flux-root"
-                guidance_val = 0.0
+                guidance_val = 3.5
                 
-                logging.info(f"   ✨ using Flux Schnell for Tweening: {flux_root}")
+                logging.info(f"   ✨ using Flux 2 Klein for Tweening: {flux_root}")
                 bridge = get_flux_bridge(flux_root)
                 
                 # Interpolation Prompt
                 # We want it to look like the blend but "resolved"
                 tween = bridge.generate_img2img(
-                    prompt="cinematic, motion blur, smooth transition, high quality",
+                    prompt="cinematic, motion blur, smooth transition, high quality, 4k",
                     image=blended,
                     width=blended.width,
                     height=blended.height,
-                    strength=0.55, # Higher strength for tweening to hallucinate motion
-                    steps=4,
+                    strength=0.45, # Moderate strength to heal double-exposure but keep structure
+                    steps=20,
                     guidance_scale=guidance_val
                 )
                 
@@ -1129,7 +1130,9 @@ def main():
     parser.add_argument("-x", type=int, default=2, help="Frame Expansion Factor (Tweening). Default: 2")
     parser.add_argument("--scale", type=float, default=2.0, help="Upscale Factor. Default: 2.0")
     parser.add_argument("--restyle", type=str, default=None, help="Restyle Mode (e.g. 'ascii').")
-    parser.add_argument("--local", action="store_true", help="Run Locally (Flux Img2Img)")
+    parser.add_argument("--cloud", action="store_true", help="Run in Cloud Mode (Gemini)")
+    # parser.add_argument("--local", action="store_true", help="Run Locally (Flux Img2Img)") # Deprecated, now default
+    parser.add_argument("--local", action="store_true", default=True, help="Run Locally (Flux Img2Img). Default=True.")
     parser.add_argument("--more", action="store_true", help="Enable Secondary Interpolation/Upscale (4x Total)")
     parser.add_argument("--mu", type=str, help="Audio File for Music Video Sync (or VDJ Mode)")
     parser.add_argument("--stitch-audio", action="store_true", help="Force-stitch frames to match audio duration (Ignore Delta).")

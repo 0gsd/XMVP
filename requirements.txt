@@ -17,3 +17,7 @@ pyloudnorm
 soundfile
 librosa
 sqlalchemy
+
+# Audio (Kokoro)
+kokoro-onnx
+# Note: Requires system-level espeak-ng (mac: brew install espeak-ng, linux: sudo apt install espeak-ng)

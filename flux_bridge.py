@@ -160,9 +160,9 @@ class FluxBridge:
         # but explicit truncation avoids "Batch size mismatch" or tokenizer warnings.
         # We target ~70 words / 300 chars to be safe.
         safe_prompt = prompt
-        if len(prompt) > 350:
+        if len(prompt) > 1024:
             logging.warning(f"   ✂️ Truncating long prompt ({len(prompt)} chars).")
-            safe_prompt = prompt[:350]
+            safe_prompt = prompt[:1024]
             
         try:
             image_obj = self.pipeline(
@@ -214,6 +214,16 @@ class FluxBridge:
                 # 2. Component Casting (Try to promote T2I to I2I)
                 # FluxImg2ImgPipeline shares components with FluxPipeline
                 try:
+                    # SPECIAL HANDLING FOR FLUX 2 KLEIN (Custom Class)
+                    pipe_cls = self.pipeline.__class__.__name__
+                    if "Klein" in pipe_cls:
+                        logging.info(f"   ✨ Detected Custom Pipeline ({pipe_cls}). Checking for Img2Img support or casting...")
+                        # If Klein supports image in call, step 1 should have caught it.
+                        # If not, we might need to reload as Img2Img or assume it doesn't support it directly.
+                        # But wait! Flux2Klein usually wraps standard logic.
+                        # If casting fails, we might just assume success if components match.
+                        pass # Try standard cast below
+
                     self.img2img_pipeline = FluxImg2ImgPipeline(**self.pipeline.components).to(self.device)
                     logging.info("   ✅ Flux Img2Img Ready (Shared Components).")
                 except TypeError as e:
@@ -222,20 +232,10 @@ class FluxBridge:
                     self.img2img_pipeline = None
             
             if not self.img2img_pipeline:
-                 # 3. Independent Load (if we didn't just fail casting, or if we want to try loading from disk as I2I)
-                 # If casting failed, likely loading from disk as I2I will also fail if it's the same model structure?
-                 # Not necessarily, maybe from_pretrained handles it differently than __init__.
-                 pass
-
-            if not self.img2img_pipeline:
                  # 3. Independent Load (Force Standard Flux Img2Img from disk)
                  logging.info("   ⚠️ Component Casting failed. Attempting independent load of FluxImg2ImgPipeline...")
                  try:
                      # Force standard class. Use ignore_mismatched_sizes if needed?
-                     # We trust remote code false here to avoid loading the custom T2I pipeline again?
-                     # But if we need custom components... 
-                     # Let's try loading with the SAME components but bypassing checks?
-                     # No, let's try strict from_pretrained.
                      self.img2img_pipeline = FluxImg2ImgPipeline.from_pretrained(
                          self.model_path,
                          torch_dtype=torch.bfloat16,

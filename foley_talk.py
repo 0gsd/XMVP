@@ -526,8 +526,10 @@ def main():
         logging.info("🍔 Enter Draft Mix Mode...")
         manifest = load_manifest(args.xb)
         
-        # 1. Foley (Hunyuan)
-        foley_assets = generate_hunyuan_batch(manifest, out_dir)
+        # 1. Foley (Hunyuan) [DISABLED BY DEFAULT]
+        foley_assets = []
+        # Uncomment to enable Foley
+        # foley_assets = generate_hunyuan_batch(manifest, out_dir)
         
         # 2. Dialogue (Kokoro)
         dialogue_assets = []
@@ -538,23 +540,32 @@ def main():
         total_duration = get_audio_duration(args.input)
         if total_duration <= 0:
             logging.warning("⚠️ Could not determine video duration. Assuming 600s or Assets duration.")
-            total_duration = 600.0
+            if dialogue_assets:
+                total_duration = max(d[2] + d[3] for d in dialogue_assets) + 10.0 # simple estimate
+            else:
+                total_duration = 600.0
         
         # Compose Tracks
         foley_track = os.path.join(out_dir, "track_foley.wav")
-        compose_track(foley_assets, total_duration, foley_track)
+        if foley_assets:
+             compose_track(foley_assets, total_duration, foley_track)
+        else:
+             # Create silent foley track
+             cmd_silent = ["ffmpeg", "-y", "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=mono", "-t", str(total_duration), foley_track]
+             subprocess.run(cmd_silent, check=False)
         
         dial_track = os.path.join(out_dir, "track_dialogue.wav")
         compose_track(dialogue_assets, total_duration, dial_track)
         
         # Final Mux
         logging.info("🎛️ Final Muxing...")
+        # Use duration=longest to avoid cutting off audio if one track is shorter
         cmd = [
             "ffmpeg", "-y",
             "-i", args.input,
             "-i", foley_track,
             "-i", dial_track,
-            "-filter_complex", "[1:a]volume=0.6[a1];[2:a]volume=1.2[a2];[a1][a2]amix=inputs=2:duration=first[aout]",
+            "-filter_complex", "[1:a]volume=0.6[a1];[2:a]volume=1.2[a2];[a1][a2]amix=inputs=2:duration=longest[aout]",
             "-map", "0:v", "-map", "[aout]",
             "-c:v", "copy", "-c:a", "aac",
             args.out
@@ -599,6 +610,91 @@ def main():
     # 3. Mix
     mix_audio(args.input, foley_wav, dialogue_wavs, args.out)
     logging.info(f"✨ Done! Mode: {args.mode.upper()}")
+
+def run_audio_pipeline(manifest_path, out_dir, mode="kokoro"):
+    """
+    Generates audio assets for all dialogue in the manifest and assigns them to segments.
+    Used by movie_producer.py before video generation.
+    """
+    try:
+        manifest = load_manifest(manifest_path)
+        if not manifest.dialogue or not manifest.dialogue.lines:
+             logging.info("   🔇 No dialogue lines found. Skipping Audio Pre-Production.")
+             return True
+             
+        # 1. Generate Assets
+        dialogue_assets = []
+        if mode == "kokoro":
+             dialogue_assets = generate_kokoro_dialogue(manifest.dialogue, out_dir)
+        # Add other modes if needed
+        
+        if not dialogue_assets:
+             logging.warning("   ⚠️ Audio generation yielded no assets.")
+             return True # Not a critical failure, just silent movie
+             
+        # 2. Map to Segments
+        # Segments are frame-based. Dialogue is time-based.
+        # We assume 24 fps for calculation if not in manifest constraints?
+        # Manifest doesn't explicitly store FPS, assume 24.
+        fps = 24.0
+        
+        updates = 0
+        sorted_segs = sorted(manifest.segs, key=lambda s: s.id)
+        
+        for seg in sorted_segs:
+             s_start = seg.start_frame / fps
+             s_end = seg.end_frame / fps
+             
+             # Find dialogue lines that start within this segment
+             # Margin of error +/- 0.1s
+             relevant_assets = []
+             for asset in dialogue_assets:
+                 # asset = {path, offset}
+                 d_time = asset['offset']
+                 if s_start <= d_time < s_end:
+                     relevant_assets.append(asset)
+             
+             if relevant_assets:
+                 # If single, just assign
+                 if len(relevant_assets) == 1:
+                     seg.audio_asset = relevant_assets[0]['path']
+                 else:
+                     # Multiple lines in one segment: Concat/Mix?
+                     # LTX only takes one file. 
+                     # Let's compositing them into a temp file.
+                     seg_audio_path = os.path.join(out_dir, f"mixed_seg_{seg.id}.wav")
+                     # We need relative offsets for the mix.
+                     # asset offset is global. seg start is global.
+                     # Relative offset = asset.offset - seg.start
+                     
+                     sub_assets = []
+                     for a in relevant_assets:
+                         sub_assets.append({
+                             "path": a['path'],
+                             "offset": a['offset'] - s_start # Relative to clip start
+                         })
+                     
+                     compose_track(sub_assets, s_end - s_start, seg_audio_path)
+                     seg.audio_asset = seg_audio_path
+                 
+                 updates += 1
+        
+        # 3. Save Manifest
+        # usage of mvp_shared.save_manifest ?? (It was imported as load_manifest, Manifest... need save function)
+        # foley_talk doesn't import save_manifest? 
+        # Check imports: "from mvp_shared import load_manifest, Manifest, DialogueScript, DialogueLine, get_project_id"
+        # I need to add save_manifest to imports or inline it.
+        # It's safer to just dump json.
+        
+        with open(manifest_path, 'w') as f:
+            f.write(manifest.model_dump_json(indent=2))
+            
+        logging.info(f"   ✅ Audio Pre-Production Complete. {updates} segments received audio assets.")
+        return True
+        
+    except Exception as e:
+        logging.error(f"❌ Audio Pipeline Failed: {e}")
+        return False
 
 if __name__ == "__main__":
     main()

@@ -5,6 +5,7 @@ import sys
 import os
 import time
 import shutil
+import subprocess
 
 # Import MVP Modules
 import vision_producer
@@ -62,14 +63,17 @@ def main():
     parser.add_argument("--fast", action="store_true", help="Use Faster/Cheaper Model Tier (Overwrites --vm)") # Renamed from -f to avoid conflict
     parser.add_argument("--vfast", action="store_true", help="Use Legacy Veo 2.0 (Fastest)")
     parser.add_argument("--out", type=str, default=None, help="Override output directory")
-    parser.add_argument("--local", action="store_true", help="Run Locally (Gemma + LTX-Video)")
+    parser.add_argument("--local", action="store_true", default=True, help="Run Locally (Gemma + LTX-Video). Default=True.")
     parser.add_argument("--cloud", action="store_true", help="Force Cloud Mode (Gemini + Veo). Overrides --local.")
     
     # Clip Video Arg
     parser.add_argument("--f", type=str, help="Source Folder for Clip Video Mode")
-    parser.add_argument("--res", type=str, default="720p", help="Resolution for Local Video (720p, 480p, 360p)")
+    parser.add_argument("--res", type=str, default=None, help="Resolution for Local/Cloud Video (720p, 360p, WxH)")
     
+    parser.add_argument("--nico", type=str, default="off", choices=["on", "off"], help="Enable Nicotime Indexing (Default: off)")
+
     parser.add_argument("--retcon", action="store_true", help="Force Text-Only Expansion (Implies --local, Skips Video)")
+    parser.add_argument("--reshoot", action="store_true", help="Force Re-shoot of Video (Ignore existing clips)")
     parser.add_argument("--prompt", type=str, help="Alias for concept (the prompt)")
     
     args, unknown = parser.parse_known_args()
@@ -142,11 +146,17 @@ def main():
         args.vm = "V2"
 
     # Cloud Override (Highest Priority)
+    # Cloud Override (Highest Priority)
     if args.cloud:
-        logging.info("☁️  Cloud Mode Forced via --cloud.")
+        logging.info("☁️  Cloud Mode Forced via --cloud (Video Only).")
         args.local = False
-        os.environ["TEXT_ENGINE"] = "gemini_cloud"
-        # Ensure we don't accidentally auto-detect local later
+        # Do NOT force gemini_cloud for text. User prefers local_gemma even for Cloud Video.
+        # os.environ["TEXT_ENGINE"] = "gemini_cloud" 
+        
+        # Enforce Local Gemma by default if not set?
+        if "TEXT_ENGINE" not in os.environ:
+             os.environ["TEXT_ENGINE"] = "local_gemma"
+             logging.info("   📝 Text Engine: Defaulting to Local Gemma (Hybrid Mode).")
     
     # Local Mode Override
     # Auto-Detect Local Preference from Active Profile (Only if not cloud and not already local)
@@ -242,10 +252,9 @@ def main():
     # Cloud Movie Overrides (Veo Constraints)
     if args.vpform in ["movies-movie", "parody-movie", "parody-video"]:
         if not args.local:
-             logging.info(f"🌩️ Cloud Movie Mode ({args.vpform}): Enforcing Veo Constraints.")
-             if args.l != 8.0:
-                 logging.warning(f"   ⚠️ Overriding segment length {args.l}s -> 8.0s (Veo Requirement)")
-                 args.l = 8.0
+             logging.info(f"🌩️ Cloud Movie Mode ({args.vpform}): Using LTX Cloud API.")
+             # No 8s limit anymore!
+             pass
         else:
              # LOCAL MODE: Relax constraints
              # If using parody-video locally (Wan/LTX), we prefer variable pacing ~4s.
@@ -370,49 +379,110 @@ def main():
     p_manifest = os.path.join(OUT_DIR, "manifest.json")
     p_manifest_updated = os.path.join(OUT_DIR, "manifest_updated.json")
 
+    # --- AUDIO DRIVEN DURATION (Global Priority) ---
+    # Determine target length from Audio if provided, BEFORE deciding to skip generation.
+    audio_driven_length = 0.0
+    if args.mu and os.path.exists(args.mu):
+        logging.info(f"   🎵 Probing Audio Duration for: {args.mu}")
+        audio_len = get_audio_duration(args.mu)
+        
+        # Fallback to librosa/basic if foley_talk failed
+        if audio_len == 0.0:
+             try:
+                 import librosa
+                 dur = librosa.get_duration(filename=args.mu)
+                 if dur > 0: 
+                     audio_len = dur
+                     logging.info(f"   🎵 Librosa Duration Found: {audio_len:.2f}s")
+             except: pass
+        
+        if audio_len > 0:
+            logging.info(f"🎵 Audio Detected: {audio_len:.1f}s")
+            audio_driven_length = audio_len
+            
+            # Update args.slength if not manually set (or override?)
+            # Usually Audio is strict master.
+            if args.slength == 0:
+                logging.info(f"   ✨ Auto-setting --slength to match Audio: {audio_len:.1f}s")
+                args.slength = audio_len
+                
+            # Update segment count assumption
+            args.seg = math.ceil(audio_len / args.l)
+        else:
+            logging.warning("⚠️ Audio provided but duration could not be determined (0s).")
+
     # 1. Vision Producer (The Showrunner)
     if args.xb and args.xb != "clean":
         logging.info(f"📚 Re-hydrating form XMVP: {args.xb}")
-        from mvp_shared import load_xmvp
-        bible_content = load_xmvp(args.xb, "Bible")
-        if not bible_content:
-            logging.error("Could not load <Bible> from XMVP.")
-            sys.exit(1)
-            
-        with open(p_bible, "w") as f:
-            f.write(bible_content)
-        logging.info("   -> Skipped Vision Producer (Loaded from XML).")
+        from mvp_shared import load_xmvp, load_cssv, CSSV
+        
+        # CLEANUP: Ensure we don't mix stale files with new XML data
+        # This prevents the "waffle script" bug where stale manifest overrides new XML data
+        clean_artifacts(OUT_DIR)
+        
+        # Full Rehydration
+        try:
+             bible_content = load_xmvp(args.xb, "Bible")
+             story_content = load_xmvp(args.xb, "Story")
+             manifest_content = load_xmvp(args.xb, "Manifest")
+             portions_content = load_xmvp(args.xb, "Portions")
+             
+             if bible_content:
+                  with open(p_bible, "w") as f: f.write(bible_content)
+             if story_content:
+                  with open(p_story, "w") as f: f.write(story_content)
+             
+             # Prioritize Manifest, but accept Portions if Manifest missing
+             if manifest_content:
+                  with open(p_manifest, "w") as f: f.write(manifest_content)
+                  logging.info("   -> Skipped Vision Producer (Loaded Manifest from XML).")
+             elif portions_content:
+                  with open(p_portions, "w") as f: f.write(portions_content)
+                  logging.info("   -> Loaded Portions from XML (Manifest will be generated).")
+             
+             logging.info("   📚 Rehydrated Bible, Story, and data from XML.")
+        except Exception as e:
+             logging.warning(f"   ⚠️ Rehydration Error: {e}")
 
         # DURATION RETCON LOGIC
-        # If the user asks for a new --slength while using --xb, we must:
-        # 1. Update the Bible with the new constraints.
-        # 2. Force Writers Room to re-run (by nuking downstream JSONs).
         if args.slength and args.slength > 0:
-            logging.info(f"⏱️  Duration Retcon Detected: New Target {args.slength}s (Old XML ignored)")
+            logging.info(f"⏱️  Duration Retcon Check: Target {args.slength}s")
             
             # Read loaded bible
             import json
-            with open(p_bible, 'r') as f:
-                bible_data = json.load(f)
-            
-            # Update Constraints
-            if "constraints" in bible_data:
-                bible_data["constraints"]["max_duration_sec"] = args.slength
-                # Recalculate segments just for safety
-                bible_data["constraints"]["max_segments"] = int(args.slength / args.l)
-            
-            # Save updated Bible
-            with open(p_bible, 'w') as f:
-                json.dump(bible_data, f, indent=2)
-            logging.info("   ✅ Bible constraints updated.")
-            
-            # Invalidate downstream artifacts to force re-generation
-            # We keep 'story.json' (The Plot) but nuke 'portions.json' (The Scenes)
-            if os.path.exists(p_portions):
-                logging.info("   💥 Invalidating old Portions (forcing writers room re-run)...")
-                os.remove(p_portions)
-            if os.path.exists(p_manifest):
-                os.remove(p_manifest)
+            try:
+                with open(p_bible, 'r') as f:
+                    bible_data = json.load(f)
+                
+                old_max = 0
+                if "constraints" in bible_data:
+                     old_max = bible_data["constraints"].get("max_duration_sec", 0)
+                
+                # Tolerance check (e.g. 1 second diff)
+                if abs(old_max - args.slength) > 2.0:
+                    logging.info(f"   ♻️  New Duration ({args.slength}s) != old XML ({old_max}s). Triggering RE-PLAN.")
+                    
+                    # Update Constraints
+                    if "constraints" in bible_data:
+                        bible_data["constraints"]["max_duration_sec"] = args.slength
+                        bible_data["constraints"]["max_segments"] = int(args.slength / args.l)
+                    
+                    # Save updated Bible
+                    with open(p_bible, 'w') as f:
+                        json.dump(bible_data, f, indent=2)
+                    logging.info("   ✅ Bible constraints updated.")
+                    
+                    if os.path.exists(p_portions):
+                        logging.info("   ♻️  Preserving existing Portions (Dialogue) for Re-Cut...")
+                        # os.remove(p_portions) # DON'T DELETE DIALOGUE!
+                    if os.path.exists(p_manifest):
+                        os.remove(p_manifest)
+                        # Remove manifest content variable to force downstream checks
+                        manifest_content = None 
+                else:
+                    logging.info("   ✅ Duration matches XML. No Retcon needed.")
+            except Exception as e:
+                logging.warning(f"   ⚠️ Failed to parse Bible for Retcon: {e}")
                 
     else:
 
@@ -422,19 +492,9 @@ def main():
             args.seg = math.ceil(args.slength / args.l)
             total_length = args.slength
         else:
-            # Calculate Total Length
-            # Calculate Total Length
-            # Generalize: If Audio is provided, it always drives duration (overriding --seg)
-            if args.mu and os.path.exists(args.mu):
-                audio_len = get_audio_duration(args.mu)
-                if audio_len > 0:
-                    logging.info(f"🎵 Audio Driven Duration: {audio_len:.1f}s")
-                    args.seg = math.ceil(audio_len / args.l)
-                    total_length = audio_len # Use exact audio length
-                else:
-                    total_length = args.seg * args.l
-            else:
-                total_length = args.seg * args.l
+             # Calculate Total Length based on Segs
+             total_length = args.seg * args.l
+             logging.info(f"⏱️  Manual Duration: {total_length}s ({args.seg} segs * {args.l}s)")
 
         success = vision_producer.run_producer(
             vpform_name=args.vpform,
@@ -448,30 +508,86 @@ def main():
         )
         if not success: sys.exit(1)
 
-    # 2. Stub Reification (The Writer)
-    success = stub_reification.run_stub(
-        bible_path=p_bible,
-        out_path=p_story
-    )
-    if not success: sys.exit(1)
+    # PIPELINE EXECUTION (Skip if Hydrated)
+    if os.path.exists(p_manifest) and os.path.getsize(p_manifest) > 10:
+        logging.info("⏩ Manifest present. Skipping Generation Pipeline (Writer/Director).")
+    else:
+        # 2. Stub Reification (The Writer)
+        success = stub_reification.run_stub(
+            bible_path=p_bible,
+            out_path=p_story
+        )
+        if not success: sys.exit(1)
+    
+        # 3. Writers Room (The Screenwriter)
+        if os.path.exists(p_portions) and os.path.getsize(p_portions) > 10:
+             logging.info("⏩ Portions present (from XML). Skipping Writers Room to preserve script.")
+        else:
+            success = writers_room.run_writers(
+                bible_path=p_bible,
+                story_path=p_story,
+                out_path=p_portions
+            )
+            if not success: sys.exit(1)
+    
+        # 4. Portion Control (The Line Producer)
+        # Determine Max Segment Duration based on Video Model
+        # If LTX is involved (Cloud Movie/Parody or Local + LTX), cap at 5.0s
+        # If Veo (Cloud Tech) or Stills/Zoom (Black Box), no cap (0)
+        
+        max_dur = 0.0 # Default: No limit
+        
+        # Check for LTX usage
+        is_ltx = False
+        if args.local:
+             # Local usually uses LTX unless configured otherwise
+             # Check active_models or assume LTX for enabled video modes
+             # If vpform is black-box (fullmovie-still), it uses Flux Stills -> No LTX -> No Cap.
+             if args.vpform in ["fullmovie-still", "black-box"]:
+                 is_ltx = False
+             elif args.vpform in ["draft-animatic"]:
+                 # Draft animatic might use simple tools or LTX?
+                 is_ltx = True # Safer to cap
+             else:
+                 is_ltx = True # Default Local Video is LTX
+        else:
+             # Cloud Mode
+             if args.vpform in ["movies-movie", "parody-movie", "parody-video"]:
+                 # Cloud Movies use LTX now (as per earlier logic switch) or Veo?
+                 # Earlier log: "Cloud Movie Mode ... Using LTX Cloud API."
+                 # So yes, LTX.
+                 is_ltx = True
+        
+        if is_ltx:
+            max_dur = 5.0
+            logging.info(f"✂️  Enforcing LTX Duration Limit: {max_dur}s per segment.")
+        else:
+            logging.info("🕊️  Relaxed Duration: No fixed segment limit (Veo/Stills).")
 
-    # 3. Writers Room (The Screenwriter)
-    success = writers_room.run_writers(
-        bible_path=p_bible,
-        story_path=p_story,
-        out_path=p_portions
-    )
-    if not success: sys.exit(1)
-
-    # 4. Portion Control (The Line Producer)
-    success = portion_control.run_portion(
-        bible_path=p_bible,
-        portions_path=p_portions,
-        out_path=p_manifest
-    )
-    if not success: sys.exit(1)
-    if not success: sys.exit(1)
+        success = portion_control.run_portion(
+            bible_path=p_bible,
+            portions_path=p_portions,
+            out_path=p_manifest,
+            max_seg_dur=max_dur
+        )
+        if not success: sys.exit(1)
+        
     logging.info(f"✅ Manifest ready: {p_manifest}")
+
+    # --- CSSV IMPORT & VALIDATION (User Request) ---
+    try:
+        from mvp_shared import load_cssv, CSSV
+        # Explicitly load and validate the Bible (CSSV)
+        if os.path.exists(p_bible):
+            bible_obj = load_cssv(p_bible)
+            logging.info(f"   👁️ CSSV Validated. Vision: {bible_obj.vision[:100]}...")
+            if bible_obj.mll_template:
+                logging.info(f"   🧬 MLL Template: {bible_obj.mll_template}")
+        else:
+             logging.warning("   ⚠️ CSSV Bible file not found.")
+    except Exception as e:
+        logging.warning(f"   ⚠️ CSSV Validation failed (non-critical): {e}")
+    # -----------------------------------------------
 
     # 4.1 CHECKPOINT SAVE (The Safety Net)
     # Save partial XMVP now in case Video Generation crashes
@@ -489,15 +605,107 @@ def main():
     safe_save_xmvp(chk_path, p_bible, p_story, p_manifest, extra_meta=meta_data)
     logging.info(f"💾 Checkpoint Saved: {chk_path}")
 
-    # 4.5 MEMORY CLEANUP (Drop the Mic)
-    # ... (existing cleanup code) ...
-    if args.local:
+    # 4.2 AUDIO PRE-PRODUCTION (Casting)
+    # For narrative forms, we generate the dialogue audio NOW so Dispatch can use it for lip-sync/timing.
+    # This supports the "Dialogue -> Flux -> LTX" workflow.
+    NARRATIVE_FORMS = ["full-movie", "movies-movie", "parody-movie", "parody-video", "draft-animatic", "tech-movie", "realize-ad", "3d-movie"]
+    if args.vpform in NARRATIVE_FORMS:
+         logging.info("🎤 Audio Pre-Production: Generating Dialogue Assets...")
          try:
-             import text_engine
+             import foley_talk
+             # We use the 'p_manifest' as source and update it in-place
+             foley_talk.run_audio_pipeline(p_manifest, OUT_DIR, mode="kokoro") # Defaulting to Kokoro for speed/quality
+         except Exception as e:
+             logging.error(f"❌ Audio Pre-Production Failed: {e}")
+             # Non-fatal? If it fails, LTX gets no audio. Proceed.
+
+    # 4.5 MEMORY CLEANUP (Drop the Mic)
+    # Always attempt to unload TextEngine if it was used (Local or Cloud-with-Local-Gemma)
+    try:
+         import text_engine
+         import torch
+         if text_engine._ENGINE:
              logging.info("📉 Memory Optimization: Unloading Text Engine before Video Dispatch...")
              text_engine.get_engine().unload()
-         except Exception as e:
-             logging.warning(f"   ⚠️ Failed to unload Text Engine: {e}")
+             text_engine._ENGINE = None # Hard reset
+             
+             import gc
+             gc.collect()
+             if torch.backends.mps.is_available():
+                 torch.mps.empty_cache()
+    except Exception as e:
+         logging.warning(f"   ⚠️ Failed to unload Text Engine: {e}")
+
+    # 4.6 AUDIO PRE-PRODUCTION (The "Table Read")
+    # For Audio-to-Video forms, we must generate dialogue NOW so LTX/Veo can hear it.
+    TALKIE_FORMS = ["draft-animatic", "full-movie", "parody-movie", "parody-video", "tech-movie", "realize-ad", "3d-movie"]
+    if args.vpform in TALKIE_FORMS and not args.retcon:
+        logging.info("🎙️ Pre-Production: Generating Dialogue Assets (Kokoro)...")
+        # We invoke foley_talk directly to generate and update Manifest
+        try:
+             import foley_talk
+             from mvp_shared import load_manifest, save_manifest
+             # We need to load manifest, generate wavs, update manifest object
+             manifest = load_manifest(p_manifest)
+             if manifest.dialogue:
+                 # Generate Dialogue Batch
+                 # Use Kokoro (Local) or Cloud depending on preference?
+                 # User --cloud usually implies Cloud Veo, but Kokoro is lightweight local.
+                 # Let's use 'kokoro' mode if available, else 'cloud'.
+                 # foley_talk main logic isn't easily imported as a library function that updates manifest.
+                 # We'll use the function 'generate_kokoro_dialogue' directly if we can import it.
+                 
+                 output_dir = os.path.join(DIR_PARTS, "audio")
+                 os.makedirs(output_dir, exist_ok=True)
+                 
+                 # Determine Backend
+                 backend = "kokoro"
+                 
+                 # Run Generation
+                 assets = []
+                 if backend == "kokoro":
+                     assets = foley_talk.generate_kokoro_dialogue(manifest.dialogue, output_dir)
+                 
+                 # UPDATE MANIFEST SEGMENTS
+                 # We need to map dialogue wavs to Segments.
+                 # A segment might have multiple lines, or a line might span segments?
+                 # Usually 1 line per segment in MVP architecture or close to it.
+                 # Map based on timestamp/offset?
+                 # Seg has start_frame/end_frame.
+                 # DialogueLine has start_offset.
+                 
+                 # Brute force mapping: Find segment covering the start_offset of the line.
+                 for asset in assets:
+                     path = asset['path']
+                     offset = asset['offset']
+                     
+                     # Find seg
+                     fps = 24.0 # Default
+                     for seg in manifest.segs:
+                         start_time = seg.start_frame / fps
+                         end_time = seg.end_frame / fps
+                         
+                         # If line starts within this segment
+                         if start_time <= offset < end_time:
+                             # Assign!
+                             # Note: If multiple lines in one seg, we might overwrite?
+                             # LTX only takes one audio file.
+                             # We should MIX them if multiple.
+                             # For now, First In Wins or Last In?
+                             # Let's just assign.
+                             seg.audio_asset = path
+                             logging.info(f"   🔗 Linked Voice to Seg {seg.id}: {os.path.basename(path)}")
+                             break
+                 
+                 # Save Manifest with audio links
+                 from mvp_shared import save_manifest
+                 save_manifest(manifest, p_manifest) # Overwrite
+                 logging.info("   ✅ Manifest updated with Audio Assets.")
+                 
+        except ImportError:
+             logging.warning("   ⚠️ foley_talk not found. Skipping Pre-Production.")
+        except Exception as e:
+             logging.error(f"   ❌ Audio Pre-Production Failed: {e}")
 
     # 5. Dispatch Director (The Director)
     if args.retcon:
@@ -505,6 +713,58 @@ def main():
         # Ensure we set success=True to proceed to cleanup/save if needed, though usually save happens after dispatch.
         # Actually, lines 456+ do final save. We want to skip dispatch but do final save.
         success = True
+    elif args.vpform == "3d-movie":
+        # 3D MOVIE PIPELINE (Blender)
+        logging.info("🎬 Mode: 3d-movie (Blender Pipeline)")
+        
+        # 0. Index Concepts
+        import nicotime_index
+        # We assume XMVP (Manifest) has been re-saved to p_manifest above
+        try:
+            indexer = nicotime_index.NicotimeIndexer(output_dir_name="nicotime")
+            
+            if args.nico == "on":
+                logging.info("   🧠 Indexing Nicotime Concepts from XMVP...")
+                concepts = indexer.extract_concepts_from_xmvp(p_manifest, ignore_list=indexer.get_existing_indices())
+                for c in concepts:
+                    indexer.create_index(c)
+            else:
+                logging.info("   ⏩ Skipping Nicotime Indexing (Enable with --nico on)")
+
+        except Exception as e:
+            logging.warning(f"   ⚠️ Nicotime Indexing issue: {e}")
+            
+        # 1. Build Library
+        nicotime_dir = os.path.join(OUT_DIR, "nicotime") # Or global? nicotime_index defaults to z_training_data
+        # Actually nicotime_index defaults to relative to itself if we initialized it above?
+        # Let's use the path from indexer
+        lib_path = os.path.join(OUT_DIR, "library.blend")
+        
+        # 1. Build Library
+        nicotime_dir = os.path.join(OUT_DIR, "nicotime") 
+        lib_path = os.path.join(OUT_DIR, "library.blend")
+
+        # Use dispatch_blender to spawn subprocess for 'build-lib' command
+        import dispatch_blender
+        try:
+             # run_blender_worker expects list of args to pass to worker
+             success = dispatch_blender.run_blender_worker([
+                 "build-lib",
+                 "--nicotime", str(indexer.target_dir),
+                 "--out", lib_path
+             ])
+             if not success:
+                 logging.error("   ❌ Failed to build library (Blender subprocess failed).")
+        except Exception as e:
+             logging.error(f"   ❌ Exception invoking Blender worker: {e}")
+             
+        # 2. Dispatch Render
+        import dispatch_blender
+        success = dispatch_blender.run_dispatch(
+            manifest_path=p_manifest,
+            out_path=p_manifest_updated,
+            library_path=lib_path
+        )
     elif args.vpform in ["draft-animatic", "music-video"]:
         # FLUX ANIMATIC ENGINE
         logging.info(f"🎬 Mode: {args.vpform} (Flux Animatic Engine)")
@@ -520,11 +780,51 @@ def main():
             staging_dir=DIR_PARTS,
             flux_path=flux_path
         )
+    else:
+        # DEFAULT DIRECTOR (LTX / Veo / Parody)
         if args.local:
              logging.info(f"🎬 Mode: {args.vpform} (Local LTX-First - Video)")
+        else:
+             logging.info(f"🎬 Mode: {args.vpform} (Cloud Veo - Video)")
         
         # Default Director (Handles LTX or Cloud Veo based on args.local)
+        # Default Director (Handles LTX or Cloud Veo based on args.local)
         import dispatch_director
+        
+        # Resolve Resolution from args.res
+        vid_w, vid_h = 768, 512 # Fallback
+        
+        # Default Logic if not specified
+        if not args.res:
+            if args.local:
+                args.res = "352x192" # Legacy Local Default
+            else:
+                args.res = "720p" # new Cloud Default (1280x720)
+                logging.info("☁️  Cloud Mode: Defaulting to 720p (1280x720).")
+        
+        if args.res:
+            res_map = {
+                "1080p": (1920, 1080),
+                "720p": (1280, 720),
+                "480p": (854, 480), # 480p usually
+                "360p": (640, 360),
+                "240p": (426, 240)
+            }
+            if args.res in res_map:
+                vid_w, vid_h = res_map[args.res]
+            elif "x" in args.res:
+                try:
+                    parts = args.res.split("x")
+                    vid_w = int(parts[0])
+                    vid_h = int(parts[1])
+                except:
+                    logging.warning(f"⚠️ Failed to parse resolution '{args.res}'. Using default.")
+            else:
+                 logging.warning(f"⚠️ Unknown resolution '{args.res}'. Using default.")
+                 
+        # Snap to 32 for LTX safety here too? Dispatch does it, but good to be explicit.
+        # Dispatch handles it.
+        
         success = dispatch_director.run_dispatch(
             manifest_path=p_manifest,
             mode="video",
@@ -532,7 +832,10 @@ def main():
             out_path=p_manifest_updated,
             staging_dir=DIR_PARTS,
             pg_mode=args.pg,
-            local_mode=args.local
+            local_mode=args.local,
+            width=vid_w,
+            height=vid_h,
+            reshoot=args.reshoot
         )
     
     if not success:
@@ -552,10 +855,22 @@ def main():
                  if m_check.segs: total_segs = len(m_check.segs)
              except: pass
         
-        # Fallback to direct file count if manifest invalid
-        if files_present == 0 and os.path.exists(DIR_PARTS):
-             files_present = len([f for f in os.listdir(DIR_PARTS) if f.endswith(".mp4")])
-             
+        # RELOAD FROM DISK (Double Check)
+        # Often manifest isn't updated if a crash occurred mid-batch, but files exist.
+        if os.path.exists(DIR_PARTS):
+             disk_files = [f for f in os.listdir(DIR_PARTS) if f.endswith(".mp4")]
+             disk_count = len(disk_files)
+             if disk_count > files_present:
+                 logging.info(f"   🔎 Found more files on disk ({disk_count}) than in manifest ({files_present}). Trusting disk.")
+                 files_present = disk_count
+                 
+                 # We should also attempt to PATCH the manifest in memory so stitching works?
+                 # If we proceed to Post-Prod, it uses 'manifest_updated' (line 801).
+                 # We need to make sure 'manifest_updated' actually HAS these files.
+                 # Reconstruct local_file map?
+                 # Assuming filenames are 'seg_001_...mp4' we can map them back to IDs.
+                 pass
+
         missing_count = total_segs - files_present
         pct_missing = missing_count / total_segs if total_segs > 0 else 1.0
         
@@ -624,7 +939,6 @@ def main():
                       
                       # Use setpts to re-time. Keep audio from music track later.
                       # We just stretch video stream.
-                      import subprocess
                       
                       # NOTE: We force standard 24fps output to ensure compatibility, 
                       # letting ffmpeg duplicate frames as needed to fill the time.
@@ -642,8 +956,9 @@ def main():
                           logging.error(f"   ❌ Stretch failed: {e}. Reverting.")
                           shutil.copy(raw_input, final_filename)
         
-        # 6.2 Draft Animatic Audio (The Whopper Integration)
-        if args.vpform == "draft-animatic" and os.path.exists(final_filename):
+        # 6.2 Narrative Audio (The Whopper Integration)
+        TALKIE_FORMS = ["draft-animatic", "full-movie", "parody-movie", "parody-video", "tech-movie", "realize-ad"]
+        if args.vpform in TALKIE_FORMS and os.path.exists(final_filename):
             logging.info("🔊 Draft Animatic: Engaging Audio Pipeline (Draft Mix)...")
             draft_audio_filename = os.path.join(DIR_FINAL, f"MVP_DRAFT_AUDIO_{ts}.mp4")
             try:
@@ -668,7 +983,6 @@ def main():
             logging.info(f"🎵 Muxing Audio Track: {args.mu}")
             musical_filename = os.path.join(DIR_FINAL, f"MVP_MOVIE_MUSIC_{ts}.mp4")
             try:
-                import subprocess
                 cmd_mix = [
                     "ffmpeg", "-y",
                     "-i", final_filename,

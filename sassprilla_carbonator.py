@@ -34,6 +34,16 @@ def carbonate_prompt(title, artist=None, extra_context=None):
         "Return ONLY the final prompt text. Do not include 'Here is the prompt:' or markdown blocks. Just the raw, carbonated text ready for production."
     )
     
+    # SCRUBBER: Remove "Veo version" or similar artifacts before expansion
+    import re
+    # Replace (Veo version) with (Parody version) or similar
+    title = re.sub(r'\(Veo version\)', '(Parody Version)', title, flags=re.IGNORECASE)
+    title = re.sub(r'\bVeo\b', 'Parody', title, flags=re.IGNORECASE)
+    
+    # Also scrub context
+    if extra_context:
+         extra_context = re.sub(r'\bVeo\b', 'Parody', extra_context, flags=re.IGNORECASE)
+
     logging.info(f"🫧 Carbonating '{title}'...")
     
     try:

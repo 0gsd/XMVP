@@ -58,6 +58,17 @@ class KokoroBridge:
                 data.close()
                 
             logging.info(f"   ✅ Kokoro Ready. Voices: {list(self.voices.keys())}")
+            
+            # Suppress "words count mismatch" warnings from kokoro_onnx/espeak
+            # This happens often with punctuation/pause tokens but doesn't affect audio generation usually.
+            class MismatchFilter(logging.Filter):
+                def filter(self, record):
+                    return "words count mismatch" not in record.getMessage()
+
+            # Apply to root logger and kokoro logger just in case
+            logging.getLogger().addFilter(MismatchFilter())
+            logging.getLogger("kokoro_onnx").addFilter(MismatchFilter())
+            
         except Exception as e:
             logging.error(f"   ❌ Failed to load Kokoro: {e}")
             raise e

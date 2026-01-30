@@ -25,7 +25,7 @@ z_training_data/movies
 z_training_data/route66_voices
 nicotime_design.md
 test_wan.py
-#z_training_data/example_parodies
+# z_training_data/example_parodies
 
 # Setups
 frozen_requirements.txt
@@ -37,7 +37,10 @@ prepare_training_data.py
 z_training_data/parsed_scripts/
 z_training_data/parsed_scripts/*
 train_director.sh
-adapters/director_v1
+z_training_data/example_parodies/DWL712
+z_training_data/example_parodies/XN744
+3.0plan.md
+# adapters/director_v1
 
 # Shells on the Batch
 run_improv.sh

@@ -431,7 +431,7 @@ class TextEngine:
         """
         full_prompt = f"{SYSTEM_FILTER}\n\nUSER REQUEST:\n{prompt}"
         raw_text = ""
-        if self.backend == "local_gemma" and self.mlx_model:
+        if self.backend == "local_gemma":
             raw_text = self._generate_local(full_prompt, temperature)
         else:
             raw_text = self._generate_gemini(full_prompt, temperature, json_schema)

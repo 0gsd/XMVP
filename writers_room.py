@@ -3,8 +3,10 @@ import logging
 import json
 import random
 import math
+import math
 import sys
 import re
+import sassprilla_carbonator
 from pathlib import Path
 from text_engine import get_engine
 from mvp_shared import CSSV, Story, Portion, DialogueLine, load_cssv, load_xmvp
@@ -36,10 +38,15 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
     # Heuristic: If target is significantly different from default 4.0 (e.g. 8.0 for Veo), 
     # OR if we are in a mode that implies structure, we assume user wants that specific pacing.
     if target_seg_len and target_seg_len > 0 and target_seg_len != 4.0:
-        logging.info(f"   📏 Strict Pacing Detected: Target {target_seg_len}s per scene.")
-        MIN_SCENE_DUR = max(1.0, target_seg_len - 0.5)
-        MAX_SCENE_DUR = target_seg_len + 0.5
-        is_strict_pacing = True
+        # RELAXED PACING: Instead of forcing MIN/MAX to tight bounds, we let the LLM breathe.
+        # We just set the target density.
+        logging.info(f"   beat-pacing: Target ~{target_seg_len}s per scene.")
+        
+        # User Feedback: "Dynamic clip lengths... 2s to 15s"
+        # STABILITY UPDATE: LTX Cloud caps at 5-10s. Clamping aggressively to 5.0s to ensure LTX success.
+        MIN_SCENE_DUR = 2.0
+        MAX_SCENE_DUR = 5.0 # WAS 15.0. Clamped for LTX Safety.
+        is_strict_pacing = True # We still tell the prompt about the target
     
     current_total_duration = 0.0
     all_portions = []
@@ -70,7 +77,8 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
         
         pacing_instruction = f"- SCENE DURATION: Keep scenes short ({MIN_SCENE_DUR}s - {MAX_SCENE_DUR}s) for dynamic pacing."
         if is_strict_pacing:
-             pacing_instruction = f"- STRICT PACING: You MUST aim for exactly {target_seg_len}s per scene. We are syncing to a beat."
+             # Relaxed strictness: Ask for specific average, but allow variation
+             pacing_instruction = f"- DYNAMIC PACING: Aim for an AVERAGE of {target_seg_len}s, but vary between {MIN_SCENE_DUR}s and {MAX_SCENE_DUR}s to create rhythm."
 
         prompt = f"""
         CONTEXT: You are a Screenwriter writing a long-form movie script, chunk by chunk.
@@ -93,6 +101,8 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
           * 60 seconds of screen time = ~1 page of standard screenplay format.
           * 60 seconds = ~200 words of dialogue/action or 55 lines.
           * Ensure your content density matches the requested duration.
+        - GENRE NOTE: Make the visual descriptions vivid but concise enough to be expanded later.
+        - STYLE GUIDE: DO NOT use terms like "Veo version", "Google", "AI generated", or software names. Use "Parody", "Stylized", "Exaggerated", or "Cinematic" instead.
         - TARGET QUANTITY: You need roughly {int(current_batch_target / (target_seg_len if is_strict_pacing else 5))} scenes for this batch.
         
         OUTPUT FORMAT (JSON List):
@@ -125,7 +135,9 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
                     dur = float(item.get('duration', 5.0))
                     
                     if is_strict_pacing:
-                        dur = target_seg_len # FORCE alignment
+                        # DYNAMIC OVERRIDE: Trust the LLM's output if it's within bounds, rather than forcing target_seg_len
+                        # Only clamp if way off
+                        dur = max(MIN_SCENE_DUR, min(MAX_SCENE_DUR, dur))
                     else:
                         # Clamp
                         dur = max(MIN_SCENE_DUR, min(MAX_SCENE_DUR, dur))
@@ -168,6 +180,23 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
             break
             
     logging.info(f"✅ Final Script: {len(all_portions)} scenes. Total Duration: {current_total_duration:.1f}s")
+    
+    # --- PHASE 2: PRE-FATTENING (Carbonation) ---
+    logging.info("🫧 Carbonating Script (Pre-Fattening Prompts)...")
+    expanded_count = 0
+    for p in all_portions:
+        original = p.content
+        try:
+            # We assume sassprilla_carbonator is cheap/fast enough or valid
+            fat = sassprilla_carbonator.carbonate_prompt(original)
+            if fat and len(fat) > len(original):
+                 p.content = fat
+                 expanded_count += 1
+        except Exception as e:
+            logging.warning(f"   ⚠️ Carbonation failed for scene {p.id}: {e}")
+            
+    logging.info(f"   ✨ Carbonated {expanded_count}/{len(all_portions)} scenes.")
+    
     return all_portions
 
 def run_writers(bible_path: str, story_path: str, out_path: str = "portions.json") -> bool:

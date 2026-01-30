@@ -149,11 +149,28 @@ def smart_chunk_script(text, num_chunks=24):
     if len(scenes) < num_chunks:
         # Split purely by word count
         all_text = "\n\n".join(scenes)
-        words = all_text.split()
-        total = len(words)
-        chunk_size = math.ceil(total / num_chunks)
-        for i in range(0, total, chunk_size):
-            chunks.append(" ".join(words[i:i+chunk_size]))
+        # Split by lines to preserve structure
+        lines = all_text.split('\n')
+        total_words_count = sum(count_words(line) for line in lines)
+        chunk_size_words = math.ceil(total_words_count / num_chunks)
+        
+        current_chunk_lines = []
+        current_chunk_w_count = 0
+        
+        for line in lines:
+            w_count = count_words(line)
+            # If adding this line exceeds chunk size significanty? 
+            # Or just fill up.
+            if current_chunk_w_count + w_count > chunk_size_words and current_chunk_lines:
+                chunks.append("\n".join(current_chunk_lines))
+                current_chunk_lines = [line]
+                current_chunk_w_count = w_count
+            else:
+                current_chunk_lines.append(line)
+                current_chunk_w_count += w_count
+        
+        if current_chunk_lines:
+            chunks.append("\n".join(current_chunk_lines))
             
     else:
         # Scene-based distribution
@@ -194,6 +211,152 @@ def smart_chunk_script(text, num_chunks=24):
         chunks = base_chunks
         
     return chunks
+
+    return chunks
+
+def smart_chunk_ingest(content):
+    """
+    Splits a script intelligently for ingestion.
+    1. Splits by Scene Headers (INT./EXT.).
+    2. If a scene is large, recursively splits by Dialogue Lines (Character Name headers).
+    """
+    # 1. Primary Split: Sluglines
+    slug_pattern = r'(?m)^((?:INT\.|EXT\.|INT/EXT\.|I/E\.|EST\.)\s+[A-Z0-9 \-\.\(\)\']+)$'
+    parts = re.split(slug_pattern, content)
+    
+    scene_chunks = []
+    if parts[0].strip(): scene_chunks.append(parts[0].strip())
+    
+    for i in range(1, len(parts), 2):
+        slug = parts[i]
+        body = parts[i+1] if i+1 < len(parts) else ""
+        full_scene = f"{slug}\n{body}"
+        scene_chunks.append(full_scene.strip())
+        
+    if not scene_chunks and content.strip():
+        # No sluglines found (e.g. raw dialogue text)
+        scene_chunks = [content.strip()]
+        
+    final_chunks = []
+    
+    # 2. Secondary Split: Dialogue Blocks
+    for sc in scene_chunks:
+        # We always want granular segments for LTX/Flux, so we parse dialogue aggressively even for short scenes.
+        
+        lines = sc.split('\n')
+        current_beat = ""
+        current_beat_char_count = 0
+        
+        for line in lines:
+            line = line.strip()
+            if not line: continue
+            
+            # Identify Character Name or Action
+            # Case 1: "PAT: Hello." (Inline dialogue)
+            # Case 2: "PAT" (Header)
+            # Case 3: "[Action]" (Action line, treat as new beat)
+            
+            is_new_speaker = False
+            
+            # Detection Logic
+            if ":" in line:
+                possible_name = line.split(":", 1)[0].strip()
+                if possible_name.isupper() and len(possible_name) < 50:
+                    is_new_speaker = True
+            elif line.isupper() and len(line) < 50 and not line.endswith("."):
+                 is_new_speaker = True
+            elif line.startswith("[") and line.endswith("]"):
+                 # Action beat (e.g. [Pause])
+                 # FIX: Do NOT split on these. Treat them as part of the current beat to avoid empty chunks.
+                 is_new_speaker = False
+            
+            # If new speaker and we already have content, push beat
+            if is_new_speaker and current_beat:
+                final_chunks.append(current_beat.strip())
+                current_beat = line
+                current_beat_char_count = len(line)
+            # Limit beat size (e.g. long monologue), split at ~500 chars if possible
+            elif current_beat_char_count > 500 and line.endswith((".", "!", "?")):
+                current_beat += "\n" + line
+                final_chunks.append(current_beat.strip())
+                current_beat = ""
+                current_beat_char_count = 0
+            else:
+                if current_beat: 
+                    current_beat += "\n" + line
+                else: 
+                    current_beat = line
+                current_beat_char_count += len(line)
+                
+        if current_beat: 
+            final_chunks.append(current_beat.strip())
+
+    logging.info(f"   ✂️  Smart Chunking: {len(scene_chunks)} Scenes -> {len(final_chunks)} Segments.")
+    return final_chunks
+
+def parse_fountain(content):
+    """
+    Parses strict Fountain schema into segments.
+    Returns list of strings (raw scene/dialogue blocks) tailored for XMVP ingestion.
+    """
+    lines = content.split('\n')
+    segments = []
+    current_segment = []
+    
+    # regex for Scene Headings: INT. EXT. etc
+    scene_heading_re = re.compile(r'^(INT\.|EXT\.|EST\.|I/E\.|INT/EXT\.)[\s\S]*$', re.MULTILINE)
+    
+    # We want to group by "Dramatic Unit". 
+    # Usually consecutive dialogue is one unit. 
+    # Scene heading starts a new unit.
+    # Action lines might be their own unit or attached to previous?
+    # For MVP, we prefer Granular Segments (like smart_chunk_ingest but better).
+    
+    for line in lines:
+        line = line.strip()
+        if not line: continue
+        
+        # Check for Scene Header
+        if scene_heading_re.match(line):
+            if current_segment:
+                segments.append("\n".join(current_segment))
+            current_segment = [line]
+            continue
+            
+        # Check for Character (All Caps, not a transition)
+        # We don't want to split EVERY line, but maybe every "Exchange" or "Beat"?
+        # Actually, smart_chunk_ingest logic of "split on new speaker" is good for granular generation.
+        # But Fountain provides structural clarity we should leverage.
+        
+        # Strategy: 
+        # Collect lines until a new Scene Heading OR we hit a "Significant Shift"
+        # For now, let's replicate the structure of "Scene + Body" but cleanly.
+        # Use Smart Chunk logic LATER on the result? 
+        # No, User wants "Perfect translation". 
+        
+        # Let's trust the "Scene" as the unit? 
+        # No, 24fps generation needs ~4-10 second chunks. A whole scene is too long.
+        # We must split by dialogue beats.
+        
+        # Basic Heuristic:
+        # If line is Character Name -> Start new segment if previous segment has content.
+        # "MARTIN" (UPPER, no period, short)
+        if line.isupper() and len(line) < 50 and not line.endswith("."):
+             # It's a character (likely).
+             # If we have a running segment (that isn't just a scene header), push it.
+             if current_segment and len(current_segment) > 0:
+                 # Don't split if the only thing in current_segment is the Scene Header
+                 # We want Header + First Line to be one chunk often.
+                 segments.append("\n".join(current_segment))
+                 current_segment = []
+        
+        current_segment.append(line)
+        
+    if current_segment:
+        segments.append("\n".join(current_segment))
+        
+    logging.info(f"   ⛲️ Fountain Parsing: Extracted {len(segments)} segments.")
+    return segments
 
 # --- CORE CONVERTER ---
 
@@ -352,7 +515,7 @@ def process_file(input_path, args):
                 raw_xml = path_obj.read_text(encoding='utf-8', errors='ignore')
                 
                 # Extract Manifest JSON
-                import re
+                # Extract Manifest JSON
                 m_match = re.search(r'<Manifest>(.*?)</Manifest>', raw_xml, re.DOTALL)
                 if m_match:
                      m_json = json.loads(m_match.group(1))
@@ -486,8 +649,17 @@ def process_file(input_path, args):
                  mapping = {c["name"]: f"{c['name']} ({c['role']}) [{c['gender']}] {{{c['anchor']}}}" for c in final_chars}
                  painter_context = final_chars 
                  
+                 # PRE-POPULATE CAST REGISTRY FOR BLACK BOX PARSING
+                 cast_registry_init = {} 
+                 for c in final_chars:
+                     c_clean = c['name'].upper().strip()
+                     cast_registry_init[c_clean] = f"{c['anchor']}, wearing simple black rehearsal clothes"
+                     logging.info(f"      🎭 Pre-Registered Cast: {c_clean} -> {cast_registry_init[c_clean]}")
+
                  # Generate a unique Pinter-esque title
-                 title_prompt = "Invent a title for a Harold Pinter style play. It should be obscure, mundane, or ominous. Do NOT use existing Pinter titles (e.g. No 'Homecoming', 'Caretaker', 'Birthday Party'). Examples: 'The Dumb Waiter', 'Celebration', 'The Hothouse', 'Family Voices', 'A Kind of Alaska'. Output ONLY the title."
+                 chaos_seeds = ["Dust", "Silence", "Glass", "Tea", "Basement", "Window", "Stranger", "Clock", "Shadow", "Stain", "Visitor", "Silence", "Echo", "Mirror", "Wall", "Ceiling", "Floor", "Door", "Key"]
+                 seed_word = random.choice(chaos_seeds)
+                 title_prompt = f"Invent a unique title for a Harold Pinter style play using the word '{seed_word}' or a related concept. It should be obscure, mundane, or ominous. Do NOT use existing Pinter titles. Output ONLY the title."
                  try:
                      raw_title = engine.generate(title_prompt, json_schema=False).strip().strip('"').strip("'")
                      if len(raw_title) > 5:
@@ -674,14 +846,28 @@ def process_file(input_path, args):
             except Exception as e:
                 logging.warning(f"   ⚠️ Concept Gen Failed: {e}")
 
-    # 4. Chunk into 24 Beats
-    logging.info("   🔪 Chunking into 24 Hero's Journey Beats...")
-    beats_def = load_hj24()
-    
+    # 4. Chunking Strategy
     if genesis_mode:
+        logging.info("   🔪 Genesis Mode: Using 24 Hero's Journey Beats Template...")
+        beats_def = load_hj24()
         chunks = [""] * 24 # Empty chunks, we will generate content
     else:
-        chunks = smart_chunk_script(content, num_chunks=24)
+        # INGESTION MODE
+        # Check if it looks like a script (Fountain/Screenplay)
+        is_script = ".fountain" in str(input_path).lower() or "INT." in content or "EXT." in content
+        
+        if is_script:
+             logging.info("   🔪 Ingestion Mode: Fountain Parsing (Structured)...")
+             chunks = parse_fountain(content)
+        else:
+             logging.info("   🔪 Ingestion Mode: Smart Parsing (Generic)...")
+             chunks = smart_chunk_ingest(content)
+
+        # We don't use Hero's Journey definitions for mapping if we have arbitrary scene count.
+        # But we still need 'beat_info' for the loop below.
+        beats_def = [] 
+        for s_idx in range(len(chunks)):
+            beats_def.append({"name": f"Seg {s_idx+1}", "desc": "Imported Segment"})
     
     processed_segs = []
     
@@ -739,7 +925,16 @@ def process_file(input_path, args):
                  
                  {prev_context}
                  
-                 Action: Write the script. Standard Screenplay Format.
+                 Action: Write the script. 
+                 OUTPUT FORMAT: JSON
+                 {{
+                    "SCENE": {{
+                        "DIALOGUE": [
+                            {{ "CHARACTER": "NAME", "LINE": "Dialogue..." }},
+                            ...
+                        ]
+                    }}
+                 }}
                  """
                  script_text = engine.generate(prompt, temperature=0.88)
             
@@ -822,9 +1017,16 @@ def process_file(input_path, args):
     # 6. Assembly
     logging.info("   📦 Assembling XMVP...")
     
-    # Default duration: if slength provided, use it. Else default to 2hrs (7200s) or based on word count?
-    # User said "if slength... retcon that bad-boy".
-    target_duration = args.slength if args.slength else 7200
+    # Default duration: if slength provided, use it. Else estimate based on "1 page = 1 minute" rule.
+    if args.slength:
+        target_duration = args.slength
+    else:
+        # Heuristic: 55 lines = 1 minute (Standard Screenplay)
+        # We use the raw content line count as a proxy.
+        line_count = len(content.strip().split('\n'))
+        estimated_minutes = line_count / 55.0
+        target_duration = max(60.0, estimated_minutes * 60.0)
+        logging.info(f"   ⏱️  Auto-Calculated Duration: {target_duration:.1f}s ({line_count} lines @ 55lpm)")
     
     bible = {
         "constraints": {"max_duration_sec": target_duration, "fps": 24},
@@ -832,6 +1034,13 @@ def process_file(input_path, args):
         "situation": logline,
         "vision": "Cinematic, High Production Value"
     }
+
+    # BLACK BOX OVERRIDE (Includes Painter Mode)
+    black_box_mode = (args.vpform == "black-box" or args.vpform == "painter")
+    if black_box_mode:
+        bible["vision"] = "Minimalist Black Box Theater. No props. Spotlight only."
+        logging.info("   🎭 Black Box Mode: Visualization set to minimalist theater.")
+
     
     story = {
         "title": title,
@@ -848,18 +1057,36 @@ def process_file(input_path, args):
             "end_frame": 0, # Calculated later or irrelevent for text-first
             "prompt": p["prompt"],
             "action": p["action"],
+            "action": p["action"],
             "script_content": p["script_content"]
         })
         
+        if black_box_mode:
+             segs_manifest[-1]["prompt"] = "A minimalist black box theater stage with dramatic lighting. No props, no audience. High contrast, atmospheric."
+             segs_manifest[-1]["action"] = "Black Box Performance"
+        
     manifest = {
-        "segs": segs_manifest,
+        "segs": segs_manifest, # We keep this for dialogue parsing below, but we won't save it as Manifest.
         "files": {},
-        # Ideally parsing dialogue lines here would be great but complex.
-        # We store the script_content in Segs for now. content_producer might need an upgrade to read Seg script_content if DialogueScript is missing.
-        # But 'run_fullmovie_still_mode' expects manifest.dialogue.lines.
-        # TODO: A parser that turns script_content into manifest.dialogue lines is needed for full operability.
-        # I'll add a quick regex parser for that.
     }
+    
+    # 6a. Convert Segs Manifest to Portions Format
+    # Portions expects: id, duration_sec, content, dialogue[]
+    # Beat duration = total_duration / 24
+    beat_dur = target_duration / 24.0
+    
+    converted_portions = []
+    for s in segs_manifest:
+        converted_portions.append({
+            "id": s["id"],
+            "duration_sec": beat_dur,
+            "content": s["prompt"], # or script_content? content_producer uses content usually.
+            # script_content is better for detailed writer logic, prompt for summary.
+            # Let's use script_content as content so writer sees full text.
+            # threshold 1 char
+            "content": s["script_content"] if len(s["script_content"]) > 1 else s["prompt"],
+            "dialogue": [] # Will be populated by parser below
+        })
     
     # 6b. Rough Dialogue Parser (for FullMovie compat)
     dialogue_lines = []
@@ -870,7 +1097,17 @@ def process_file(input_path, args):
     lines_on_page = 0
     LINES_PER_PAGE = 55
     
-    for seg in segs_manifest:
+    # Cast Registry for Consistency (Black Box Mode)
+    cast_registry = {} # "NAME": "Description"
+    
+    # Hydrate from Genesis (Painter) if available
+    if 'cast_registry_init' in locals():
+         cast_registry = cast_registry_init
+         
+    for seg, portion in zip(segs_manifest, converted_portions):
+        # We parse directly into the portion object
+        portion_dialogue = []
+
         # Try JSON parsing first (New Logic)
         try:
              # Clean potential markdown fences
@@ -897,8 +1134,19 @@ def process_file(input_path, args):
 
              if dialogue_list_json:
                  for d_item in dialogue_list_json:
-                     char_name = d_item.get("CHARACTER", "Unknown").upper().strip()
-                     line_text = d_item.get("LINE", "")
+                     # Robust Key Retrieval (Case Insensitive)
+                     char_name = None
+                     line_text = None
+                     
+                     for k, v in d_item.items():
+                         if k.upper() == "CHARACTER": char_name = v
+                         if k.upper() == "LINE": line_text = v
+                     
+                     if not char_name: char_name = d_item.get("Character", d_item.get("character", "Unknown"))
+                     if not line_text: line_text = d_item.get("Line", d_item.get("line", ""))
+
+                     if char_name: char_name = char_name.upper().strip()
+                     
                      if char_name and line_text:
                          # Paging Logic (Rate Limiter: count every line of the script)
                          lines_on_page += 1
@@ -906,7 +1154,7 @@ def process_file(input_path, args):
                              current_page += 1
                              lines_on_page = 0
 
-                         dialogue_lines.append({
+                         portion_dialogue.append({
                              "character": char_name,
                              "text": line_text,
                              "start_offset": total_offset,
@@ -914,9 +1162,26 @@ def process_file(input_path, args):
                              "action": "Speaking",
                              "page_index": current_page
                          })
+                         
+                         # Black Box Enrichment
+                         if black_box_mode:
+                             if char_name not in cast_registry:
+                                 # Auto-cast
+                                 gender_guess = random.choice(["Male", "Female"])
+                                 desc = get_celebrity_anchor(gender_guess)
+                                 # Add wardrobe
+                                 wardrobe = "wearing simple black rehearsal clothes"
+                                 cast_registry[char_name] = f"{desc}, {wardrobe}"
+                                 logging.info(f"   👤 Cast {char_name}: {cast_registry[char_name]}")
+                             
+                             # Fatten Action
+                             portion_dialogue[-1]["action"] = f"{cast_registry[char_name]}. Performing on a bare black box theater stage. Expressive face."
+
                          # Estimate duration
                          dur = len(line_text.split()) * 0.4 # approx 0.4s per word
                          total_offset += dur
+                 portion["dialogue"] = portion_dialogue # Attach to portion
+                 dialogue_lines.extend(portion_dialogue) # Add to master list
                  continue # Successfully parsed as JSON, skip fallback
 
         except Exception as e:
@@ -931,34 +1196,137 @@ def process_file(input_path, args):
             lines_on_page += 1
             if lines_on_page >= LINES_PER_PAGE:
                 current_page += 1
-                lines_on_page = 0
-                
             line = line.strip()
             if not line: continue
             
+            # Safety: Reset dialogue state on Scene Headers
+            if line.startswith(("INT.", "EXT.", "EST.", "I/E.", "INT/EXT")) or line.startswith("#"):
+                last_char = None
+                continue
+            
+            # Clean [Pause] or [Action] to "..." so it reads as silence/pause instead of literal
+            if line.startswith("[") and line.endswith("]"):
+                line = "..."
+
+            # FILTER: Markdown Action Lines (*...*)
+            # Don't treat these as dialogue, but DO NOT reset last_char (allow flow to continue)
+            if line.startswith("*") and line.endswith("*"):
+                continue
+
+            # Fallback for "CHARACTER: Dialogue" (Single line format)
+            # Regex: Start with Name (2-20 chars, no weird symbols), then Colon, then Text.
+            # Avoid matching "INT. PLACE:" or "CUT TO:"
+            single_line_match = re.match(r'^([A-Z0-9][A-Za-z0-9 \.]{0,25}):\s+(.*)', line)
+            
+            if single_line_match:
+                candidate_name = single_line_match.group(1).upper()
+                candidate_text = single_line_match.group(2).strip()
+                
+                # Filter noise
+                if candidate_name not in ["INT.", "EXT.", "CUT TO", "FADE IN", "FADE OUT", "FADE TO"] and not candidate_name.endswith(" TO"):
+                     portion_dialogue.append({
+                        "character": candidate_name,
+                        "text": candidate_text,
+                        "start_offset": total_offset,
+                        "visual_focus": candidate_name,
+                        "action": "Speaking",
+                        "page_index": current_page
+                     })
+                     
+                     # Black Box Enrichment
+                     if black_box_mode:
+                         if candidate_name not in cast_registry:
+                             gender_guess = random.choice(["Male", "Female"])
+                             desc = get_celebrity_anchor(gender_guess)
+                             wardrobe = "wearing simple black rehearsal clothes"
+                             cast_registry[candidate_name] = f"{desc}, {wardrobe}"
+                             logging.info(f"   👤 Cast {candidate_name}: {cast_registry[candidate_name]}")
+                         
+                         portion_dialogue[-1]["action"] = f"{cast_registry[candidate_name]}. Performing on a bare black box theater stage. Expressive face."
+
+                     dur = len(candidate_text.split()) * 0.4
+                     total_offset += dur
+                     last_char = candidate_name # Persist for multiline/pauses
+                     continue # Done with this line
+
             # Simple heuristic: Character name is UPPERCASE, short, no periods (usually)
-            # Or formatted like "Character Name:"
-            if line.isupper() and len(line) < 50 and not line.endswith('.'):
-                last_char = line
+            # Or formatted like "Character Name:" (Standard Screenplay Header)
+            if line.isupper() and len(line) < 50 and not line.endswith('.') and not line.startswith("INT.") and not line.startswith("EXT.") and not line.endswith(" TO:") and not line.startswith("#") and not line.startswith("**"):
+                last_char = line.upper()
             elif line.strip().endswith(':') and len(line) < 50:
                 last_char = line.strip()[:-1].upper()
             elif last_char:
-                # This is dialogue
-                dialogue_lines.append({
+                # This is dialogue from previous header
+                portion_dialogue.append({
                     "character": last_char,
                     "text": line,
                     "start_offset": total_offset,
                     "visual_focus": last_char,
                     "action": "Speaking",
+                    "action": "Speaking",
                     "page_index": current_page
                 })
+                
+                # Black Box Enrichment
+                if black_box_mode:
+                     if last_char not in cast_registry:
+                         gender_guess = random.choice(["Male", "Female"])
+                         desc = get_celebrity_anchor(gender_guess)
+                         wardrobe = "wearing simple black rehearsal clothes"
+                         cast_registry[last_char] = f"{desc}, {wardrobe}"
+                         logging.info(f"   👤 Cast {last_char}: {cast_registry[last_char]}")
+                     
+                     portion_dialogue[-1]["action"] = f"{cast_registry[last_char]}. Performing on a bare black box theater stage. Expressive face."
+
                 # Estimate duration
                 dur = len(line.split()) * 0.4 # approx 0.4s per word
                 total_offset += dur
-                last_char = None # Reset
+                # Do NOT reset last_char here; allow multi-paragraph dialogue to continue.
+                # last_char = None 
                 
-    if dialogue_lines:
-        manifest["dialogue"] = {"lines": dialogue_lines}
+        portion["dialogue"] = portion_dialogue
+    
+    # 6c. Cast Header Injection (Fix Empty Stage)
+    # REMOVED: Injecting cast context effectively hallucinates characters into every scene.
+    # We rely on 'cast_registry' being available in generated prompts or Bible if needed.
+    if cast_registry and False: # Disabled
+         pass
+
+    # 7. Save
+         
+    # Determine Output Path
+    import time
+    timestamp = time.strftime("%Y%m%d_%H%M")
+    
+    # Base Name Calculation
+    if filename == "GENERATE":
+        safe_name = f"GENESIS_{timestamp}"
+    else:
+        base_name = os.path.basename(str(filename))
+        safe_name_base = os.path.splitext(base_name)[0]
+        safe_name = f"{safe_name_base}_{timestamp}"
+
+    if args.out:
+        # Check if args.out is a directory or file path
+        if os.path.isdir(args.out) or args.out.endswith(os.sep) or args.out == ".":
+            # Is a directory
+             if not os.path.exists(args.out): os.makedirs(args.out)
+             output_path = os.path.join(args.out, f"{safe_name}.xml")
+        else:
+             # Is a specific file override? Or just a target dir that doesn't exist?
+             # Let's assume directory if no extension
+             if "." not in os.path.basename(args.out):
+                 if not os.path.exists(args.out): os.makedirs(args.out)
+                 output_path = os.path.join(args.out, f"{safe_name}.xml")
+             else:
+                 # Explicit file path (User override) - Trust user, maybe append timestamp if they didn't?
+                 # No, if explicit file, use explicit file (but usually user inputs a dir)
+                 output_path = args.out
+    else:
+        # Default to same dir as input
+        output_path = os.path.join(os.path.dirname(str(filename)), f"{safe_name}.xml")
+
+    manifest_to_save = {}
     
     # Meta
     meta = {
@@ -970,19 +1338,10 @@ def process_file(input_path, args):
         "tlp_axiom": tlp if 'tlp' in locals() else None
     }
     
-    # 7. Save
-    safe_name = "".join([c for c in title if c.isalnum() or c==' ']).replace(" ", "_")
-    # Append random suffix to avoid collisions (especially in batch/painter mode)
-    safe_name = f"{safe_name}_{random.randint(1000, 9999)}"
-    output_path = Path(args.out) / f"{safe_name}.xml" if args.out else Path(".").resolve() / f"{safe_name}.xml" # Default to current dir if no input path/parent
-    
-    if args.input_file and args.input_file != "GENERATE":
-         output_path = Path(args.out) / f"{safe_name}.xml" if args.out else Path(input_path).parent / f"{safe_name}.xml"
-    
     full_data = {
         "Bible": bible,
         "Story": story,
-        "Manifest": manifest,
+        "Portions": converted_portions, # Processed by portion_control
         "Meta": meta
     }
     

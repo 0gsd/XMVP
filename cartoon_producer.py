@@ -16,6 +16,7 @@ from pathlib import Path
 import librosa
 import numpy as np
 import torch
+from PIL import Image
 # Monkeypatch for Scipy 1.13+ vs Librosa < 0.10 compatibility
 try:
     import scipy.signal
@@ -1553,6 +1554,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                       'is_cut': is_cut,
                       'shot_idx': beat_idx
                   })
+                  prompts.append(full_prompt)
 
 
     elif args.vpform == "cartoon-video":
@@ -1608,7 +1610,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 torch.mps.empty_cache()
         # ---------------------------
         
-        from PIL import Image
+        # from PIL import Image
         
         # Scaling Logic (50% Default)
         target_w = args.w
@@ -1962,7 +1964,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             else:
                  # Load existing start frame
                  if start_path.exists():
-                      from PIL import Image
+                      # from PIL import Image # Removed to fix UnboundLocalError
                       start_img = Image.open(start_path)
                  else:
                       logging.warning(f"   ⚠️ Start Frame {frame_start_idx} missing in batch. Regenerating...")
@@ -1973,6 +1975,12 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 logging.error("   ❌ Batch Start Failed. Aborting batch.")
                 i_idx += 1
                 continue
+                
+            # RESIZE ENFORCEMENT
+            if start_img.size != (target_w, target_h):
+                 # logging.info(f"   📏 Resizing Start Frame: {start_img.size} -> {target_w}x{target_h}")
+                 start_img = start_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                 start_img.save(start_path) # Save corrected size
 
             # 2. Determine End Frame (Target: +4 frames)
             step = 4
@@ -1988,6 +1996,9 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             
             end_img = frame_canvas.generate_seed_image(prompts[next_i], te, init_dim=args.kid)
             if end_img:
+                if end_img.size != (target_w, target_h):
+                     # logging.info(f"   📏 Resizing End Frame: {end_img.size} -> {target_w}x{target_h}")
+                     end_img = end_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
                 end_img.save(end_path)
                 success_count += 1
             else:
@@ -2000,38 +2011,54 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             mid_i = (i_idx + next_i) // 2
             mid_img = None
             
+            # Helper for Img2Img
+            def do_flux_tween(img_a, img_b, prompt_text, out_p):
+                 # 1. Tween (50%)
+                 t_img = frame_canvas.tween_frames(img_a, img_b, blend=0.5)
+                 if not t_img: return None
+                 
+                 # 2. Img2Img Refine
+                 # Ensure we have the bridge (re-used from Seed gen or init here)
+                 # We need to get the bridge instance. 
+                 # Since we are in local recursion, we know we are using Flux.
+                 # We can get it from definitions or cached.
+                 img_conf = definitions.get_active_model(Modality.IMAGE)
+                 bridge = get_flux_bridge(img_conf.path)
+                 
+                 if bridge:
+                      logging.info(f"   ✨ Flux Img2Img: {out_p.name} (Str: 0.65)...")
+                      # Use a lower strength to preserve the "morph" but add details
+                      return bridge.generate(prompt_text, image=t_img, strength=0.65, width=target_w, height=target_h)
+                 return t_img # Fallback
+            
             if mid_i > i_idx and mid_i < next_i:
                  frame_mid_idx = mid_i + 1
                  mid_path = frames_dir / f"frame_{frame_mid_idx:04d}.png"
-                 logging.info(f"   ✨ Batch Mid: Frame {frame_mid_idx} (Flux Tween)...")
+                 logging.info(f"   ✨ Batch Mid: Frame {frame_mid_idx} (Flux Img2Img)...")
                  
-                 tween_mid = frame_canvas.tween_frames(start_img, end_img, blend=0.5)
-                 # Refine Tween with Flux
-                 mid_img = frame_canvas.refine_tween(tween_mid, prompts[mid_i], width=target_w, height=target_h, text_engine=te)
+                 mid_img = do_flux_tween(start_img, end_img, prompts[mid_i], mid_path)
                  if mid_img:
                       mid_img.save(mid_path)
                       success_count += 1
                  else:
                       logging.warning("   ⚠️ Mid-Tween Failed.")
-                      mid_img = tween_mid # Fallback to raw tween
+                      mid_img = frame_canvas.tween_frames(start_img, end_img, blend=0.5)
 
-            # 5. Fill Gaps with Brute Force Blend (Tween)
+            # 5. Fill Gaps with Flux Img2Img
             # Gap 1: Start -> Mid
             gap1_i = i_idx + 1
-            if gap1_i < mid_i and mid_img:
-                 logging.info(f"   🌪️  Batch Fill A: Frame {gap1_i+1} (Brute Force Blend)...")
-                 # Tween Start <-> Mid (50% blend)
-                 fill1 = frame_canvas.tween_frames(start_img, mid_img, blend=0.5)
+            if gap1_i < mid_i and mid_img and gap1_i < len(prompts):
+                 logging.info(f"   ✨ Batch Fill A: Frame {gap1_i+1} (Flux Img2Img)...")
+                 fill1 = do_flux_tween(start_img, mid_img, prompts[gap1_i], frames_dir / f"frame_{gap1_i+1:04d}.png")
                  if fill1:
                       fill1.save(frames_dir / f"frame_{gap1_i+1:04d}.png")
                       success_count += 1
 
             # Gap 2: Mid -> End
             gap2_i = mid_i + 1
-            if gap2_i < next_i and mid_img and end_img:
-                  logging.info(f"   🌪️  Batch Fill B: Frame {gap2_i+1} (Brute Force Blend)...")
-                  # Tween Mid <-> End (50% blend)
-                  fill2 = frame_canvas.tween_frames(mid_img, end_img, blend=0.5)
+            if gap2_i < next_i and mid_img and end_img and gap2_i < len(prompts):
+                  logging.info(f"   ✨ Batch Fill B: Frame {gap2_i+1} (Flux Img2Img)...")
+                  fill2 = do_flux_tween(mid_img, end_img, prompts[gap2_i], frames_dir / f"frame_{gap2_i+1:04d}.png")
                   if fill2:
                        fill2.save(frames_dir / f"frame_{gap2_i+1:04d}.png")
                        success_count += 1
@@ -2200,7 +2227,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                         # RECOVERY FOR BACKFILL
                         # We must load this cloned frame as 'current_img' so we can backfill the gap (i-1)
                         try:
-                            from PIL import Image
+                            # from PIL import Image
                             current_img = Image.open(target_path)
                             # Update Memory
                             last_generated_img = current_img
@@ -2283,7 +2310,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             else:
                 # If Frame 1 fails or no history, create a black frame.
                 try:
-                    from PIL import Image
+                    # from PIL import Image
                     img = Image.new('RGB', (768, 768), color='black')
                     img.save(target_path)
                     success_count += 1
@@ -2334,7 +2361,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             target_h = args.h if args.h else (args.kid if args.kid else 768)
             
             try:
-                from PIL import Image
+                # from PIL import Image
                 with Image.open(src) as img:
                     if img.size != (target_w, target_h):
                         logging.debug(f"   Resize {src.name} {img.size} -> {target_w}x{target_h}")

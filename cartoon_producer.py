@@ -4354,8 +4354,8 @@ def main():
         # Only switch to Gemini 2.0 (Director Mode) if NOT local.
         # Local mode uses Flux directly.
         if not args.local:
-            model = "gemini-2.0-flash"
-            logging.info(f"   🎨 {args.vpform}: Using Gemini 2.0 Flash (Director) -> {get_active_model(Modality.IMAGE).name} (Renderer).")
+            model = "gemini-2.5-flash-image"
+            logging.info(f"   🎨 {args.vpform}: Using Gemini 2.5 Flash Image (Native Img2Img).")
         else:
             logging.info(f"   🎨 {args.vpform}: Using Local Pipeline (Gemma Director -> Flux Renderer).")
         

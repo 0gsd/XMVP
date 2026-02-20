@@ -435,29 +435,10 @@ def generate_via_hf_endpoint(prompt, width=1024, height=1024, steps=28, guidance
     try:
         client = InferenceClient(provider="fal-ai", api_key=api_key)
         
+        # NOTE: fal-ai provider does NOT support Img2Img for Flux.
+        # Skip straight to T2I to avoid wasting a round-trip on a guaranteed failure.
         if image:
-            logging.info(f"   ☁️  Flux Cloud Img2Img (fal-ai): '{prompt[:40]}...' (Str: {strength}, {fixed_width}x{fixed_height})")
-            try:
-                # Image-to-Image Mode
-                generated_image = client.image_to_image(
-                    image=image,
-                    prompt=prompt,
-                    model=model_id,
-                    strength=strength, 
-                    num_inference_steps=steps,
-                    guidance_scale=guidance,
-                    seed=seed,
-                    width=fixed_width,
-                    height=fixed_height
-                )
-                return generated_image
-            except Exception as e_i2i:
-                logging.warning(f"   ⚠️ Cloud Img2Img Failed: {e_i2i}")
-                logging.warning("      -> Falling back to Text-to-Image (Fluidity lost, but generating).")
-                # Fall through to T2I
-                image = None # Disable image input for fallback
-            
-        if not image:
+            logging.info(f"   ☁️  Cloud: Img2Img not supported by fal-ai. Using T2I instead.")
             logging.info(f"   ☁️  Flux Cloud T2I (fal-ai): '{prompt[:40]}...' ({fixed_width}x{fixed_height})")
             generated_image = client.text_to_image(
                 prompt=prompt,

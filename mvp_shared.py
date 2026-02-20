@@ -39,6 +39,7 @@ class CSSV(BaseModel):
     scenario: str = Field(..., description="The 'Where' and 'When'")
     situation: str = Field(..., description="The 'What' (Immediate conflict or topic)")
     vision: str = Field(..., description="The 'Vibe' (Style tokens, Artist refs)")
+    form_name: Optional[str] = None # VPForm key (e.g. "movies-movie", "parody-video")
     mll_template: Optional[str] = None # Show-Level LoRA Template ID (e.g. "GAHD_Template")
 
 class Story(BaseModel):

@@ -71,6 +71,7 @@ try:
     
     # Local Bridges
     from flux_bridge import get_flux_bridge
+    from skyreels_bridge import get_skyreels_bridge
     from hunyuan_foley_bridge import generate_foley_asset
 except ImportError as e:
     print(f"[-] Critical Import Error: {e}")
@@ -158,6 +159,7 @@ FORM_DEFS = {
 FORM_DEFS["24-podcast"] = FORM_DEFS["24-cartoon"] # Simple alias ref
 
 FORM_DEFS["black-box"] = {"alias": "fullmovie-still", "description": "Minimalist Black Box Theater Mode"}
+FORM_DEFS["element-47"] = {"description": "Element 47 Audio Podcast", "mime_type": "video/mp4"}
 
 
 # --- RVC CONFIG ---
@@ -180,7 +182,12 @@ RVC_MAP = {
     "Lorrey": "route66_voices/lorrey-content",
     "Mercutio": "route66_voices/mercutio-content",
     "Rondio": "route66_voices/rondio-content",
-    "Totto": "route66_voices/totto-content"
+    "Totto": "route66_voices/totto-content",
+    # Element 47
+    "Burn": "e47_voices/Burn",
+    "Cruise": "e47_voices/Cruise",
+    "Drip": "e47_voices/Drip",
+    "Anchor": "e47_voices/Anchor"
 }
 RVC_PYTHON_BIN = os.path.join(os.path.expanduser("~"), "miniconda3/envs/rvc_env/bin/python")
 
@@ -388,12 +395,21 @@ def run_rvc_conversion(wav_path, character_name):
     pth_file = os.path.join(model_dir, f"{clean_name}.pth")
     index_file = os.path.join(model_dir, f"{clean_name}.index")
     
-    if not os.path.exists(pth_file):
-        print(f"       [!] RVC: Model file not found: {pth_file}")
-        return False
+    # Removed premature check
+    # if not os.path.exists(pth_file): ...
         
     if not os.path.exists(index_file):
         index_file = "" # Optional
+
+    # Check for generic model.pth if specific name not found
+    if not os.path.exists(pth_file):
+        generic_pth = os.path.join(model_dir, "model.pth")
+        if os.path.exists(generic_pth):
+            pth_file = generic_pth
+            print(f"       [i] RVC: Using generic model.pth for {character_name}")
+        else:
+            print(f"       [!] RVC: Model file not found: {pth_file} or {generic_pth}")
+            return False
         
     # Construct Temp Path
     # We write result to a temp file first, then move it
@@ -538,6 +554,89 @@ def generate_ensemble_cast(text_engine):
             "CCH Pounder": {"voice": "en-US-Journey-F", "pitch": 1, "persona": "Gravitas, deep resonance."}
         }
 
+def validate_and_fill_seeds(seeds_input, text_engine, target_count=6):
+    """
+    Parses, validates, and fills a list of seeds.
+    1. Parse string input (JSON or comma-separated).
+    2. Validate each seed against Wikipedia.
+    3. If invalid, ask Text Engine for a RELATED real entity.
+    4. Fill remaining slots with random Chaos Seeds.
+    """
+    print(f"    [🌱] Processing Explicit Seeds: {seeds_input}")
+    
+    # 1. Parse
+    parsed_seeds = []
+    try:
+        # Try JSON first
+        clean_input = seeds_input.replace("'", '"') # Naive fix for single quotes
+        parsed_seeds = json.loads(clean_input)
+    except:
+        # Fallback to simple split
+        # Remove brackets and split
+        clean = seeds_input.strip("[]").replace('"', '').replace("'", "")
+        parsed_seeds = [s.strip() for s in clean.split(",") if s.strip()]
+    
+    if not isinstance(parsed_seeds, list):
+        parsed_seeds = [str(parsed_seeds)]
+        
+    valid_seeds = []
+    
+    # 2. Validate & Fallback
+    for seed in parsed_seeds:
+        print(f"       Testing '{seed}'...")
+        
+        # Check Wikipedia
+        # We use the same simple summary endpoint as vision_producer
+        slug = seed.replace(" ", "_")
+        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{slug}"
+        headers = {'User-Agent': 'VisionProducer/1.0 (seed_validator)'}
+        
+        try:
+            resp = requests.get(url, headers=headers, timeout=3)
+            if resp.status_code == 200:
+                # Valid!
+                canonical = resp.json().get('title', seed)
+                print(f"       ✅ Valid: {canonical}")
+                valid_seeds.append(canonical)
+                continue
+            else:
+                print(f"       ❌ Invalid: {seed} (404/Error)")
+        except:
+             print(f"       ❌ Invalid: {seed} (Req Failed)")
+             
+        # Fallback: Intelligent Repair
+        print(f"       🔧 Repairing '{seed}' via Text Engine...")
+        prompt = (
+            f"The user provided a Chaos Seed '{seed}' which is not a valid Wikipedia Page.\n"
+            f"Identify the real-world concept they likely meant, or a closely related real entity.\n"
+            f"Examples: 'Fear (Hubbard novella)' -> 'Fear (novella)'\n"
+            f"Output ONLY the exact, correct Wikipedia Page Title. Nothing else."
+        )
+        try:
+            suggestion = text_engine.generate(prompt).strip().strip('"').strip("'")
+            # Verify suggestion?
+            s_slug = suggestion.replace(" ", "_")
+            s_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{s_slug}"
+            s_resp = requests.get(s_url, headers=headers, timeout=3)
+            if s_resp.status_code == 200:
+                fixed = s_resp.json().get('title', suggestion)
+                print(f"       ✨ Repaired: {fixed}")
+                valid_seeds.append(fixed)
+            else:
+                print(f"       ⚠️ Repair Failed: {suggestion}. Using random seed.")
+                valid_seeds.append(get_chaos_seed())
+        except Exception as e:
+            print(f"       ⚠️ Repair Error: {e}. Using random seed.")
+            valid_seeds.append(get_chaos_seed())
+            
+    # 3. Fill
+    while len(valid_seeds) < target_count:
+        print("       ➕ Adding Random Chaos Seed...")
+        valid_seeds.append(get_chaos_seed())
+        
+    return valid_seeds[:target_count]
+
+
 def run_improv_session(vpform, output_dir, text_engine, args):
     """
     Main Loop for Improv Mode.
@@ -593,8 +692,13 @@ def run_improv_session(vpform, output_dir, text_engine, args):
         
     elif "route66" in vpform:
         # Route 66 Logic
-        print("[*] Route 66 Mode: Fetching 6 Seeds for The Journey...")
-        seeds = [get_chaos_seed() for _ in range(6)]
+        if args.seeds:
+            print("[*] Route 66 Mode: Processing Explicit Seeds...")
+            seeds = validate_and_fill_seeds(args.seeds, text_engine, target_count=6)
+        else:
+            print("[*] Route 66 Mode: Fetching 6 Seeds for The Journey...")
+            seeds = [get_chaos_seed() for _ in range(6)]
+        
         print(f"    Seeds: {seeds}")
         
         cast = defs["cast"]
@@ -611,8 +715,13 @@ def run_improv_session(vpform, output_dir, text_engine, args):
 
     else:
         # Standard Improv
-        print("[*] Gathering Chaos Seeds...")
-        seeds = [get_chaos_seed() for _ in range(6)]
+        if args.seeds:
+            print("[*] Standard Improv: Processing Explicit Seeds...")
+            seeds = validate_and_fill_seeds(args.seeds, text_engine, target_count=6)
+        else:
+            print("[*] Gathering Chaos Seeds...")
+            seeds = [get_chaos_seed() for _ in range(6)]
+            
         print(f"    Seeds: {seeds}")
         
         cast = defs["cast"]
@@ -668,6 +777,7 @@ def run_improv_session(vpform, output_dir, text_engine, args):
                 title=f"Improv {session_id}",
                 synopsis="Improv MLL Stub",
                 characters=story_chars,
+                theme="Improv",
                 mll_template=tpl_name
             ),
             "Manifest": Manifest(
@@ -677,6 +787,7 @@ def run_improv_session(vpform, output_dir, text_engine, args):
             "Bible": CSSV(
                 vision="Cinematic Improv",
                 mll_template=tpl_name,
+                scenario="Stub Scenario",
                 situation="Stub", constraints=Constraints(width=1024, height=1024, fps=24)
             )
         }
@@ -1037,6 +1148,195 @@ def process_pair(base, txt_path, json_path, output_mp4, project_id=None):
     )
     
     shutil.rmtree(temp_dir)
+
+def run_element47_production(manifest_path, output_dir, args):
+    """
+    Production loop for Element 47 Podcast.
+    Features:
+    - 2-Track Audio (Dialogue + SFX/Music)
+    - RVC Voice Mapping (Performer)
+    - Kokoro Character Mapping (Character)
+    - Sequential Assembly suitable for simple podcast structure.
+    """
+    print("🎙️ ELEMENT 47 PRODUCTION")
+    
+    # 1. Load Manifest
+    try:
+        manifest = load_manifest(manifest_path)
+    except Exception as e:
+        print(f"[-] Manifest Load Failed: {e}")
+        return
+
+    base_name = os.path.splitext(os.path.basename(manifest_path))[0].replace("_manifest", "")
+    session_dir = os.path.join(output_dir, f"e47_{base_name}")
+    os.makedirs(session_dir, exist_ok=True)
+    
+    # 2. Setup SFX
+    from sfx_bridge import generate_sfx
+    
+    # 3. Processing Loop
+    full_audio_assets = [] # List of {path, type, duration}
+    
+    # Track current page for visual if needed (optional)
+    
+    lines = manifest.dialogue.lines if manifest.dialogue else []
+    print(f"[*] Processing {len(lines)} lines...")
+    
+    for i, line in enumerate(lines):
+        line_type = "dialogue"
+        if line.character in ["SFX", "MUSIC"]: line_type = line.character.lower()
+        
+        print(f"    [{i+1}/{len(lines)}] {line.character}: {line.text[:50]}...")
+        
+        asset_path = os.path.join(session_dir, f"line_{i:04d}_{line_type}.wav")
+        
+        if line_type == "dialogue":
+            # Format: "PERFORMER::Character"
+            if "::" in line.character:
+                performer, character = line.character.split("::", 1)
+            else:
+                performer = line.character
+                character = line.character # Fallback
+            
+            # Normalize Performer for RVC (Burn, Cruise, etc.)
+            performer_key = performer.capitalize() # BURN -> Burn
+                
+            # A. Generate TTS (Kokoro)
+            # Use Character name to determine Kokoro Voice/Pitch
+            # This gives "Acting" variety while RVC gives "Voice" identity.
+            
+            # Map Performer to RVC Model
+            # Map Character to Kokoro Base
+            
+            # We use assign_kokoro_voice_deterministic(character)
+            voice_name, pitch = assign_kokoro_voice_deterministic(character, ["af_bella", "af_sarah", "am_michael", "am_adam"])
+            
+            # Clean Text: Remove (beat) and replace with pause
+            clean_text = line.text
+            if "(beat)" in clean_text.lower():
+                import re
+                clean_text = re.sub(r'\(beat\)', '...', clean_text, flags=re.IGNORECASE)
+                print(f"       [✂️] Removed '(beat)', adjusted text: {clean_text[:50]}...")
+            
+            # Generate Base
+            res_path = generate_audio_asset(
+                clean_text, asset_path, 
+                voice_name=voice_name, 
+                pitch=pitch, 
+                mode="kokoro"
+            )
+            
+            if res_path and os.path.exists(res_path):
+                # B. Apply RVC (Performer)
+                # Check if Performer has RVC Model
+                if performer_key in RVC_MAP:
+                    run_rvc_conversion(res_path, performer_key)
+                else:
+                    print(f"       [!] No RVC model for {performer} ({performer_key}), keeping Kokoro base.")
+                    
+                dur = get_audio_duration(res_path)
+                full_audio_assets.append({"path": res_path, "type": "dialogue", "duration": dur})
+            else:
+                print("       [-] TTS Failed.")
+                
+        elif line_type in ["sfx", "music"]:
+            # SFX Generation
+            duration = line.duration if line.duration > 0 else 5.0
+            
+            # If prompt implies length? 
+            # "Theme music" -> 10s? "Crash" -> 2s?
+            # Basic heuristics
+            if "theme" in line.text.lower() or "music" in line.text.lower():
+                duration = 10.0
+            elif "sting" in line.text.lower():
+                duration = 3.0
+                
+            success = generate_sfx(line.text, asset_path, duration=duration, type=line_type)
+            if success:
+                # Add gap/silence padding?
+                # Just append
+                full_audio_assets.append({"path": asset_path, "type": "sfx", "duration": duration})
+            else:
+                 print("       [-] SFX Failed.")
+
+    # 4. Stitching
+    # FIX: Normalize all assets to 44.1kHz 16-bit Stereo to prevent concat speed bugs (chipmunk effect)
+    print("   🔧 Normalizing Audio Segments...")
+    norm_dir = os.path.join(session_dir, "normalized")
+    os.makedirs(norm_dir, exist_ok=True)
+    
+    normalization_failed = False
+    
+    # We essentially want to concat everything in order for now.
+    print("   🧵 Stitching Audio Track...")
+    concat_list = os.path.join(session_dir, "concat.txt")
+    
+    with open(concat_list, 'w') as f:
+        for a in full_audio_assets:
+            # Normalize
+            try:
+                base_seg = os.path.basename(a['path'])
+                norm_path = os.path.join(norm_dir, base_seg)
+                
+                # Determine LUFS Target
+                # Dialogue: -16 LUFS (Standard Podcast/Web)
+                # SFX/Music: -20 LUFS (Slightly quieter context)
+                lufs_target = "-16"
+                if a.get("type", "dialogue") in ["sfx", "music"]:
+                    lufs_target = "-20"
+                
+                # ffmpeg normalize + sample rate fix
+                # -af loudnorm=I={lufs_target}:TP=-1.5:LRA=11
+                subprocess.run([
+                    "ffmpeg", "-y", "-i", a['path'],
+                    "-af", f"loudnorm=I={lufs_target}:TP=-1.5:LRA=11",
+                    "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le",
+                    "-loglevel", "error",
+                    norm_path
+                ], check=True)
+                
+                # Write to concat list (use normalized path)
+                f.write(f"file '{os.path.abspath(norm_path)}'\n")
+                
+            except Exception as e:
+                print(f"       [-] Normalization failed for {base_seg}: {e}")
+                normalization_failed = True
+                # Fallback to original (might cause issues but we try)
+                f.write(f"file '{os.path.abspath(a['path'])}'\n")
+
+    final_wav = os.path.join(session_dir, "final_mix.wav")
+    subprocess.run(['ffmpeg', '-f', 'concat', '-safe', '0', '-i', concat_list, '-c', 'copy', final_wav, '-y', '-loglevel', 'error'])
+    
+    # 4.5 Export MP3 (Audio Only)
+    final_mp3 = os.path.join(output_dir, f"{base_name}.mp3")
+    print(f"   🎵 Exporting MP3: {final_mp3}")
+    subprocess.run([
+        "ffmpeg", "-i", final_wav,
+        "-b:a", "192k", "-y", "-loglevel", "error",
+        final_mp3
+    ])
+
+    # 5. Visual (Static Black or Cover)
+    final_mp4 = os.path.join(output_dir, f"{base_name}.mp4")
+    
+    # Generate Cover Image?
+    cover_img = os.path.join(session_dir, "cover.jpg")
+    create_black_frame(cover_img) # Placeholder
+    
+    print(f"   🎥 Rendering MP4: {final_mp4}")
+    total_dur = get_audio_duration(final_wav)
+    
+    cmd = [
+        "ffmpeg", "-y",
+        "-loop", "1", "-i", cover_img,
+        "-i", final_wav,
+        "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac", "-b:a", "192k",
+        "-t", str(total_dur),
+        "-pix_fmt", "yuv420p",
+        final_mp4
+    ]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print("   ✅ Done.")
 
 def stitch_assets(assets, temp_dir, output_mp4):
     # Quick Stitch
@@ -1511,47 +1811,82 @@ def run_mll_pipeline(xml_path, output_dir):
     """
     print("\n🧬 MLL PIPELINE: Initiating Movie-Level LoRA Training...")
     
+    # Determine Persistent Paths
+    base_dir = os.getcwd()
+    mll_root = os.path.join(base_dir, "z_training_data", "movies")
+    adapter_root = os.path.join(base_dir, "z_training_data", "adapters")
+    os.makedirs(mll_root, exist_ok=True)
+    os.makedirs(adapter_root, exist_ok=True)
+
     # 1. Prep Data
     try:
-        prep_cmd = ["python3", "prep_movie_assets.py", "--xml", xml_path, "--out", os.path.join(output_dir, "mll_data")]
-        print(f"   [1/2] Generating Synthetic Assets... ({' '.join(prep_cmd)})")
+        prep_cmd = ["python3", "prep_movie_assets.py", "--xml", xml_path, "--out", mll_root]
+        print(f"   [1/2] Generating Synthetic Assets... (Target: {mll_root})")
         subprocess.run(prep_cmd, check=True)
     except subprocess.CalledProcessError as e:
         print(f"   [-] Asset Prep Failed: {e}")
         return None
         
-    # Determine LoRA Name from XML (Manifest/Story)
-    # We grep it or trust prep_movie_assets to use the template name?
-    # prep_movie_assets saves to z_training_data/movies/[NAME]/dataset
-    # We passed --out output_dir/mll_data, so it should be output_dir/mll_data/[NAME]/dataset
-    
-    # Let's peek at the directory to find the name
-    mll_root = os.path.join(output_dir, "mll_data")
-    if not os.path.exists(mll_root): return None
-    
-    # Find subdir
-    subdirs = [d for d in os.listdir(mll_root) if os.path.isdir(os.path.join(mll_root, d))]
-    if not subdirs: return None
-    target_name = subdirs[0] # Assume 1 movie per XML
-    
-    dataset_path = os.path.join(mll_root, target_name, "dataset")
-    if not os.path.exists(dataset_path):
-        print(f"   [-] Dataset not found at {dataset_path}")
+    # Determine LoRA Name from XML to ensure we target the correct folder
+    target_name = None
+    try:
+        raw_story = load_xmvp(xml_path, "Story")
+        if raw_story:
+            story = json.loads(raw_story)
+            # Match prep_movie_assets logic
+            target_name = story.get("title", "Unknown_Movie").replace(" ", "_")
+            if story.get("mll_template"):
+                target_name = story.get("mll_template")
+                
+        raw_bib = load_xmvp(xml_path, "Bible") 
+        # Check Bible too
+        if raw_bib:
+             bible = json.loads(raw_bib)
+             if bible.get("mll_template"):
+                 target_name = bible.get("mll_template")
+                 
+    except Exception as e:
+        print(f"   [-] Failed to parse XML for MLL target: {e}")
+
+    if not target_name:
+        # Fallback to naive (scan mll_root? might be dangerous if many movies exist)
+        # But since we just ran prep, it likely touched one.
+        # We really should have found it via XML.
+        print("   [-] Could not determine MLL Target Name from XML.")
         return None
         
+    print(f"   [i] Targeting MLL Dataset: {target_name}")
+    
+    dataset_path = os.path.join(mll_root, target_name, "dataset")
+    
+    if not os.path.exists(dataset_path):
+        print(f"   [-] Dataset not found at {dataset_path}. Prep might have failed.")
+        return None
+        
+    # CACHE CHECK: Check for existing adapter
+    final_lora_path = os.path.join(adapter_root, f"{target_name}.safetensors")
+    if os.path.exists(final_lora_path):
+        print(f"   [⚡️] Cached Adapter Found: {final_lora_path}")
+        print("   [.] Skipping Training.")
+        return final_lora_path
+
+    # Canonical Output
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    adapters_dir = os.path.join(base_dir, "adapters/movies")
+    
     # 2. Train
     try:
         train_cmd = [
             "python3", "train_mll.py", 
             "--dataset", dataset_path, 
             "--name", target_name,
-            "--output_dir", os.path.join(output_dir, "adapters"),
+            "--output_dir", adapters_dir,
             "--steps", "100" # Fast tune
         ]
         print(f"   [2/2] Training LoRA... ({' '.join(train_cmd)})")
         subprocess.run(train_cmd, check=True)
         
-        lora_path = os.path.join(output_dir, "adapters", f"{target_name}.safetensors")
+        lora_path = os.path.join(adapters_dir, f"{target_name}.safetensors")
         if os.path.exists(lora_path):
             print(f"   ✅ MLL Training Complete: {lora_path}")
             return lora_path
@@ -2017,6 +2352,254 @@ def run_audio_play_mode(xml_path, output_dir, args):
     stitch_audio_assets(assets, final_mp3)
     return
 
+def run_audio_movie_mode(xml_path, audio_path, output_dir, args):
+    """
+    Orchestrates the Audio-Movie workflow:
+    1. Ingest Master Audio + XMVP XML
+    2. Chop Audio into segments
+    3. Generate Visuals (SkyReels A2V)
+    4. Stitch Final Video
+    """
+    print(f"🎬 AUDIO-MOVIE MODE")
+    print(f"   XML: {xml_path}")
+    print(f"   Audio: {audio_path}")
+    
+    # 0. Setup
+    session_id = int(time.time())
+    session_dir = os.path.join(output_dir, f"am_session_{session_id}")
+    os.makedirs(session_dir, exist_ok=True)
+    
+    # Check for Video Input (Extract Audio)
+    if audio_path.lower().endswith((".mp4", ".mov", ".mkv")):
+        print(f"    [🎥] Video Input Detected. Extracting Audio...")
+        extracted_wav = os.path.join(session_dir, "master_audio_extracted.wav")
+        try:
+            subprocess.run([
+                "ffmpeg", "-y", "-i", audio_path, 
+                "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2",
+                extracted_wav, "-loglevel", "error"
+            ], check=True)
+            audio_path = extracted_wav
+            print(f"    [✅] Audio Extracted: {audio_path}")
+        except Exception as e:
+            print(f"    [!] Audio Extraction Failed: {e}")
+            return
+
+    # 1. Load Data
+    manifest = None
+    try:
+        manifest = load_manifest(xml_path)
+    except Exception as e:
+        print(f"[-] Failed to load Manifest: {e}")
+        # Don't return yet, check for Portions fallback
+
+    story = None
+    try:
+        raw_story = load_xmvp(xml_path, "Story")
+        if raw_story: story = Story.model_validate_json(raw_story)
+    except: pass
+    
+    # Check MLL
+    if args.mll == "on":
+        print("    [🧬] MLL Pipeline Activation...")
+        if os.environ.get("LOCAL_ADAPTER_PATH"):
+             print(f"       [+] Using Existing Adapter: {os.environ.get('LOCAL_ADAPTER_PATH')}")
+        else:
+            print("       [!] No adapter path set, assuming generic or user handled training.")
+            # We can trigger run_mll_pipeline here if we want! (TODO)
+
+    # 2. Chop & Generate Loop
+    video_segments = []
+    
+    items = []
+    
+    # Try getting items from content (Manifest or Portions)
+    if manifest and manifest.dialogue and manifest.dialogue.lines:
+        items = manifest.dialogue.lines
+        print(f"    [i] Found {len(items)} dialogue lines (Manifest) to use as segments.")
+    elif manifest and manifest.segs:
+        items = manifest.segs
+        print(f"    [i] Found {len(items)} manifest segments to use.")
+    else:
+        # Fallback: Portions
+        try:
+             raw_portions = load_xmvp(xml_path, "Portions")
+             if raw_portions:
+                 portions = json.loads(raw_portions)
+                 # Flatten dialogue
+                 print(f"    [i] Parsing Portions for dialogue...")
+                 for p in portions:
+                     if "dialogue" in p:
+                         for d in p["dialogue"]:
+                             # Convert dict to object for compatibility
+                             from types import SimpleNamespace
+                             items.append(SimpleNamespace(**d))
+                 print(f"    [i] Extracted {len(items)} lines from Portions.")
+        except Exception as e:
+            print(f"    [-] Failed to parse Portions: {e}")
+
+    if not items:
+        print("[-] No Dialogue, Segments, or Portions found in XML.")
+        return
+
+    # Master Audio Duration
+    total_audio_dur = get_audio_duration(audio_path)
+    print(f"    [🔊] Master Audio Duration: {total_audio_dur:.2f}s")
+    
+    current_time = 0.0
+    
+    # Initialize SkyReels
+    skyreels = None
+    try:
+        import definitions
+        sky_conf = definitions.MODAL_REGISTRY[definitions.Modality.VIDEO]["skyreels"]
+        skyreels = get_skyreels_bridge(sky_conf.path)
+    except Exception as e:
+        print(f"[-] SkyReels Init Failed: {e}")
+        return
+
+    for i, item in enumerate(items):
+        seg_id = i
+        
+        # Determine Timing
+        start = current_time
+        duration = 5.0 # default
+        
+        text_content = ""
+        character = "Unknown"
+        action = "talking"
+        
+        if hasattr(item, 'start_offset') and item.start_offset > 0:
+            # Trusted timestamp
+            start = item.start_offset
+            if hasattr(item, 'duration') and item.duration > 0:
+                duration = item.duration
+            else:
+                # Infer to next
+                if i + 1 < len(items):
+                    next_item = items[i+1]
+                    # Safely check next item too
+                    if hasattr(next_item, 'start_offset') and next_item.start_offset > start:
+                        duration = next_item.start_offset - start
+        else:
+            # Linear accumulation
+            if hasattr(item, 'duration') and item.duration > 0:
+                duration = item.duration
+            else:
+                # Estimate from text?
+                if hasattr(item, 'text'):
+                     # Rough: 15 chars per sec?
+                     duration = max(2.5, len(item.text) / 15.0)
+            
+        end = start + duration
+        current_time = end # Update cursor for next if needed
+        
+        if start >= total_audio_dur:
+            print(f"    [!] Segment {i} starts after audio ends. Stopping.")
+            break
+            
+        # Clip Duration Check
+        if end > total_audio_dur:
+            duration = total_audio_dur - start
+            end = total_audio_dur
+            
+        if duration < 0.5:
+            print(f"    [!] Segment {i} too short ({duration}s). Skipping.")
+            continue
+
+        # Extract Meta
+        if hasattr(item, 'text'): text_content = item.text
+        if hasattr(item, 'character'): character = item.character
+        if hasattr(item, 'action'): action = item.action
+        if hasattr(item, 'prompt'): text_content = item.prompt 
+        
+        print(f"    [{i}] Time: {start:.1f}-{end:.1f} ({duration:.1f}s) | {character}: {text_content[:30]}...")
+        
+        # A. Chop Audio
+        seg_audio_path = os.path.join(session_dir, f"seg_{i:04d}_audio.wav") # wav for safety
+        
+        cmd = [
+            'ffmpeg', '-y', 
+            '-ss', str(start), 
+            '-t', str(duration),
+            '-i', audio_path,
+            '-c:a', 'pcm_s16le', # Convert to standard wav
+            seg_audio_path,
+            '-loglevel', 'error'
+        ]
+        subprocess.run(cmd, check=False)
+        
+        if not os.path.exists(seg_audio_path):
+            print(f"       [!] Failed to chop audio.")
+            continue
+            
+        # B. Generate Reference Image (Flux)
+        # Use Story + Character + Action context
+        ref_img_path = os.path.join(session_dir, f"seg_{i:04d}_ref.jpg")
+        
+        vis_prompt = f"A cinematic shot of {character}. {action}. High quality, 4k."
+        if story:
+            vis_prompt = f"Movie: {story.title}. Theme: {story.theme}. {vis_prompt}"
+            
+        if not generate_image(vis_prompt, ref_img_path):
+            # Fallback black frame
+            create_black_frame(ref_img_path)
+            
+        # C. Generate Video (SkyReels)
+        sr_prompt = f"A video of {character} speaking. {action}. {text_content}"
+        sr_out_path = os.path.join(session_dir, f"seg_{i:04d}_video.mp4")
+        
+        if not args.local:
+             success = skyreels.generate_cloud(
+                audio_path=seg_audio_path, 
+                image_path=ref_img_path, 
+                prompt=sr_prompt, 
+                output_path=sr_out_path,
+                width=GENERATION_DIMS[0], 
+                height=GENERATION_DIMS[1], 
+                steps=20
+            )
+        else:
+            success = skyreels.generate(
+                audio_path=seg_audio_path, 
+                image_path=ref_img_path, 
+                prompt=sr_prompt, 
+                output_path=sr_out_path,
+                width=GENERATION_DIMS[0], 
+                height=GENERATION_DIMS[1], 
+                steps=20
+            )
+        
+        if success and os.path.exists(sr_out_path):
+            video_segments.append(sr_out_path)
+        else:
+            print(f"       [!] SkyReels Failed. Using placeholder?")
+            pass
+
+    # 3. Stitch Final
+    if video_segments:
+        print(f"    [✂️] Stitching {len(video_segments)} segments...")
+        final_file = os.path.join(output_dir, f"AudioMovie_{session_id}.mp4")
+        
+        list_path = os.path.join(session_dir, "concat_list.txt")
+        with open(list_path, 'w') as f:
+            for v in video_segments:
+                f.write(f"file '{v}'\n")
+                
+        try:
+            subprocess.run([
+                'ffmpeg', '-y', '-f', 'concat', '-safe', '0', 
+                '-i', list_path, 
+                '-c', 'copy', 
+                final_file,
+                '-loglevel', 'error'
+            ], check=True)
+            print(f"    [✨] DONE: {final_file}")
+        except Exception as e:
+             print(f"    [!] Stitching Failed: {e}")
+    else:
+        print("    [!] No video segments generated.")
+
 def create_silent_wav(path, duration=1.0):
     subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", f"anullsrc=r=24000:cl=mono", "-t", str(duration), path], 
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -2064,13 +2647,26 @@ def main():
     parser.add_argument("--rvc", action="store_true", help="Enable RVC (Retrieval Voice Conversion) for Cast")
     parser.add_argument("--xml", type=str, help="Input XMVP XML path (for fullmovie-still mode)")
     parser.add_argument("--xb", type=str, help="Alias for --xml (XMVP Bible/Manifest)")
+    parser.add_argument("--mu", type=str, help="Master Audio Input Path (for audio-movie mode)")
     parser.add_argument("--mll", choices=["on", "off"], default="off", help="Enable/Disable Movie-Level LoRA Training Step")
     parser.add_argument("--out", type=str, help="Output directory override")
+    parser.add_argument("--seeds", type=str, help="Explicit list of Chaos Seeds (e.g. \"['Topic A', 'Topic B']\")")
     
     args, unknown = parser.parse_known_args()
     
     # Handle aliases via registry
-    args.vpform = definitions.parse_global_vpform(args, current_default="24-podcast")
+    # Handle aliases via registry
+    # If args.vpform is set (e.g. element-47), we try to resolve it. 
+    # If definitions doesn't know it, it returns None, and we fall back to current_default.
+    resolved = definitions.parse_global_vpform(args, current_default=None)
+    if resolved:
+        args.vpform = resolved
+    elif args.vpform and args.vpform == "element-47":
+        # Keep it if it was explicit but unknown to definitions (safety)
+        pass
+    else:
+        # Only default if nothing resolved
+        args.vpform = "24-podcast"
     
     print(f"DEBUG: Args Parsed. VPForm: {args.vpform}")
     
@@ -2113,6 +2709,37 @@ def main():
 
         return
 
+
+    # --- ELEMENT 47 ---
+    if args.vpform == "element-47":
+        if args.xb:
+            manifest_path = args.xb
+            if manifest_path.lower().endswith(".fountain"):
+                print(f"    [🔄] Fountain Input Detected. Converting to XMVP XML...")
+                import sys
+                cmd = [sys.executable, "xmvp_converter.py", manifest_path, "--vpform", "element-47"]
+                if args.local: cmd.append("--local")
+                
+                try:
+                    subprocess.run(cmd, check=True)
+                    # Predict Output Path
+                    # xmvp_converter saves as {input}_manifest.xml by default adjacent to input
+                    base_path = os.path.splitext(manifest_path)[0]
+                    manifest_path = f"{base_path}_manifest.xml"
+                    
+                    if not os.path.exists(manifest_path):
+                        print(f"[-] Conversion failed. Expected manifest not found: {manifest_path}")
+                        return
+                    print(f"    [✅] Conversion Complete. Using: {manifest_path}")
+                except subprocess.CalledProcessError as e:
+                    print(f"[-] Conversion crashed: {e}")
+                    return
+
+            run_element47_production(manifest_path, OUTPUT_DIR, args)
+        else:
+             print("[-] --xb (XMVP Manifest) required for element-47 production.")
+        return
+
     # --- KOKORO SETUP (Audio Pacing) ---
     # Fix for macOS: Ensure espeak-ng library is found
     # Only if not already set
@@ -2144,6 +2771,15 @@ def main():
              print("[-] --xml (or --xb) required for audio-play.")
              return
         run_audio_play_mode(xml_input, OUTPUT_DIR, args)
+        return
+
+    if args.vpform == "audio-movie":
+        xml_input = args.xml or args.xb
+        audio_input = args.mu
+        if not xml_input or not audio_input:
+             print("[-] --xml (or --xb) AND --mu required for audio-movie.")
+             return
+        run_audio_movie_mode(xml_input, audio_input, OUTPUT_DIR, args)
         return
 
     if args.vpform and ("podcast" in args.vpform or "cartoon" in args.vpform):

@@ -182,20 +182,27 @@ def break_story(story: Story, cssv: CSSV) -> list[Portion]:
     logging.info(f"✅ Final Script: {len(all_portions)} scenes. Total Duration: {current_total_duration:.1f}s")
     
     # --- PHASE 2: PRE-FATTENING (Carbonation) ---
-    logging.info("🫧 Carbonating Script (Pre-Fattening Prompts)...")
-    expanded_count = 0
-    for p in all_portions:
-        original = p.content
-        try:
-            # We assume sassprilla_carbonator is cheap/fast enough or valid
-            fat = sassprilla_carbonator.carbonate_prompt(original)
-            if fat and len(fat) > len(original):
-                 p.content = fat
-                 expanded_count += 1
-        except Exception as e:
-            logging.warning(f"   ⚠️ Carbonation failed for scene {p.id}: {e}")
-            
-    logging.info(f"   ✨ Carbonated {expanded_count}/{len(all_portions)} scenes.")
+    # SKIP for accuracy-required forms that should faithfully recreate source material
+    ACCURATE_FORMS = ["movies-movie", "full-movie"]
+    vpform_name = getattr(cssv, 'form_name', None)
+
+    if vpform_name in ACCURATE_FORMS:
+        logging.info(f"🚫 Skipping Carbonation for '{vpform_name}' (Accuracy Mode).")
+    else:
+        logging.info("🫧 Carbonating Script (Pre-Fattening Prompts)...")
+        expanded_count = 0
+        for p in all_portions:
+            original = p.content
+            try:
+                # We assume sassprilla_carbonator is cheap/fast enough or valid
+                fat = sassprilla_carbonator.carbonate_prompt(original)
+                if fat and len(fat) > len(original):
+                     p.content = fat
+                     expanded_count += 1
+            except Exception as e:
+                logging.warning(f"   ⚠️ Carbonation failed for scene {p.id}: {e}")
+                
+        logging.info(f"   ✨ Carbonated {expanded_count}/{len(all_portions)} scenes.")
     
     return all_portions
 

@@ -10,6 +10,8 @@ google-generativeai
 google-genai
 
 # Utilities
+torch
+numpy
 tqdm
 requests
 pillow
@@ -17,7 +19,16 @@ pyloudnorm
 soundfile
 librosa
 sqlalchemy
+demucs
 
 # Audio (Kokoro)
 kokoro-onnx
 # Note: Requires system-level espeak-ng (mac: brew install espeak-ng, linux: sudo apt install espeak-ng)
+
+# Video (SkyReels/Wan)
+xfuser
+yunchang
+easydict
+kornia
+ftfy
+

@@ -111,6 +111,36 @@ MODELS = {
         "filenames": ["split_files/vae/hunyuan_video_vae_bf16.safetensors"],
         "target": MW_ROOT / "comfyui-root" / "models" / "vae"
     },
+    "SkyReels": {
+        "repo": "Skywork/SkyReels-V3-A2V-19B",
+        "type": "snapshot",
+        "target": MW_ROOT / "skyreels-root"
+    },
+    # --- 3D Model Collections ---
+    "glTF-Sample-Assets": {
+        "repo": "KhronosGroup/glTF-Sample-Assets",
+        "type": "git_clone",
+        "url": "https://github.com/KhronosGroup/glTF-Sample-Assets.git",
+        "target": MW_ROOT / "3D-objects" / "glTF-Sample-Assets"
+    },
+    "ThreeJS-Models": {
+        "repo": "mrdoob/three.js",
+        "type": "git_clone",
+        "url": "https://github.com/mrdoob/three.js.git",
+        "target": MW_ROOT / "3D-objects" / "three.js" 
+        # We only really want examples/models but a full clone is safest/easiest for now. 
+        # It's big but useful.
+    },
+    "Kenney-Assets-Space": {
+        "repo": "KenneyNL/assets-space-kit", # This is a placeholder, Kenney uses direct zips usually. 
+        # Actually let's use a known glTF repo or just stick to the big 2 for now as per plan.
+        # But wait, looking at user request: "Sketchfab... Poly Pizza... Smithsonian..."
+        # Many of these are individual downloads or scrapers. 
+        # Khronos and Three.js are the best "Git Clone" fit.
+        # Let's add checking for the "3D-objects" root creation.
+        "type": "placeholder", 
+        "target": MW_ROOT / "3D-objects" # Just ensures dir exists
+    }
 }
 
 COMFY_REPO = "https://github.com/comfyanonymous/ComfyUI"
@@ -199,7 +229,15 @@ def main():
     # 2. HF Models
     for name, conf in MODELS.items():
         print(f"\n[*] Processing {name} ({conf['repo']}) -> {conf['target']}")
-        conf['target'].mkdir(parents=True, exist_ok=True)
+        
+        # FIX: Do not blindly create directory for git_clone if we want clone to work naturally
+        # unless it's not git_clone.
+        if conf.get('type') != 'git_clone':
+            conf['target'].mkdir(parents=True, exist_ok=True)
+        else:
+            # Check if parent exists
+            if not conf['target'].parent.exists():
+                conf['target'].parent.mkdir(parents=True, exist_ok=True)
         
         try:
             if conf['type'] == 'snapshot':
@@ -227,10 +265,36 @@ def main():
                         local_dir=str(conf['target']),
                         local_dir_use_symlinks=False
                     )
+            elif conf['type'] == 'git_clone':
+                target_dir = conf['target']
+                
+                # Check if directory exists and is NOT a git repo and is empty/junk
+                if target_dir.exists() and not (target_dir / ".git").exists():
+                    # If empty, we can clone into it? Git usually wants it to not exist or be empty.
+                    # If it has files but no .git, it's a broken state or user created it.
+                    if not any(target_dir.iterdir()):
+                        print("    -> Directory exists but is empty. Cloning into it...")
+                    else:
+                        print("    [!] Directory exists, is not empty, and not a git repo. Attempting to clone anyway (git might fail)...")
+                
+                if not target_dir.exists() or (target_dir.exists() and not any(target_dir.iterdir())):
+                    print(f"    -> Cloning {conf['url']}...")
+                    subprocess.run(["git", "clone", conf['url'], str(target_dir)], check=True)
+                else:
+                    print(f"    -> Directory exists and not empty. Checking if it is a repo...")
+                    if (target_dir / ".git").exists():
+                         print(f"    -> It is a git repo. Pulling latest...")
+                         try:
+                             subprocess.run(["git", "pull"], cwd=target_dir, check=True)
+                         except Exception as e:
+                             print(f"    [!] Pull failed (might be dirty): {e}")
+                    else:
+                        print(f"    [!] Target {target_dir} is not a git repo. Skipping.")
+
             print(f"    ✅ Done.")
             
         except Exception as e:
-            print(f"    ❌ Download Failed: {e}")
+            print(f"    ❌ Download/Clone Failed: {e}")
 
     print("\n✨ All operations complete.")
 

@@ -239,7 +239,7 @@ def refine_tween(img_tween, prompt, model=None, width=1024, height=1024, text_en
             
     return img_tween
 
-def generate_seed_image(prompt, text_engine, init_dim=1024):
+def generate_seed_image(prompt, text_engine, init_dim=1024, width=None, height=None):
     """
     Generates a high-quality seed image using Imagen 3 via Gemini Client.
     Used for the first frame or recovery from void.
@@ -259,7 +259,9 @@ def generate_seed_image(prompt, text_engine, init_dim=1024):
              bridge = get_flux_bridge(img_conf.path)
              if bridge:
                  # FLUX GENERATION AT INIT_DIM
-                 return bridge.generate(prompt, width=init_dim, height=init_dim)
+                 w = width if width else init_dim
+                 h = height if height else init_dim
+                 return bridge.generate(prompt, width=w, height=h)
              else:
                  print("   (!) Flux Bridge not initialized.")
                  return None

@@ -16,7 +16,7 @@ from pathlib import Path
 import librosa
 import numpy as np
 import torch
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 # Monkeypatch for Scipy 1.13+ vs Librosa < 0.10 compatibility
 try:
     import scipy.signal
@@ -306,7 +306,7 @@ DEFAULT_VF = Path("/Volumes/XMVPX/fmv_corpus")
 
 # Model Configuration
 # Model Configuration
-# IMAGE_MODEL = "gemini-2.5-flash-image" # Default (Fast/Capable) - DEPRECATED for Registry
+# IMAGE_MODEL = "imagen-3.0-generate-001" # Default (Fast/Capable) - DEPRECATED for Registry
 FLIPBOOK_STYLE_PROMPT = "You are a commercial animator. DRAW ONLY VISUALS. NO TEXT. NO NUMBERS. NO METADATA OVERLAYS. VISUAL:"
 
 ANI_INSTRUCTION = """
@@ -320,12 +320,426 @@ CRITICAL VISUAL INSTRUCTION:
 - IF YOU ARE TEMPTED TO WRITE TEXT, DRAW A cloud INSTEAD.
 """
 
+# -----------------------------------------------------------------------------
+# ANSI VIDEO CONFIGURATION
+# -----------------------------------------------------------------------------
+
+# Character palette ordered by brightness (0.0 -> 1.0)
+# Includes half-blocks for more detailed "subpixels"
+ANSI_CHARS = " ░▒▓█▀▄▌▐"
+ANSI_CHAR_BRIGHTNESS = {
+    ' ': 0.0,
+    '░': 0.25,
+    '▒': 0.50,
+    '▓': 0.75,
+    '█': 1.0,
+    '▀': 0.5,  # Top half
+    '▄': 0.5,  # Bottom half
+    '▌': 0.5,  # Left half  
+    '▐': 0.5,  # Right half
+}
+
+# Color palettes (gradient from dark to bright)
+ANSI_PALETTES = {
+    "amber": [(30, 20, 10), (80, 50, 20), (180, 120, 60), (255, 200, 150)],
+    "cyber": [(0, 20, 15), (0, 60, 50), (0, 140, 100), (0, 255, 180)],
+    "vaporwave": [(40, 20, 50), (100, 40, 120), (180, 80, 180), (255, 140, 220)],
+    "fire": [(30, 10, 5), (120, 40, 10), (220, 100, 20), (255, 180, 80)],
+    "ocean": [(10, 20, 40), (30, 60, 100), (60, 120, 180), (120, 200, 255)],
+    "matrix": [(0, 15, 0), (0, 50, 0), (0, 120, 0), (50, 255, 50)],
+    "blood": [(20, 5, 5), (80, 20, 20), (160, 40, 40), (255, 80, 80)],
+    "ice": [(20, 30, 40), (60, 100, 140), (120, 180, 220), (200, 240, 255)],
+    "sunset": [(40, 20, 30), (140, 60, 50), (220, 120, 80), (255, 200, 150)],
+    "monochrome": [(20, 20, 20), (80, 80, 80), (160, 160, 160), (240, 240, 240)],
+}
+
+# Prompt keywords that trigger specific palettes
+ANSI_PALETTE_KEYWORDS = {
+    "fire": "fire", "flame": "fire", "burn": "fire", "lava": "fire", "hell": "fire",
+    "ocean": "ocean", "sea": "ocean", "water": "ocean", "underwater": "ocean", "aqua": "ocean",
+    "cyber": "cyber", "neon": "cyber", "hacker": "matrix", "matrix": "matrix", "digital": "matrix",
+    "blood": "blood", "horror": "blood", "dark": "blood", "evil": "blood", "death": "blood",
+    "ice": "ice", "cold": "ice", "frozen": "ice", "winter": "ice", "snow": "ice",
+    "sunset": "sunset", "dawn": "sunset", "dusk": "sunset", "warm": "sunset",
+    "vapor": "vaporwave", "retro": "vaporwave", "80s": "vaporwave", "synthwave": "vaporwave",
+    "space": "cyber", "robot": "cyber", "machine": "cyber", "transform": "cyber",
+    "cartoon": "amber", "saturday": "amber", "morning": "amber", "1992": "amber", "1990": "amber",
+}
+
+def detect_ansi_palette(prompt: str, style: str = None) -> str:
+    """Detects the best palette based on prompt and style keywords."""
+    search_text = (prompt + " " + (style or "")).lower()
+    
+    for keyword, palette_name in ANSI_PALETTE_KEYWORDS.items():
+        if keyword in search_text:
+            return palette_name
+    
+    return "amber"  # Default warm CRT look
+
+def get_palette_color(brightness: float, palette_name: str) -> tuple:
+    """Interpolate a color from the palette based on brightness (0.0-1.0)."""
+    palette = ANSI_PALETTES.get(palette_name, ANSI_PALETTES["amber"])
+    
+    brightness = max(0.0, min(1.0, brightness))
+    n = len(palette)
+    idx = brightness * (n - 1)
+    i = int(idx)
+    frac = idx - i
+    
+    if i >= n - 1:
+        return palette[-1]
+    
+    c1, c2 = palette[i], palette[i + 1]
+    return tuple(int(c1[j] + frac * (c2[j] - c1[j])) for j in range(3))
+
+def generate_ansi_frame(index: int, prompt: str, output_dir: Path, 
+                        canvas_width: int, canvas_height: int,
+                        text_engine, prev_frame_text: str = None,
+                        palette_name: str = "amber") -> tuple:
+    """
+    Uses the LLM to 'draw' a frame using ANSI block characters.
+    Returns (frame_path, frame_text) for feedback to next frame.
+    """
+    target_path = output_dir / f"frame_{index:04d}.png"
+    target_txt = output_dir / f"frame_{index:04d}.txt"
+    
+    if target_path.exists() and target_txt.exists():
+        # Skip if already done, but return text for context
+        return target_path, target_txt.read_text()
+    
+    # Build the drawing instruction
+    char_list = "█ (solid/bright), ▓ (dark shade), ▒ (medium shade), ░ (light shade), [space] (empty/black), ▀ ▄ ▌ ▐ (half-blocks)"
+    
+    base_instruction = f"""You are an ANIMATOR drawing frame-by-frame pixel art for a CARTOON.
+
+🎬 THIS IS ANIMATION - each frame shows characters, objects, and scenes in motion!
+
+CANVAS: {canvas_width} columns × {canvas_height} rows
+CHARACTERS TO USE: {char_list}
+
+🎨 SCENE TO DRAW:
+{prompt}
+
+⚠️ CRITICAL RULES:
+1. DRAW ACTUAL OBJECTS - characters, buildings, landscapes, vehicles, creatures
+2. NEVER fill the entire canvas with one character - that creates a blank frame!
+3. Use HIGH CONTRAST: █ for bright objects, [space] for dark background
+4. Create SILHOUETTES and SHAPES that are visually distinct
+5. Objects should have EDGES - use ▓▒░ for shading and transitions
+6. Use half-blocks (▀▄▌▐) for smooth curves and diagonal lines
+
+📐 OUTPUT FORMAT:
+- EXACTLY {canvas_height} lines
+- Each line has EXACTLY {canvas_width} characters
+- NO text, commentary, or code blocks - just the raw character grid
+
+💡 DRAWING TIPS:
+- Dark background (spaces) + bright subject (█▓) = visible art
+- A character should occupy 10-30% of the canvas, not 100%
+- Include ground/horizon lines to anchor the scene
+- Motion = slight position shifts from previous frame"""
+
+    if prev_frame_text:
+        base_instruction += f"""
+
+🔄 PREVIOUS FRAME (animate from this - small incremental motion only):
+```
+{prev_frame_text}
+```
+
+Move objects slightly, don't redraw everything! This is animation, not random frames."""
+
+    base_instruction += "\n\n🎬 Draw the frame NOW (raw characters only):"
+
+    # Generate with LLM
+    max_retries = 3
+    frame_text = None
+    
+    for attempt in range(max_retries):
+        try:
+            raw_output = text_engine.generate(base_instruction, temperature=0.7)
+            
+            # Parse output - extract the character grid
+            # Look for lines that contain our block characters
+            valid_block_chars = set('█▓▒░▀▄▌▐ ')
+            lines = []
+            
+            for line in raw_output.strip().split('\n'):
+                # Skip markdown fences and common preamble
+                stripped = line.strip()
+                if stripped.startswith('```') or stripped.startswith('Here') or stripped.startswith('Frame'):
+                    continue
+                if len(stripped) == 0:
+                    continue
+                    
+                # Count block chars vs other chars
+                block_count = sum(1 for c in line if c in valid_block_chars)
+                other_count = len(line) - block_count
+                
+                # Accept line if it's mostly block chars (>50%) or has significant block content
+                if block_count > 0 and (block_count >= other_count or block_count >= canvas_width * 0.3):
+                    lines.append(line)
+                # Also accept lines that are mostly spaces with some block chars
+                elif len(line) >= canvas_width * 0.5 and block_count >= 5:
+                    lines.append(line)
+            
+            # Validate and normalize dimensions
+            if len(lines) < canvas_height * 0.5:
+                logging.warning(f"   Frame {index} Attempt {attempt+1}: Got {len(lines)} lines, expected ~{canvas_height}")
+                continue
+            
+            # Normalize to exact dimensions    
+            normalized = []
+            for i, line in enumerate(lines[:canvas_height]):
+                # Pad or truncate to exact width
+                if len(line) < canvas_width:
+                    line = line + ' ' * (canvas_width - len(line))
+                elif len(line) > canvas_width:
+                    line = line[:canvas_width]
+                normalized.append(line)
+            
+            # Pad missing rows
+            while len(normalized) < canvas_height:
+                normalized.append(' ' * canvas_width)
+            
+            frame_text = '\n'.join(normalized)
+            break
+            
+        except Exception as e:
+            logging.warning(f"   Frame {index} Attempt {attempt+1} failed: {e}")
+            time.sleep(1)
+    
+    if not frame_text:
+        logging.error(f"   Frame {index}: All attempts failed. Creating blank frame.")
+        frame_text = '\n'.join([' ' * canvas_width] * canvas_height)
+    
+    # Save raw text
+    target_txt.write_text(frame_text)
+    
+    # Render to PNG
+    render_ansi_to_png(frame_text, target_path, palette_name, canvas_width, canvas_height)
+    
+    return target_path, frame_text
+
+def render_ansi_to_png(frame_text: str, output_path: Path, palette_name: str,
+                       canvas_width: int, canvas_height: int,
+                       pixel_size: int = 8) -> bool:
+    """
+    Converts ANSI character art to a PNG image.
+    Each character becomes a pixel_size × pixel_size block.
+    """
+    try:
+        # Calculate image dimensions
+        img_width = canvas_width * pixel_size
+        img_height = canvas_height * pixel_size
+        
+        # Create image
+        img = Image.new('RGB', (img_width, img_height), (0, 0, 0))
+        pixels = img.load()
+        
+        lines = frame_text.split('\n')
+        
+        for row, line in enumerate(lines):
+            if row >= canvas_height:
+                break
+            for col, char in enumerate(line):
+                if col >= canvas_width:
+                    break
+                
+                # Get brightness for this character
+                brightness = ANSI_CHAR_BRIGHTNESS.get(char, 0.0)
+                
+                # Get color from palette
+                color = get_palette_color(brightness, palette_name)
+                
+                # Fill the pixel block
+                for py in range(pixel_size):
+                    for px in range(pixel_size):
+                        img_x = col * pixel_size + px
+                        img_y = row * pixel_size + py
+                        
+                        # Handle half-blocks specially
+                        if char == '▀':  # Top half
+                            if py < pixel_size // 2:
+                                pixels[img_x, img_y] = color
+                            else:
+                                pixels[img_x, img_y] = get_palette_color(0.0, palette_name)
+                        elif char == '▄':  # Bottom half
+                            if py >= pixel_size // 2:
+                                pixels[img_x, img_y] = color
+                            else:
+                                pixels[img_x, img_y] = get_palette_color(0.0, palette_name)
+                        elif char == '▌':  # Left half
+                            if px < pixel_size // 2:
+                                pixels[img_x, img_y] = color
+                            else:
+                                pixels[img_x, img_y] = get_palette_color(0.0, palette_name)
+                        elif char == '▐':  # Right half
+                            if px >= pixel_size // 2:
+                                pixels[img_x, img_y] = color
+                            else:
+                                pixels[img_x, img_y] = get_palette_color(0.0, palette_name)
+                        else:
+                            pixels[img_x, img_y] = color
+        
+        img.save(output_path)
+        return True
+        
+    except Exception as e:
+        logging.error(f"   Failed to render ANSI frame: {e}")
+        return False
+
+
+def redraw_frame_as_ansi(source_image_path: Path, index: int, output_dir: Path,
+                          canvas_width: int, canvas_height: int,
+                          text_engine, prev_frame_text: str = None,
+                          palette_name: str = "amber", style_prompt: str = None) -> tuple:
+    """
+    Redraws a source image as ANSI block character art.
+    
+    1. Optionally describes the source image using vision
+    2. LLM draws the scene using block characters
+    3. Renders to PNG
+    
+    Returns: (png_path, frame_text)
+    """
+    target_path = output_dir / f"frame_{index:04d}.png"
+    target_txt = output_dir / f"frame_{index:04d}.txt"
+    
+    # Load and analyze source image
+    try:
+        from PIL import Image
+        src_img = Image.open(source_image_path).convert("RGB")
+        src_w, src_h = src_img.size
+        
+        # Quick color analysis - sample dominant colors
+        small = src_img.resize((16, 16), Image.BILINEAR)
+        pixels = list(small.getdata())
+        
+        # Calculate average brightness zones (top, middle, bottom)
+        thirds = len(pixels) // 3
+        top_bright = sum(sum(p) for p in pixels[:thirds]) / (thirds * 3 * 255)
+        mid_bright = sum(sum(p) for p in pixels[thirds:2*thirds]) / (thirds * 3 * 255)
+        bot_bright = sum(sum(p) for p in pixels[2*thirds:]) / (thirds * 3 * 255)
+        
+        # Simple scene description based on brightness
+        brightness_hint = f"Top: {int(top_bright*100)}%, Mid: {int(mid_bright*100)}%, Bottom: {int(bot_bright*100)}% brightness"
+        
+    except Exception as e:
+        logging.warning(f"   Could not analyze source image: {e}")
+        brightness_hint = "Unknown composition"
+    
+    # Build prompt for LLM to draw the frame
+    base_instruction = f"""You are a pixel artist recreating a video frame using ONLY these block characters:
+VALID CHARACTERS: █ ▓ ▒ ░ ▀ ▄ ▌ ▐ [space]
+
+CANVAS SIZE: {canvas_width} columns × {canvas_height} rows
+
+SOURCE IMAGE ANALYSIS:
+- Resolution: {src_w}x{src_h} pixels
+- Brightness distribution: {brightness_hint}
+{f"- Style: {style_prompt}" if style_prompt else ""}
+
+YOUR TASK:
+1. Recreate the source frame's VISUAL STRUCTURE using blocks
+2. Use █ for bright/foreground areas, ░ or space for dark/background
+3. Use ▒▓ for midtones and transitions
+4. Use half-blocks (▀▄▌▐) for fine edges and details
+5. Maintain the composition: where bright areas are, where dark areas are
+
+RULES:
+1. Output EXACTLY {canvas_height} lines, each with EXACTLY {canvas_width} characters
+2. Use ONLY the valid block characters - NO letters, numbers, or other symbols
+3. NO commentary, just the character grid"""
+
+    if prev_frame_text:
+        base_instruction += f"""
+
+PREVIOUS FRAME (maintain visual continuity):
+```
+{prev_frame_text}
+```
+
+Draw the NEXT frame with small incremental changes only."""
+
+    base_instruction += "\n\nDraw the frame now (raw characters only, no markdown):"
+
+    # Generate with LLM
+    max_retries = 3
+    frame_text = None
+    valid_block_chars = set('█▓▒░▀▄▌▐ ')
+    
+    for attempt in range(max_retries):
+        try:
+            raw_output = text_engine.generate(base_instruction, temperature=0.7)
+            
+            # Parse output
+            lines = []
+            for line in raw_output.strip().split('\n'):
+                stripped = line.strip()
+                if stripped.startswith('```') or stripped.startswith('Here') or stripped.startswith('Frame'):
+                    continue
+                if len(stripped) == 0:
+                    continue
+                
+                block_count = sum(1 for c in line if c in valid_block_chars)
+                other_count = len(line) - block_count
+                
+                if block_count > 0 and (block_count >= other_count or block_count >= canvas_width * 0.3):
+                    lines.append(line)
+                elif len(line) >= canvas_width * 0.5 and block_count >= 5:
+                    lines.append(line)
+            
+            if len(lines) < canvas_height * 0.5:
+                logging.warning(f"   Frame {index} Attempt {attempt+1}: Got {len(lines)} lines, expected ~{canvas_height}")
+                continue
+            
+            # Normalize dimensions
+            normalized = []
+            for line in lines[:canvas_height]:
+                if len(line) < canvas_width:
+                    line = line + ' ' * (canvas_width - len(line))
+                elif len(line) > canvas_width:
+                    line = line[:canvas_width]
+                normalized.append(line)
+            
+            while len(normalized) < canvas_height:
+                normalized.append(' ' * canvas_width)
+            
+            frame_text = '\n'.join(normalized)
+            break
+            
+        except Exception as e:
+            logging.warning(f"   Frame {index} Attempt {attempt+1} failed: {e}")
+            time.sleep(1)
+    
+    if not frame_text:
+        logging.error(f"   Frame {index}: All attempts failed. Creating blank frame.")
+        frame_text = '\n'.join([' ' * canvas_width] * canvas_height)
+    
+    # Save raw text
+    target_txt.write_text(frame_text)
+    
+    # Render to PNG
+    render_ansi_to_png(frame_text, target_path, palette_name, canvas_width, canvas_height)
+    
+    return target_path, frame_text
+
 def load_keys(env_path):
     """Loads keys from env_vars.yaml."""
     if env_path.exists():
         try:
             with open(env_path, 'r') as f:
                 secrets = yaml.safe_load(f)
+                
+                # 1. Populate os.environ with ALL secrets (e.g. HF_TOKEN, FLUX_KLEIN_ENDPOINT)
+                if secrets:
+                    for k, v in secrets.items():
+                        if k not in os.environ and isinstance(v, (str, int, float)):
+                            os.environ[k] = str(v)
+                            # logging.info(f"   🔑 Loaded Env Var: {k}")
+
+                # 2. Extract Rotation Keys
                 keys_str = secrets.get("ACTION_KEYS_LIST", "")
                 if keys_str:
                     return [k.strip() for k in keys_str.split(',') if k.strip()]
@@ -350,7 +764,7 @@ def find_original_video(video_id_stem, search_dirs):
             cand = folder / f"{video_id_stem}{ext}"
             if cand.exists(): return cand
 
-def analyze_audio(audio_path):
+def analyze_audio(audio_path, fsync=1.0):
     """
     Analyzes audio for BPM and Duration.
     Returns (bpm, duration, beat_frames, suggested_fps)
@@ -369,18 +783,19 @@ def analyze_audio(audio_path):
         # If we want 4 frames per beat -> 8 FPS.
         
         # Let's standardize on 4 frames per beat for visualizer smoothness
+        # But scale by fsync!
         frames_per_beat = 4 
         bps = bpm / 60.0
-        fps = bps * frames_per_beat
+        fps = (bps * frames_per_beat) * fsync
         
         logging.info(f"   🎵 Audio Analysis: {bpm:.1f} BPM | {duration:.1f}s")
-        logging.info(f"   🎵 Derived FPS: {fps:.2f} (based on {frames_per_beat} frames/beat)")
+        logging.info(f"   🎵 Derived FPS: {fps:.2f} (based on {frames_per_beat} frames/beat * fsync {fsync})")
         
         return bpm, duration, frames_per_beat, fps
         
     except Exception as e:
         logging.error(f"   ❌ Audio Analysis Failed: {e}")
-        return 120.0, 60.0, 4, 8.0 # Fallback
+        return 120.0, 60.0, 4, 8.0 * fsync # Fallback
 
 def analyze_audio_profile(audio_path, duration):
     """
@@ -772,11 +1187,16 @@ def blend_videos(base_video, overlay_video, output_path, opacity=0.33):
     Blends overlay_video onto base_video with specified opacity.
     """
     try:
+        # Updated to scale base_video (0) to match overlay_video (1)
+        # Scale Source to Unicode Resolution.
+        # [0:v][1:v]scale2ref[base][over] -> base is scaled 0, over is ref 1
+        filter_complex = f"[0:v][1:v]scale2ref[base][over];[over]format=rgba,colorchannelmixer=aa={opacity}[over_alpha];[base][over_alpha]overlay=format=auto"
+        
         cmd = [
             "ffmpeg", "-y",
             "-i", str(base_video),
             "-i", str(overlay_video),
-            "-filter_complex", f"[1:v]format=rgba,colorchannelmixer=aa={opacity}[ov];[0:v][ov]overlay",
+            "-filter_complex", filter_complex,
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",
             str(output_path)
@@ -796,7 +1216,7 @@ def blend_videos(base_video, overlay_video, output_path, opacity=0.33):
         
     return None
 
-def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=None, prev_frame_path=None, pg_mode=False, force_local=False, strength=0.65):
+def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=None, prev_frame_path=None, pg_mode=False, force_local=False, strength=0.75):
     """
     Worker function using Universal Backend (Flux Local or Gemini/Imagen Cloud).
     """
@@ -915,7 +1335,7 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                 # If img_input is None (First Frame), it acts as Txt2Img.
                 logging.info(f"   🚀 Flux Generating with Image Input: {img_input is not None}")
                 
-                # Use passed strength argument (default 0.65 from signature)
+                # Use passed strength argument (default 0.75 from signature)
                 img = bridge.generate(prompt=final_prompt, width=width, height=height, steps=12, image=img_input, strength=strength)
                 
                 if img:
@@ -932,6 +1352,50 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
 
         # --- CLOUD GEMINI/IMAGEN PATH ---
         else:
+            # HF ENDPOINT PATH for Flux
+            if model == "flux-2-klein-hf":
+                try:
+                    from flux_bridge import generate_via_hf_endpoint
+                    logging.info(f"🎨 Rendering Frame {index} (Attempt {attempt+1}/{max_retries}) [Cloud Flux HF]...")
+                    
+                    # Load Feedback Image if available (Cloud Context)
+                    img_input = None
+                    if prev_frame_path and prev_frame_path.exists():
+                        try:
+                            from PIL import Image
+                            img_input = Image.open(prev_frame_path).convert("RGB")
+                            logging.info(f"   🔄 Cloud Feedback: Using {prev_frame_path.name} as Img2Img input.")
+                        except Exception as e:
+                            logging.warning(f"   ⚠️ Failed to load previous frame for cloud feedback: {e}")
+
+                    img = generate_via_hf_endpoint(
+                        prompt=prompt, 
+                        width=width, 
+                        height=height, 
+                        steps=28, 
+                        guidance=3.5,
+                        seed=None, # Random
+                        image=img_input,
+                        strength=strength # Default 0.75 passed from arg
+                    )
+                    
+                    if img:
+                        img.save(target_path)
+                        return True
+                    else:
+                         logging.warning("HF Endpoint returned None. Falling back to Imagen 3...")
+                         # Fallback Logic: Switch model to Imagen 3 (Working)
+                         model = "imagen-3.0-generate-001"
+                         # FALL THROUGH
+                         
+                except ImportError:
+                    logging.error("Could not import generate_via_hf_endpoint. Falling back to Imagen 3...")
+                    model = "imagen-3.0-generate-001"
+                except Exception as e_hf:
+                     logging.error(f"HF Endpoint Failed: {e_hf}. Falling back to Imagen 3...")
+                     model = "imagen-3.0-generate-001"
+                     # FALL THROUGH
+            
             # ROTATION: Get next key from cycle
             current_key = next(key_cycle)
             logging.info(f"🎨 Rendering Frame {index} (Attempt {attempt+1}/{max_retries}) [Cloud Key Rotation]...")
@@ -1012,7 +1476,7 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                             time.sleep(0.5)
 
                             # 2. Use Renderer
-                            render_model = "gemini-2.5-flash-image"
+                            render_model = "imagen-3.0-generate-001"
                             # Force "Generate an image of" prefix AND explicit size
                             render_prompt = f"Generate an image of: {refined_prompt}"
                             
@@ -1115,8 +1579,8 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
     logging.info(f"▶️ Processing Project: {project_name}")
     
     # Resolution Setup
-    target_w = args.w if (args.local and args.w) else args.kid
-    target_h = args.h if (args.local and args.h) else args.kid
+    target_w = args.w if args.w else args.kid
+    target_h = args.h if args.h else args.kid
     logging.info(f"   📐 Target Resolution: {target_w}x{target_h}")
     
     analysis_file = project_dir / "analysis.json"
@@ -1127,8 +1591,8 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
     
     # Bypass for Creative Agency / XB
     # Bypass for Creative Agency / XB / Music Visualizer / Music Agency
-    # Bypass for Creative Agency / XB / Music Visualizer / Music Agency
-    if args.vpform in ["creative-agency", "music-visualizer", "music-video", "cartoon-video"] or args.xb:
+    # Bypass for Creative Agency / XB / Music Visualizer / Music Agency / ANSI Video
+    if args.vpform in ["creative-agency", "music-visualizer", "music-video", "cartoon-video", "ansi-video", "ansi-redraw"] or args.xb:
         # Check if we have an explicit XML to load
         if args.xb and os.path.exists(args.xb):
              try:
@@ -1209,14 +1673,16 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
     # 2. Calculate Target Frames & Prompts
     prompts = []
     
-    # FBF Mode: Exact Match + Expansion
+        # FBF Mode: Exact Match + Expansion
     if args.vpform == "fbf-cartoon":
         # BUG FIX: Cast directly to int for expansion, do not mutate args.fps for subsequent loops
-        expansion = max(1, int(args.fps)) 
+        # Default to 4 if not set
+        fbf_fps = args.fps if args.fps else 4
+        expansion = max(1, int(fbf_fps))
         total_frames = len(descriptions) * expansion
         
         # Local variable for this specific project's Output FPS
-        project_fps = args.fps 
+        project_fps = fbf_fps 
         
         if duration and duration > 0:
             real_fps = total_frames / duration
@@ -1284,8 +1750,24 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
              bps = bpm / 60.0
              fps = bps * frames_per_beat
              
+             # User Override Check
+             if args.fps:
+                 logging.info(f"   🏎️  FPS Override: {args.fps}")
+                 fps = float(args.fps)
+             elif args.vspeed:
+                 logging.info(f"   🏎️  VSpeed Override: {args.vspeed}")
+                 fps = float(args.vspeed)
+
+             
         else:
-             bpm, duration, fpb, fps = analyze_audio(args.mu)
+             bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=args.fsync)
+             # User Override Check
+             if args.fps:
+                 logging.info(f"   🏎️  FPS Override: {args.fps} (ignoring audio-derived {fps:.2f})")
+                 fps = float(args.fps)
+             elif args.vspeed:
+                 logging.info(f"   🏎️  VSpeed Override: {args.vspeed} (ignoring audio-derived {fps:.2f})")
+                 fps = float(args.vspeed)
              
         target_frames = int(duration * fps)
         project_fps = fps
@@ -1298,27 +1780,108 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         prompts = []
         
         # Style Definition
-        base_style = args.style if args.style != "Indie graphic novel artwork. Precise, uniform, dead-weight linework. Highly stylized, elegantly sophisticated, and with an explosive, highly saturated pop-color palette." else "Abstract, pixel art, Stan Brakhage style, melting film on hot projectors, unique fractal algorithm, highly saturated colors"
+        # Visualizer Theme
+        visual_concept = args.prompt if args.prompt else "A single continuous abstract form"
+
+        # Style Logic
+        # Fix: Check against CLI DEFAULT "high resolution 4K UHD video"
+        # If user didn't touch it, it will be that string.
+        cli_default_style = "high resolution 4K UHD video"
         
-        # Generate evolution
-        # We want "Patterns" and "One path".
-        # We can simulate this by evolving a noise seed or just descriptive interpolation.
-        
+        if args.style == cli_default_style:
+             # User left default style. Switch to Visualizer Default.
+             base_style = "Abstract mathematical pixel interpolation neural network simulation, highly detailed pixel art, Stan Brakhage style, melting film on hot projectors, unique fractal algorithm, highly saturated colors, glitch art, datamoshing"
+        else:
+             # User provided custom style
+             base_style = args.style
+
         style_prefix = base_style
         
+        # Audio Feature Extraction (Scipy/Librosa)
+        # We need per-frame features.
+        import numpy as np
+        
+        frames_energy = []
+        frames_timbre = []
+        
+        try:
+            logging.info("   🔬 Running Scipy Audio Analysis (RMS & Spectral Centroid)...")
+            y, sr = librosa.load(args.mu, sr=None)
+            
+            # Hop length = samples per frame
+            # fps = project_fps
+            hop_length = int(sr / project_fps)
+            
+            # 1. RMS (Energy)
+            rmse = librosa.feature.rms(y=y, hop_length=hop_length)
+            # Normalize to 0-1
+            rmse = (rmse - np.min(rmse)) / (np.max(rmse) - np.min(rmse) + 1e-6)
+            frames_energy = rmse[0]
+            
+            # 2. Spectral Centroid (Timbre/Brightness)
+            cent = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=hop_length)
+            # Normalize to 0-1
+            cent = (cent - np.min(cent)) / (np.max(cent) - np.min(cent) + 1e-6)
+            frames_timbre = cent[0]
+            
+            # Pad or Truncate to match target_frames
+            if len(frames_energy) < target_frames:
+                # Pad with last value
+                pad_width = target_frames - len(frames_energy)
+                frames_energy = np.pad(frames_energy, (0, pad_width), mode='edge')
+                frames_timbre = np.pad(frames_timbre, (0, pad_width), mode='edge')
+                
+        except Exception as e_audio:
+            logging.warning(f"   ⚠️ Audio Feature Extraction Failed: {e_audio}. Using static values.")
+            frames_energy = np.zeros(target_frames)
+            frames_timbre = np.zeros(target_frames)
+
         # Visualizer Loop
         for i in range(target_frames):
              progress = i / target_frames
-             # Evolve description
-             # Phase 1: 0-0.3 (Buildup)
-             # Phase 2: 0.3-0.7 (Chaos)
-             # Phase 3: 0.7-1.0 (Resolution)
              
-             phase = "forming patterns"
-             if progress > 0.3: phase = "melting into chaotic fractals"
-             if progress > 0.7: phase = "crystallizing into pure light"
+             # Audio Features for this frame
+             # Safety clamp index
+             idx = min(i, len(frames_energy)-1)
+             energy = frames_energy[idx]
+             timbre = frames_timbre[idx]
              
-             raw_desc = f"Visualizer Beat {i}. A single continuous abstract form {phase}. Progress: {int(progress*100)}%."
+             # 1. Energy Modulation (Action Intensity)
+             # Low Energy (0.0 - 0.3): Inert, Slow, Ambient
+             # Mid Energy (0.3 - 0.7): Moving, Rythmic, Flowing
+             # High Energy (0.7 - 1.0): Exploding, Chaotic, Glitching
+             
+             intensity_adj = "inert"
+             if energy > 0.2: intensity_adj = "flowing"
+             if energy > 0.4: intensity_adj = "pulsating"
+             if energy > 0.6: intensity_adj = "vibrating violently"
+             if energy > 0.8: intensity_adj = "exploding in recursive chaos"
+             
+             # 2. Timbre Modulation (Visual Texture/Color)
+             # Low Centroid (Bass): Dark, Heavy, Liquid, Deep colors
+             # High Centroid (Treble): Bright, Sharp, Crystalline, Neon, White noise
+             
+             texture_desc = "deep liquid forms"
+             if timbre > 0.3: texture_desc = "geometric patterns"
+             if timbre > 0.6: texture_desc = "crystalline shards and electric sparks"
+             if timbre > 0.8: texture_desc = "blinding white noise and sharp glitches"
+             
+             # Phase description (Narrative Arc still applies gently)
+             phase_desc = "emerging"
+             if progress > 0.5: phase_desc = "evolving"
+             if progress > 0.9: phase_desc = "resolving"
+             
+             # Combine User Prompt + Audio Reactive Descriptors
+             # "Visualizer Beat 10. [User Prompt]. The image is [Intensity] and composed of [Texture]. [Phase]. Progress: 10%."
+             
+             # SCIPY INJECTION:
+             raw_desc = (
+                 f"Visualizer Beat {i}. {visual_concept}. "
+                 f"The motion is {intensity_adj}. "
+                 f"The visuals are composed of {texture_desc}. "
+                 f"Audio Energy: {energy:.2f}. " 
+             )
+             
              prompts.append(f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames})")
 
     elif args.vpform == "music-video":
@@ -1344,17 +1907,23 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
              bps = bpm / 60.0
              fps = bps * frames_per_beat
              
-             # VSPEED Override
-             if args.vspeed and args.vspeed != 8.0:
-                 # User wants specific FPS override
-                 logging.info(f"   🏎️  VSpeed Override: {args.vspeed} FPS (Default 8.0)")
-                 fps = args.vspeed
+             # VSPEED/FPS Override
+             if args.fps:
+                  logging.info(f"   🏎️  FPS Override: {args.fps}")
+                  fps = float(args.fps)
+             elif args.vspeed:
+                  logging.info(f"   🏎️  VSpeed Override: {args.vspeed}")
+                  fps = float(args.vspeed)
+
         else:
-             bpm, duration, fpb, fps = analyze_audio(args.mu)
-             # VSPEED Override (even for auto-detected)
-             if args.vspeed and args.vspeed != 8.0:
-                  logging.info(f"   🏎️  VSpeed Override: {args.vspeed} FPS (Detected {fps:.2f})")
-                  fps = args.vspeed
+             bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=args.fsync)
+             # VSPEED/FPS Override (even for auto-detected)
+             if args.fps:
+                  logging.info(f"   🏎️  FPS Override: {args.fps} (ignoring detected {fps:.2f})")
+                  fps = float(args.fps)
+             elif args.vspeed:
+                  logging.info(f"   🏎️  VSpeed Override: {args.vspeed} (ignoring detected {fps:.2f})")
+                  fps = float(args.vspeed)
         target_frames = int(duration * fps)
         project_fps = fps
         target_duration = duration
@@ -1397,7 +1966,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             logging.info(f"      🎵 Sonic Map: {sonic_map}")
             
             story_req = (
-                f"Create a VISUAL SCREENPLAY for a {target_duration}s music video (Animated).\n"
+                f"Create a VISUAL SCREENPLAY for a {target_duration}s music video (Animated Cartoon style (classic 2D, non-photorealistic)).\n"
                 f"Concept: {prompt_concept}\n"
                 f"Chaos Seeds to weave in: {seeds}\n"
                 f"Music Vibe: {bpm} BPM.\n"
@@ -1441,9 +2010,13 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         # 3. Distribute Beats
         
         # Style
-        # Override default style for Music Video to "Saturday Morning Cartoon"
-        base_style_default = "Indie graphic novel artwork. Precise, uniform, dead-weight linework. Highly stylized, elegantly sophisticated, and with an explosive, highly saturated pop-color palette."
-        style_prefix = "high resolution 4K video" if args.style.strip() == base_style_default else args.style
+        # Override default style for Music Video to "Saturday Morning Cartoon" if user didn't specify one
+        cli_default_style = "high resolution 4K UHD video"
+        
+        if args.style.strip() == cli_default_style:
+             style_prefix = "professionally animated cartoon"
+        else:
+             style_prefix = args.style
         
         # 3. Distribute Beats (Shot-Aware Timeline Construction)
         timeline = [] # List of dicts: { 'prompt': str, 'is_cut': bool, 'shot_idx': int }
@@ -1474,8 +2047,10 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                      
                      # Style Injection
                      # Use the specific shot style if available, else global
-                     # Actually cartoon mode uses global style usually.
-                     full_prompt = f"Style: {style_prefix}. Action: {story_beat}"
+                     # User Request: "professionally animated cartoon at [FPS] of {content}"
+                     # User Request: Enforce specific cartoon style phrasing
+                     # We use the style_prefix we calculated above
+                     full_prompt = f"{style_prefix} at {project_fps} FPS of {story_beat}"
                      
                      timeline.append({
                          'prompt': full_prompt,
@@ -1547,7 +2122,9 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                   prev_beat_idx = int((i-1) / frames_per_beat) if i > 0 else -1
                   is_cut = (beat_idx != prev_beat_idx)
                   
-                  full_prompt = f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames})"
+                  # User Request: Enforce specific cartoon style phrasing
+                  # User Request: Enforce specific cartoon style phrasing
+                  full_prompt = f"{style_prefix} at {project_fps} FPS of {raw_desc}"
                   
                   timeline.append({
                       'prompt': full_prompt,
@@ -1572,8 +2149,16 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         
         # 2. Extract Audio
         audio_path = project_dir / "extracted_audio.wav"
-        cmd_a = ['ffmpeg', '-y', '-i', args.mu, '-vn', '-acodec', 'pcm_s16le', '-ar', '44100', '-ac', '2', str(audio_path)]
-        subprocess.run(cmd_a, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        has_audio = False
+        try:
+            cmd_a = ['ffmpeg', '-y', '-i', args.mu, '-vn', '-acodec', 'pcm_s16le', '-ar', '44100', '-ac', '2', str(audio_path)]
+            subprocess.run(cmd_a, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if audio_path.exists() and audio_path.stat().st_size > 0:
+                 has_audio = True
+                 logging.info(f"   🎵 Audio extracted: {audio_path}")
+        except Exception as e_audio:
+            logging.warning(f"   ⚠️ Could not extract audio (Silent input?): {e_audio}")
+            has_audio = False
         
         # 3. Extract Frames
         # Calculate vspeed step or just let ffmpeg handle fps
@@ -1586,28 +2171,31 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         
         # 4. Img2Img Loop
         from flux_bridge import get_flux_bridge
-        # Robust Flux Loading
-        try:
-             flux_path = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE]["flux-schnell"].path
-        except:
-             flux_path = "/Volumes/XMVPX/mw/flux-root"
-        bridge = get_flux_bridge(flux_path)
+        
+        bridge = None
+        if args.local and not args.cloud: # Only load local bridge if local
+             # Robust Flux Loading
+             try:
+                  flux_path = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE]["flux-schnell"].path
+             except:
+                  flux_path = "/Volumes/XMVPX/mw/flux-root"
+             bridge = get_flux_bridge(flux_path)
         
         prompt = "exactly precise reproduction of this image in terms of content and image/scene structure, but improved to a different asethetic style and standard, like an uncanny Octane Render Unreal Engine 3D real-life photorealistic artistic reimagining. 8k, highly detailed."
         if args.prompt: prompt = args.prompt
         
         # --- MEMORY OPTIMIZATION ---
-        # Ensure Img2Img is loaded, then dump Txt2Img if it's a separate (redundant) model
-        # This prevents holding 2x Model Weights in RAM, which causes severe thrashing (30m per frame)
-        bridge.load_img2img()
-        if bridge.pipeline and bridge.img2img_pipeline and bridge.pipeline is not bridge.img2img_pipeline:
-            logging.info("   📉 Optimizing Memory: Unloading duplicate Txt2Img pipeline to make room for Img2Img...")
-            del bridge.pipeline
-            bridge.pipeline = None
-            import gc
-            gc.collect()
-            if torch.backends.mps.is_available():
-                torch.mps.empty_cache()
+        # Ensure Img2Img is loaded (Local Only)
+        if args.local and not args.cloud:
+             bridge.load_img2img()
+             if bridge.pipeline and bridge.img2img_pipeline and bridge.pipeline is not bridge.img2img_pipeline:
+                 logging.info("   📉 Optimizing Memory: Unloading duplicate Txt2Img pipeline to make room for Img2Img...")
+                 del bridge.pipeline
+                 bridge.pipeline = None
+                 import gc
+                 gc.collect()
+                 if torch.backends.mps.is_available():
+                     torch.mps.empty_cache()
         # ---------------------------
         
         # from PIL import Image
@@ -1671,14 +2259,100 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                     logging.info(f"      🌀 Blending 30% of Frame {idx-1} for stability...")
                     input_img = Image.blend(src_img, last_output_img, alpha=0.3)
                 
-                out_img = bridge.generate_img2img(
-                    prompt=prompt,
-                    image=input_img,
-                    strength=0.65, 
-                    width=target_w,
-                    height=target_h,
-                    seed=42 + i
-                )
+                # CLOUD MODE (Imagen 3 Director Pipeline)
+                if args.cloud or not args.local:
+                     # DIRECTOR MODE: Gemini 2.0 Flash (Describe) -> Imagen 3 (Generate)
+                     # We use the key cycle reused from main() or instantiate a fresh client
+                     # Grab a key from the passed 'keys' list (guaranteed valid by main)
+                     api_key = keys[0] if keys else os.environ.get("GEMINI_API_KEY") 
+                     client = genai.Client(api_key=api_key)
+
+                     # 1. Describe (Director)
+                     description_prompt = (
+                         f"You are a Lead Animator. Analyze this frame from a video.\n"
+                         f"Goal: Describe the VISUALS in extreme detail so they can be re-drawn in a specific style.\n"
+                         f"Style Target: {prompt}\n" # User's prompt IS the style target
+                         f"Action: Describe the character pose, lighting, setting, and composition exactly.\n"
+                         f"Output: A dense, visual description suitable for an image generator."
+                     )
+                     
+                     # Prepare Input
+                     # Convert PIL to bytes
+                     import io
+                     img_byte_arr = io.BytesIO()
+                     input_img.save(img_byte_arr, format='PNG')
+                     img_bytes = img_byte_arr.getvalue()
+                     
+                     desc_contents = [
+                         types.Part.from_bytes(data=img_bytes, mime_type="image/png"),
+                         description_prompt
+                     ]
+                     
+                     try:
+                         # Retry Loop for Description
+                         director_desc = ""
+                         for _ in range(3):
+                             try:
+                                 resp = client.models.generate_content(
+                                     model="gemini-2.0-flash",
+                                     contents=desc_contents
+                                 )
+                                 if resp.text:
+                                     director_desc = resp.text
+                                     break
+                             except Exception as e_d:
+                                 logging.warning(f"   ⚠️ Director Describe Failed: {e_d}. Retrying...")
+                                 time.sleep(1)
+                         
+                         if not director_desc:
+                             logging.error("   ❌ Director failed to describe frame. Skipping.")
+                             continue
+                             
+                         logging.info(f"   🎬 Director: {director_desc[:60]}...")
+                         
+                         # 2. Render (Flux1.dev Txt2Img)
+                         # We use the detailed description AS the prompt for Flux.
+                         # Pass image=None to force Txt2Img for maximum stylization as requested.
+                         from flux_bridge import generate_via_hf_endpoint
+                         
+                         out_img = None
+                         
+                         # Retry Loop for Render
+                         for _ in range(3):
+                             try:
+                                 out_img = generate_via_hf_endpoint(
+                                     prompt=director_desc,
+                                     width=target_w,
+                                     height=target_h,
+                                     steps=28,
+                                     guidance=3.5,
+                                     image=None, # Txt2Img Mode
+                                     strength=1.0, # Irrelevant for Txt2Img but good practice
+                                     seed=42+i
+                                 )
+                                 if out_img:
+                                     # Resize back to exact target just in case
+                                     if out_img.size != (target_w, target_h):
+                                         out_img = out_img.resize((target_w, target_h), Image.LANCZOS)
+                                     break
+                             except Exception as e_r:
+                                  logging.warning(f"   ⚠️ Render Failed: {e_r}")
+                                  time.sleep(1)
+                                  
+                     except Exception as e_cloud:
+                         logging.error(f"   ❌ Cloud Director Pipeline Failed: {e_cloud}")
+                         out_img = None
+                         
+                else: 
+                     # LOCAL MODE
+                     out_img = bridge.generate_img2img(
+                        prompt=prompt,
+                        image=input_img,
+                        strength=getattr(args, 'strength', 75) / 100.0, 
+                        width=target_w,
+                        height=target_h,
+                        seed=42 + i
+                     )
                 
                 if out_img:
                     out_img.save(dst)
@@ -1688,20 +2362,460 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 
         # 5. Stitch
         logging.info("   🧵 Stitching...")
+        
+        # Check if frames exist
+        found_frames = list(frames_dir.glob("frame_*.png"))
+        if not found_frames:
+             logging.error("❌ No frames generated! Aborting stitch.")
+             return
+
         out_vid = project_dir / "final_output.mp4"
         # use existing stitch logic or ffmpeg direct
         # Pattern frame_%04d.png
         cmd_s = [
             'ffmpeg', '-y', '-framerate', str(project_fps),
             '-i', str(frames_dir / 'frame_%04d.png'),
-            '-i', str(audio_path),
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18',
-            '-c:a', 'aac', '-b:a', '192k',
+        ]
+        
+        # Conditionally add audio if valid
+        if has_audio and audio_path.exists():
+            cmd_s.extend(['-i', str(audio_path), '-c:v', 'libx264', '-c:a', 'aac', '-b:a', '192k'])
+        else:
+            logging.info("   🔇 Stitching generic silent video (no audio source found).")
+            cmd_s.extend(['-c:v', 'libx264']) # Video only
+            
+        cmd_s.extend([
+            '-pix_fmt', 'yuv420p', '-crf', '18',
             '-shortest',
             str(out_vid)
-        ]
+        ])
+        
         subprocess.run(cmd_s, check=True)
         logging.info(f"   ✅ Done: {out_vid}")
+        return
+
+    elif args.vpform == "ansi-video":
+        # =======================================================================
+        # ANSI VIDEO MODE - LLM draws each frame with block characters
+        # =======================================================================
+        
+        if not args.mu or not os.path.exists(args.mu):
+            logging.error("❌ ansi-video requires audio file (--mu)")
+            return
+        
+        # 1. CANVAS SETUP
+        # --w and --h specify CHARACTER counts (not pixels), defaulting to 60x40
+        canvas_width = args.w if args.w else 60
+        canvas_height = args.h if args.h else 40
+        
+        # Calculate pixel size to hit reasonable output resolution
+        # Target ~480x320 minimum, scale up as needed
+        min_output_width = 480
+        pixel_size = max(8, min_output_width // canvas_width)
+        output_width = canvas_width * pixel_size
+        output_height = canvas_height * pixel_size
+        
+        logging.info(f"   🎨 ANSI Video Mode: {canvas_width}×{canvas_height} chars → {output_width}×{output_height} pixels")
+        
+        # 2. AUDIO ANALYSIS
+        logging.info(f"   🎵 Analyzing audio: {args.mu}")
+        bpm, duration, beat_frames, suggested_fps = analyze_audio(args.mu, fsync=args.fsync)
+        
+        # User FPS override
+        project_fps = args.fps if args.fps else suggested_fps
+        if project_fps < 1:
+            project_fps = 4  # Minimum sane FPS
+        
+        total_frames = int(duration * project_fps)
+        logging.info(f"   ⏱️  Target: {total_frames} frames @ {project_fps} FPS ({duration:.1f}s) | BPM: {bpm}")
+        
+        # 3. PALETTE DETECTION
+        prompt_text = args.prompt if args.prompt else "Abstract animation"
+        style_text = args.style if args.style else ""
+        palette_name = detect_ansi_palette(prompt_text, style_text)
+        logging.info(f"   🎨 Detected Palette: {palette_name}")
+        
+        # 4. STORY GENERATION (reuse existing music-video writer logic)
+        logging.info("   🧠 Generating narrative beats...")
+        
+        # Analyze audio profile for mood
+        sonic_map = analyze_audio_profile(args.mu, duration)
+        
+        # Calculate number of story beats (1 beat per ~3s)
+        num_beats = max(5, int(duration / 3.0))
+        
+        story_request = (
+            f"Create a VISUAL STORYBOARD for a {duration:.0f}s animation.\n"
+            f"Style: ANSI pixel art / chunky block characters\n"
+            f"Concept: {prompt_text}\n"
+            f"Music Vibe: {bpm} BPM\n"
+            f"Audio Profile: {sonic_map}\n"
+            f"Constraints: Need exactly {num_beats} visual beats/scenes.\n"
+            f'Output ONLY valid JSON: {{"title": "...", "beats": ["Scene 1", "Scene 2", ...]}}\n'
+            "Keep descriptions VISUAL and SIMPLE - 10 words max per beat!"
+        )
+        
+        story_beats = []
+        
+        # Retry loop for story generation
+        for story_attempt in range(3):
+            try:
+                raw = te.generate(story_request, json_schema=True)
+                
+                # Try to extract JSON from the response
+                # First, try direct parse
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError:
+                    # Try to find JSON object in the response
+                    start = raw.find('{')
+                    end = raw.rfind('}')
+                    if start != -1 and end != -1 and end > start:
+                        try:
+                            data = json.loads(raw[start:end+1])
+                        except json.JSONDecodeError:
+                            # Try fixing common issues (trailing commas, etc)
+                            json_str = raw[start:end+1]
+                            # Remove trailing commas before ] or }
+                            import re as json_re
+                            json_str = json_re.sub(r',\s*([}\]])', r'\1', json_str)
+                            data = json.loads(json_str)
+                    else:
+                        raise json.JSONDecodeError("No JSON found", raw, 0)
+                
+                if isinstance(data, list):
+                    data = data[0]
+                story_beats = data.get('beats', [])
+                
+                if story_beats and len(story_beats) >= 3:
+                    logging.info(f"   📜 Generated {len(story_beats)} story beats")
+                    break
+                else:
+                    logging.warning(f"   ⚠️ Story attempt {story_attempt+1}: Only got {len(story_beats)} beats, retrying...")
+                    
+            except Exception as e:
+                logging.warning(f"   ⚠️ Story attempt {story_attempt+1} failed: {e}")
+                if story_attempt == 2:
+                    # Final fallback: create varied beats from the prompt
+                    logging.info("   🔄 Using prompt-derived beats as fallback...")
+                    story_beats = [
+                        f"Wide establishing shot: silhouette of {prompt_text} against sky, horizon line at bottom third",
+                        f"Medium shot: {prompt_text} character(s) visible, distinct shapes against background",
+                        f"Action sequence: movement and energy, dynamic poses, motion blur effects",
+                        f"Close-up dramatic moment: large central figure fills 40% of frame",
+                        f"Climax: explosion of shapes, maximum visual contrast",
+                        f"Resolution: characters small against vast landscape, peaceful composition"
+                    ]
+                    # Pad to num_beats if needed
+                    while len(story_beats) < num_beats:
+                        story_beats.append(f"Scene {len(story_beats)+1}: {prompt_text} characters in distinct poses against contrasting background")
+        
+        if not story_beats:
+            story_beats = [prompt_text]
+        
+        # 5. DISTRIBUTE BEATS TO FRAMES
+        frames_per_beat = total_frames / len(story_beats)
+        prompts = []
+        
+        for i in range(total_frames):
+            beat_idx = min(int(i / frames_per_beat), len(story_beats) - 1)
+            beat_desc = story_beats[beat_idx]
+            
+            # Add frame-specific context with visual direction
+            progress_pct = int((i / total_frames) * 100)
+            
+            # Determine visual style based on story position
+            if progress_pct < 15:
+                composition = "wide shot, establish setting, horizon visible"
+            elif progress_pct < 40:
+                composition = "medium shot, characters filling 30% of frame"
+            elif progress_pct < 70:
+                composition = "dynamic action, diagonal lines, high contrast"
+            elif progress_pct < 90:
+                composition = "close-up, subject fills 50% of canvas"
+            else:
+                composition = "wide pullback, small figures in vast scene"
+            
+            frame_prompt = f"[{progress_pct}% through story] {beat_desc}\nCOMPOSITION: {composition}"
+            prompts.append(frame_prompt)
+        
+        logging.info(f"   ✅ Distributed {len(prompts)} frame prompts")
+        
+        # 6. FRAME GENERATION LOOP
+        project_out = output_root / f"ansi_{Path(args.mu).stem}_{int(time.time())}"
+        ensure_dir(project_out)
+        
+        frames_dir = project_out / "frames"
+        ensure_dir(frames_dir)
+        
+        prev_frame_text = None
+        success_count = 0
+        
+        logging.info(f"   🖌️  Drawing {total_frames} ANSI frames...")
+        print("   Progress: ", end="", flush=True)
+        
+        for i, prompt in enumerate(prompts):
+            idx = i + 1
+            
+            try:
+                frame_path, frame_text = generate_ansi_frame(
+                    index=idx,
+                    prompt=prompt,
+                    output_dir=frames_dir,
+                    canvas_width=canvas_width,
+                    canvas_height=canvas_height,
+                    text_engine=te,
+                    prev_frame_text=prev_frame_text,
+                    palette_name=palette_name
+                )
+                
+                if frame_path.exists():
+                    success_count += 1
+                    print(".", end="", flush=True)
+                    prev_frame_text = frame_text  # Feedback for next frame
+                else:
+                    print("x", end="", flush=True)
+                    
+            except Exception as e:
+                logging.warning(f"   Frame {idx} failed: {e}")
+                print("!", end="", flush=True)
+            
+            # Rate limiting
+            if hasattr(args, 'delay') and args.delay > 0:
+                time.sleep(args.delay)
+            
+            # Memory cleanup every 10 frames to prevent GPU exhaustion
+            if idx % 10 == 0:
+                import gc
+                gc.collect()
+                # Clear MPS cache if using Metal
+                try:
+                    import torch
+                    if torch.backends.mps.is_available():
+                        torch.mps.empty_cache()
+                except:
+                    pass
+                # Clear MLX cache
+                try:
+                    import mlx.core as mx
+                    mx.metal.clear_cache()
+                except:
+                    pass
+                # Brief pause to let GPU recover
+                time.sleep(0.5)
+        
+        print(f"\n   ✅ Generated {success_count}/{total_frames} frames")
+        
+        # 7. VIDEO ASSEMBLY
+        if success_count > 0:
+            raw_video = project_out / "raw_video.mp4"
+            final_video = project_out / "final_ansi.mp4"
+            
+            logging.info("   🎬 Stitching video...")
+            
+            cmd_stitch = [
+                'ffmpeg', '-y',
+                '-framerate', str(project_fps),
+                '-i', str(frames_dir / 'frame_%04d.png'),
+                '-c:v', 'libx264',
+                '-pix_fmt', 'yuv420p',
+                '-crf', '18',
+                str(raw_video)
+            ]
+            
+            try:
+                subprocess.run(cmd_stitch, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception as e:
+                logging.error(f"   ❌ FFmpeg stitch failed: {e}")
+                return
+            
+            # Mux audio
+            logging.info("   🔊 Muxing audio...")
+            cmd_mux = [
+                'ffmpeg', '-y',
+                '-i', str(raw_video),
+                '-i', str(args.mu),
+                '-map', '0:v',
+                '-map', '1:a',
+                '-c:v', 'copy',
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                '-shortest',
+                str(final_video)
+            ]
+            
+            try:
+                subprocess.run(cmd_mux, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                logging.info(f"   ✅ ANSI VIDEO COMPLETE: {final_video}")
+            except Exception as e:
+                logging.error(f"   ❌ Audio mux failed: {e}")
+                logging.info(f"   📹 Silent version: {raw_video}")
+        
+        return
+
+    elif args.vpform == "ansi-redraw":
+        # =======================================================================
+        # ANSI REDRAW MODE - LLM redraws each video frame as block character art
+        # =======================================================================
+        
+        if not args.mu or not os.path.exists(args.mu):
+            logging.error("❌ ansi-redraw requires input video (--mu)")
+            return
+
+        # 1. CANVAS SETUP
+        canvas_width = args.w if args.w else 120
+        canvas_height = args.h if args.h else 80
+        logging.info(f"   📐 ANSI Canvas: {canvas_width}×{canvas_height} characters")
+        
+        # 2. PALETTE DETECTION (from prompt/style)
+        style_prompt = args.prompt or args.style or ""
+        palette_name = detect_ansi_palette(style_prompt)
+        logging.info(f"   🎨 Palette: {palette_name}")
+        
+        # 3. INITIALIZE TEXT ENGINE
+        te = TextEngine()
+        logging.info(f"   🧠 Text Engine: {te.backend}")
+        
+        # 4. EXTRACT FRAMES FROM INPUT VIDEO
+        project_fps = args.fps if args.fps else 4
+        
+        # Probe video duration
+        cmd_probe = ['ffprobe', '-i', str(args.mu), '-show_entries', 'format=duration', '-v', 'quiet', '-of', 'csv=p=0']
+        try:
+            res = subprocess.run(cmd_probe, capture_output=True, text=True)
+            duration = float(res.stdout.strip())
+        except:
+            duration = 60.0
+            logging.warning("   ⚠️ Could not probe video duration. Assuming 60s.")
+        
+        total_frames = int(duration * project_fps)
+        logging.info(f"   🎞️  Extracting source frames: {total_frames} frames @ {project_fps} FPS")
+        
+        # Setup project directory
+        project_out = output_root / f"ansi_redraw_{Path(args.mu).stem}_{int(time.time())}"
+        ensure_dir(project_out)
+        
+        source_frames_dir = project_out / "source"
+        ensure_dir(source_frames_dir)
+        
+        frames_dir = project_out / "frames"
+        ensure_dir(frames_dir)
+        
+        # Extract source frames
+        cmd_extract = [
+            'ffmpeg', '-y',
+            '-i', str(args.mu),
+            '-vf', f'fps={project_fps}',
+            str(source_frames_dir / 'source_%04d.png')
+        ]
+        
+        try:
+            subprocess.run(cmd_extract, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            logging.error(f"   ❌ FFmpeg extract failed: {e}")
+            return
+        
+        source_frames = sorted(list(source_frames_dir.glob("source_*.png")))
+        logging.info(f"   ✅ Extracted {len(source_frames)} source frames")
+        
+        if len(source_frames) == 0:
+            logging.error("   ❌ No source frames extracted!")
+            return
+        
+        # 5. FRAME REDRAW LOOP
+        prev_frame_text = None
+        success_count = 0
+        
+        logging.info(f"   🖌️  Redrawing {len(source_frames)} frames as ANSI art...")
+        print("   Progress: ", end="", flush=True)
+        
+        for i, src_frame in enumerate(source_frames):
+            idx = i + 1
+            
+            try:
+                frame_path, frame_text = redraw_frame_as_ansi(
+                    source_image_path=src_frame,
+                    index=idx,
+                    output_dir=frames_dir,
+                    canvas_width=canvas_width,
+                    canvas_height=canvas_height,
+                    text_engine=te,
+                    prev_frame_text=prev_frame_text,
+                    palette_name=palette_name,
+                    style_prompt=style_prompt
+                )
+                
+                prev_frame_text = frame_text
+                success_count += 1
+                print("█", end="", flush=True)
+                
+            except Exception as e:
+                logging.error(f"   Frame {idx} failed: {e}")
+                print("░", end="", flush=True)
+            
+            # Memory cleanup every 10 frames (for local mode)
+            if idx % 10 == 0 and args.local:
+                gc.collect()
+                try:
+                    import torch
+                    if torch.backends.mps.is_available():
+                        torch.mps.empty_cache()
+                except:
+                    pass
+                try:
+                    import mlx.core as mx
+                    mx.metal.clear_cache()
+                except:
+                    pass
+                time.sleep(0.5)
+        
+        print(f"\n   ✅ Generated {success_count}/{len(source_frames)} frames")
+        
+        # 6. VIDEO ASSEMBLY
+        if success_count > 0:
+            raw_video = project_out / "raw_video.mp4"
+            final_video = project_out / "final_ansi_redraw.mp4"
+            
+            logging.info("   🎬 Stitching video...")
+            
+            cmd_stitch = [
+                'ffmpeg', '-y',
+                '-framerate', str(project_fps),
+                '-i', str(frames_dir / 'frame_%04d.png'),
+                '-c:v', 'libx264',
+                '-pix_fmt', 'yuv420p',
+                '-crf', '18',
+                str(raw_video)
+            ]
+            
+            try:
+                subprocess.run(cmd_stitch, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception as e:
+                logging.error(f"   ❌ FFmpeg stitch failed: {e}")
+                return
+            
+            # Extract and mux original audio
+            logging.info("   🔊 Muxing audio from source video...")
+            cmd_mux = [
+                'ffmpeg', '-y',
+                '-i', str(raw_video),
+                '-i', str(args.mu),
+                '-map', '0:v',
+                '-map', '1:a?',  # ? makes audio optional
+                '-c:v', 'copy',
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                '-shortest',
+                str(final_video)
+            ]
+            
+            try:
+                subprocess.run(cmd_mux, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                logging.info(f"   ✅ ANSI REDRAW COMPLETE: {final_video}")
+            except Exception as e:
+                logging.error(f"   ❌ Audio mux failed: {e}")
+                logging.info(f"   📹 Silent version: {raw_video}")
+        
         return
 
     elif args.vpform == "creative-agency" or args.xb:
@@ -1742,7 +2856,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                  return
                  
             # 1. Analyze Audio
-            bpm, duration, fpb, fps = analyze_audio(args.mu)
+            bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=args.fsync)
             target_frames = int(duration * fps)
             project_fps = fps
             target_duration = duration
@@ -1855,8 +2969,8 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
              
              raw_desc = source_content[beat_idx]
              # Dynamically append frame index to encourage movement in the LLM's mind
-             # We inject the STYLE here so it travels with the prompt to the Director.
-             prompts.append(f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames})")
+             # User Request: Enforce specific cartoon style phrasing
+             prompts.append(f"professionally animated cartoon at {project_fps} FPS of {raw_desc}")
              
     else:
         # Interpolation Mode (Legacy)
@@ -1956,7 +3070,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             if i_idx == 0:
                  # Generate First Frame via Flux (Seed)
                  logging.info(f"   🎨 Batch Start: Frame {frame_start_idx} (Flux Seed)...")
-                 start_img = frame_canvas.generate_seed_image(prompts[i_idx], te, init_dim=args.kid)
+                 start_img = frame_canvas.generate_seed_image(prompts[i_idx], te, init_dim=args.kid, width=target_w, height=target_h)
                  if start_img:
                      start_img.save(start_path)
                      last_generated_img = start_img
@@ -1968,7 +3082,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                       start_img = Image.open(start_path)
                  else:
                       logging.warning(f"   ⚠️ Start Frame {frame_start_idx} missing in batch. Regenerating...")
-                      start_img = frame_canvas.generate_seed_image(prompts[i_idx], te, init_dim=args.kid)
+                      start_img = frame_canvas.generate_seed_image(prompts[i_idx], te, init_dim=args.kid, width=target_w, height=target_h)
                       if start_img: start_img.save(start_path)
 
             if not start_img:
@@ -1994,7 +3108,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             end_path = frames_dir / f"frame_{frame_end_idx:04d}.png"
             logging.info(f"   🎨 Batch End: Frame {frame_end_idx} (Flux)...")
             
-            end_img = frame_canvas.generate_seed_image(prompts[next_i], te, init_dim=args.kid)
+            end_img = frame_canvas.generate_seed_image(prompts[next_i], te, init_dim=args.kid, width=target_w, height=target_h)
             if end_img:
                 if end_img.size != (target_w, target_h):
                      # logging.info(f"   📏 Resizing End Frame: {end_img.size} -> {target_w}x{target_h}")
@@ -2023,12 +3137,14 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                  # Since we are in local recursion, we know we are using Flux.
                  # We can get it from definitions or cached.
                  img_conf = definitions.get_active_model(Modality.IMAGE)
+                 from flux_bridge import get_flux_bridge
                  bridge = get_flux_bridge(img_conf.path)
                  
                  if bridge:
-                      logging.info(f"   ✨ Flux Img2Img: {out_p.name} (Str: 0.65)...")
+                      strength = getattr(args, 'strength', 75) / 100.0
+                      logging.info(f"   ✨ Flux Img2Img: {out_p.name} (Str: {strength})...")
                       # Use a lower strength to preserve the "morph" but add details
-                      return bridge.generate(prompt_text, image=t_img, strength=0.65, width=target_w, height=target_h)
+                      return bridge.generate(prompt_text, image=t_img, strength=strength, width=target_w, height=target_h)
                  return t_img # Fallback
             
             if mid_i > i_idx and mid_i < next_i:
@@ -2106,10 +3222,18 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
 
         index = i + 1
         
-        # Pass model from args
         model_to_use = getattr(args, 'model', None)
         if not model_to_use:
              model_to_use = get_active_model(Modality.IMAGE).name
+
+        # OVERRIDE: Cloud Mode -> Always use Flux 2 Klein HF (per user request)
+        if not args.local:
+             # Check if we are doing image generation (implied by this loop)
+             # Previously only music-visualizer was overridden.
+             # Now apply to all.
+             if model_to_use != "flux-2-klein-hf":
+                 # logging.info("   ☁️  Cloud Mode: Enforcing 'flux-2-klein-hf' (HF Endpoint)...")
+                 model_to_use = "flux-2-klein-hf"
 
         # Define Previous Frame Path
         prev_frame = None
@@ -2271,10 +3395,10 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 model=model_to_use,
                 prev_frame_path=prev_frame,
                 pg_mode=args.pg,
-                width=args.w if (args.local and args.w) else args.kid,
-                height=args.h if (args.local and args.h) else args.kid,
+                width=target_w,
+                height=target_h,
                 force_local=args.local,
-                strength=getattr(args, "strength", 0.65)
+                strength=getattr(args, "strength", 75) / 100.0
             )
             
             if success:
@@ -2423,69 +3547,68 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
              logging.info(f"✅ FINAL CUT (Silent): {raw_video}")
              
         # 3. Post-Processing (Music Visualizer Only)
-        if args.vpform == "music-visualizer" and raw_video.exists():
-            logging.info("🔥 Entering Post-Production: Obsessive Video Repainting (ASCII Forge)...")
+        if args.vpform == "music-visualizer":
+            # Determine Source (Prefer Final, then Raw)
+            source_vid = final_video if final_video.exists() else (raw_video if raw_video.exists() else None)
             
-            ascii_vid = project_out / "ascii_version.mp4"
-            if run_ascii_forge(raw_video, ascii_vid):
-                logging.info(f"   ✅ ASCII Version Forged: {ascii_vid}")
+            if source_vid:
+                blend_pct = getattr(args, 'blend', 66)
                 
-                # Blend
-                blended_vid = project_out / "final_blend.mp4"
-                logging.info("   🎨 Blending ASCII Overlay (33%)...")
-                # Use final_video logic? No, we have raw_video.
-                if blend_videos(raw_video, ascii_vid, blended_vid, opacity=0.33):
-                     logging.info(f"   ✅ FINAL VISUALIZER MASTER: {blended_vid}")
-                     
-                     # Mux Audio
-                     final_master = project_out / "master_release.mp4"
-                     if args.mu:
-                         cmd_remix = [
-                            "ffmpeg", "-y",
-                            "-i", str(blended_vid),
-                            "-i", str(args.mu),
-                            "-map", "0:v", "-map", "1:a",
-                            "-c:v", "copy", "-shortest",
-                            str(final_master)
-                         ]
-                         try:
-                             subprocess.run(cmd_remix, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                             logging.info(f"   🏆 MASTER RELEASE: {final_master}")
-                         except:
-                             logging.warning("   ⚠️ Audio remix failed.")
-             
-        # 3. Post-Processing (Music Visualizer Only)
-        if args.vpform == "music-visualizer" and final_video.exists():
-            logging.info("🔥 Entering Post-Production: Obsessive Video Repainting (ASCII Forge)...")
-            
-            ascii_vid = project_out / "ascii_version.mp4"
-            if run_ascii_forge(raw_video, ascii_vid):
-                logging.info(f"   ✅ ASCII Version Forged: {ascii_vid}")
-                
-                # Blend
-                blended_vid = project_out / "final_blend.mp4"
-                logging.info("   🎨 Blending ASCII Overlay (33%)...")
-                if blend_videos(final_video, ascii_vid, blended_vid, opacity=0.33):
-                     logging.info(f"   ✅ FINAL VISUALIZER MASTER: {blended_vid}")
-                     # Ensure audio is present (blend might strip it if checking video streams only?)
-                     # Blend takes video from 0 and 1. Audio from 0? 
-                     # ffmpeg complex filter usually drops audio unless mapped.
-                     # Let's Remix audio just to be safe.
-                     final_master = project_out / "master_release.mp4"
-                     if args.mu:
-                         cmd_remix = [
-                            "ffmpeg", "-y",
-                            "-i", str(blended_vid),
-                            "-i", str(args.mu),
-                            "-map", "0:v", "-map", "1:a",
-                            "-c:v", "copy", "-shortest",
-                            str(final_master)
-                         ]
-                         try:
-                             subprocess.run(cmd_remix, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                             logging.info(f"   🏆 MASTER RELEASE: {final_master}")
-                         except:
-                             logging.warning("   ⚠️ Audio remix failed.")
+                if blend_pct <= 0:
+                     logging.info("ℹ️ Blend is 0. Skipping Unicode Redraw.")
+                else:
+                    logging.info(f"🔥 Entering Post-Production: Unicode Redraw (Opacity {blend_pct}%)...")
+                    
+                    unicode_vid = project_out / "unicode_version.mp4"
+                    
+                    # Determine Width (Default to 128 for visualizer if not set)
+                    # User Request: Default CW = W / 2
+                    target_cw = 128
+                    if args.cw:
+                        target_cw = int(args.cw)
+                    elif args.w:
+                        target_cw = int(int(args.w) / 2)
+                    
+                    if run_unicode_forge(source_vid, unicode_vid, width=target_cw):
+                        logging.info(f"   ✅ Unicode Version Forged: {unicode_vid}")
+                        
+                        final_master = project_out / "master_release.mp4"
+                        
+                        if blend_pct >= 100:
+                             logging.info("   💯 100% Opacity: Unicode Video is the Master.")
+                             shutil.copy(unicode_vid, final_master)
+                        else:
+                             # Blend
+                             blended_vid = project_out / "final_blend.mp4"
+                             opacity = blend_pct / 100.0
+                             logging.info(f"   🎨 Blending Unicode Overlay ({blend_pct}%)...")
+                             
+                             # Assumption: blend_videos is available (imported or defined)
+                             # If not, we might fail here. But it was in the code we replaced.
+                             try:
+                                 if blend_videos(source_vid, unicode_vid, blended_vid, opacity=opacity):
+                                     logging.info(f"   ✅ FINAL VISUALIZER MASTER: {blended_vid}")
+                                     
+                                     # Remux Audio (Blend likely strips it)
+                                     if args.mu or source_vid == final_video:
+                                         # If source was final_vid, it had audio. 
+                                         # If args.mu present, use that.
+                                         audio_src = args.mu if args.mu else source_vid
+                                         
+                                         cmd_remix = [
+                                            "ffmpeg", "-y",
+                                            "-i", str(blended_vid),
+                                            "-i", str(audio_src),
+                                            "-map", "0:v", "-map", "1:a?", # Use audio from source 
+                                            "-c:v", "copy", "-shortest",
+                                            str(final_master)
+                                         ]
+                                         subprocess.run(cmd_remix, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                         logging.info(f"   🏆 MASTER RELEASE: {final_master}")
+                                 else:
+                                     logging.warning("   ⚠️ Blending failed.")
+                             except Exception as e_blend:
+                                 logging.error(f"   Blend/Remux failed: {e_blend}")
 
     # 7. Frame Cleanup (Keep First Frame Only)
     # -------------------------------------------------------------------------
@@ -2571,7 +3694,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         # B. Construct Models
         vp = VPForm(
             name="cartoon-storyboard", 
-            fps=args.fps, 
+            fps=args.fps if args.fps else 24.0, 
             description="Automated Cartoon Storyboard from FBF Analysis",
             mime_type="video/mp4" # Target
         )
@@ -2699,6 +3822,331 @@ def get_project_duration(project_dir):
         except: pass
     return 0.0
 
+# -----------------------------------------------------------------------------
+# UNICODE VIDEO REFACTOR (Direct Image -> Unicode)
+# -----------------------------------------------------------------------------
+
+CELL_W = 12
+CELL_H = 22 # Standard terminal aspect ratio
+
+def load_multi_font_unicode():
+    """
+    Load multiple fonts for complete Unicode coverage.
+    Returns a FontSet with symbol font and emoji font.
+    """
+    from PIL import ImageFont
+    font_size = 18
+    fonts = {"symbol": None, "emoji": None, "fallback": None}
+    
+    # Load symbol font (for braille, math, music, arrows, etc.)
+    symbol_paths = [
+        "/System/Library/Fonts/Apple Symbols.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/Library/Fonts/DejaVuSans.ttf",
+    ]
+    for p in symbol_paths:
+        if os.path.exists(p):
+            try:
+                fonts["symbol"] = ImageFont.truetype(p, font_size)
+                # print(f"   ✓ Symbol font: {os.path.basename(p)}")
+                break
+            except:
+                continue
+    
+    # Load emoji font (for color emoji)
+    emoji_paths = [
+        "/System/Library/Fonts/Apple Color Emoji.ttc",
+        "/Library/Fonts/NotoColorEmoji.ttf",
+    ]
+    candidate_sizes = [20, 32, 40, 48, 64, 96, 160, 18] # Try known sizes first, then fallback
+    for p in emoji_paths:
+        if os.path.exists(p):
+            for size in candidate_sizes:
+                try:
+                    f = ImageFont.truetype(p, size)
+                    fonts["emoji"] = f
+                    # print(f"   ✓ Emoji font: {os.path.basename(p)} @ {size}px")
+                    break
+                except:
+                    continue
+            if fonts["emoji"]:
+                break
+    
+    # Fallback font
+    if not fonts["fallback"]:
+        fonts["fallback"] = ImageFont.load_default()
+    
+    return fonts
+
+def is_emoji_unicode(char: str) -> bool:
+    """Check if a character needs the emoji font."""
+    if not char: return False
+    cp = ord(char[0])
+    # Simplified ranges for performance
+    if 0x1F300 <= cp <= 0x1FAFF: return True # Most emojis
+    if 0x2600 <= cp <= 0x27BF: return True # Misc symbols/dingbats
+    if 0x2B50 == cp: return True # Star
+    return False
+
+def image_to_unicode_grid(img: Image.Image, width: int = 64) -> list:
+    """
+    Converts an image to a grid of (char, r, g, b, br, bg, bb) tuples.
+    Uses luminance mapping for characters and full RGB for colors.
+    """
+    # 1. Resize
+    # Calculate height based on aspect ratio + terminal correction
+    # Terminal cells are ~0.55 aspect ratio (W/H)
+    aspect_ratio = img.height / img.width
+    terminal_correction = 0.55
+    height = int(width * aspect_ratio * terminal_correction)
+    
+    # High-quality resize
+    small = img.resize((width, height), Image.Resampling.LANCZOS)
+    pixels = small.load()
+    
+    # 2. Lumimance Mapping
+    # chars ordered by visual density
+    ramp = " .:-=+*#%@"
+    
+    grid = []
+    
+    for y in range(height):
+        row = []
+        for x in range(width):
+            r, g, b = pixels[x, y][:3]
+            
+            # Simple luminance
+            lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+            
+            # Index into ramp
+            idx = int(lum * (len(ramp) - 1))
+            char = ramp[idx]
+            
+            # Exact background color matching source pixel
+            bg_col = (r, g, b)
+            
+            # Contrasting character color for readability (Option A)
+            if lum < 0.5:
+                fg = (255, 255, 255) # White text on dark bg
+            else:
+                fg = (0, 0, 0)       # Black text on bright bg
+                
+            # Optimization: solid block for max density
+            if lum > 0.9:
+                char = '█'
+                # For solid block, let the block take the actual pixel color
+                # since the block covers the background fully anyway
+                fg = bg_col
+            
+            # 7-tuple: char, fg_r, fg_g, fg_b, bg_r, bg_g, bg_b
+            row.append((char, fg[0], fg[1], fg[2], bg_col[0], bg_col[1], bg_col[2]))
+            
+        grid.append(row)
+        
+    return grid
+
+def render_unicode_frame(grid: list, fonts) -> Image.Image:
+    """Renders the grid to a high-res PIL Image."""
+    if not grid: return None
+    
+    rows = len(grid)
+    cols = len(grid[0])
+    
+    img_w = cols * CELL_W
+    img_h = rows * CELL_H
+    
+    img = Image.new("RGB", (img_w, img_h), (0, 0, 0))
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(img)
+    
+    # Font Setup
+    if isinstance(fonts, dict):
+        base_font = fonts.get("symbol") or fonts.get("fallback")
+        emoji_font = fonts.get("emoji") or base_font
+    else:
+        base_font = emoji_font = fonts
+
+    for r_idx, row in enumerate(grid):
+        y = r_idx * CELL_H
+        for c_idx, cell in enumerate(row):
+            x = c_idx * CELL_W
+            
+            char, r, g, b, br, bg, bb = cell
+            
+            # Draw Background
+            if br > 0 or bg > 0 or bb > 0:
+                draw.rectangle([x, y, x + CELL_W - 1, y + CELL_H - 1], fill=(br, bg, bb))
+            elif char == '█':
+                 draw.rectangle([x, y, x + CELL_W - 1, y + CELL_H - 1], fill=(r, g, b))
+                 continue
+            
+            if char == ' ' or (r+g+b) < 10: continue
+            
+            font = emoji_font if is_emoji_unicode(char) else base_font
+            
+            try:
+                draw.text((x, y), char, fill=(r, g, b), font=font)
+            except:
+                pass
+                
+    return img
+
+def run_unicode_forge(input_vid: Path, output_vid: Path, width: int = 64, fps_override: float = None) -> bool:
+    """
+    Core logic for Unicode Video Transformation.
+    Extracts frames, renders them as Unicode grid, and stitches them back.
+    """
+    if not input_vid.exists():
+        logging.error(f"❌ Input video not found: {input_vid}")
+        return False
+        
+    # Use parent dict for temp output to keep it somewhat local/clean
+    # Or use a dedicated temp folder side-by-side
+    temp_root = input_vid.parent / f"temp_unicode_{input_vid.stem}_{int(time.time())}"
+    frames_dir = temp_root / "raw_frames"
+    rendered_dir = temp_root / "rendered_frames"
+    ensure_dir(frames_dir)
+    ensure_dir(rendered_dir)
+    
+    logging.info(f"🔨 Unicode Forge: {input_vid.name} -> {output_vid.name}")
+    logging.info(f"   Temp Workdir: {temp_root}")
+    
+    # 1. Extract Frames
+    logging.info("   🎞️  Extracting frames...")
+    # Use higher quality extraction?
+    cmd_extract = [
+        "ffmpeg", "-i", str(input_vid),
+        str(frames_dir / "frame_%05d.png")
+    ]
+    try:
+        subprocess.run(cmd_extract, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        logging.error(f"Frame extraction failed: {e}")
+        return False
+    
+    # 2. Analyze Audio/FPS
+    fps = 24.0
+    if fps_override:
+        fps = fps_override
+    else:
+        try:
+            probe = subprocess.check_output([
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=r_frame_rate", "-of", "default=noprint_wrappers=1:nokey=1",
+                str(input_vid)
+            ]).decode().strip()
+            num, den = map(int, probe.split('/'))
+            fps = num / den
+            logging.info(f"   Detected Source FPS: {fps:.2f}")
+        except:
+            logging.warning("   FPS detection failed. Defaulting to 24.")
+    
+    # 3. Initialize Fonts
+    logging.info("   🅰️  Loading Fonts...")
+    fonts = load_multi_font_unicode()
+    
+    # 4. Render Loop
+    frame_files = sorted(list(frames_dir.glob("frame_*.png")))
+    total = len(frame_files)
+    
+    logging.info(f"   🎨 Rendering {total} frames as Unicode...")
+    
+    from PIL import Image
+    
+    for i, fpath in enumerate(frame_files):
+        try:
+            with Image.open(fpath) as img:
+                img = img.convert("RGB")
+                
+                # Convert
+                grid = image_to_unicode_grid(img, width=width)
+                
+                # Render
+                out_img = render_unicode_frame(grid, fonts)
+                
+                # Save
+                out_path = rendered_dir / fpath.name
+                out_img.save(out_path)
+                
+            # VERBOSE LOGGING
+            if i % 10 == 0 or i == total - 1:
+                logging.info(f"      Frame {i+1}/{total} ({(i+1)/total*100:.1f}%) processed.")
+                
+        except Exception as e:
+            logging.error(f"Failed frame {i}: {e}")
+            
+    print("")
+    
+    # 5. Stitch Video
+    logging.info("   🧵 Stitching Unicode Video...")
+    
+    # Check if target exists
+    if output_vid.exists(): output_vid.unlink()
+    
+    cmd_stitch = [
+        "ffmpeg", "-y",
+        "-framerate", str(fps),
+        "-i", str(rendered_dir / "frame_%05d.png"),
+        # Note: We do NOT map audio here by default, as usage might differ.
+        # But for 'forge', we usually want a clean video stream to then mix.
+        # However, to save steps, let's mix if input has audio? 
+        # Better to keep 'forge' as visual transformation only, and let caller handle audio muxing.
+        # BUT, process_cartoon_video_unicode wants audio.
+        # Let's map audio if present in Input.
+        "-i", str(input_vid),
+        "-map", "0:v", "-map", "1:a?",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-shortest",
+        str(output_vid)
+    ]
+    
+    try:
+        subprocess.run(cmd_stitch, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        logging.info(f"✅ Forge Complete: {output_vid}")
+        
+        # Cleanup
+        try:
+             import shutil
+             shutil.rmtree(temp_root)
+             logging.info("   🧹 Cleanup complete.")
+        except: pass
+        
+        return True
+    except Exception as e:
+        logging.error(f"Stitching failed: {e}")
+        return False
+
+def process_cartoon_video_unicode(args):
+    """
+    Main entry point for 'cartoon-video' refactor.
+    Converts input video -> Unicode Animation -> Output Video.
+    """
+    if not args.mu or not os.path.exists(args.mu):
+        logging.error("❌ Input video (--mu) required for cartoon-video mode.")
+        return
+
+    input_vid = Path(args.mu)
+    project_name = f"unicode_{input_vid.stem}_{int(time.time())}"
+    output_dir = Path("z_test-outputs") / "cartoons" / project_name
+    ensure_dir(output_dir)
+    
+    final_vid = output_dir / f"{input_vid.stem}_unicode.mp4"
+    
+    target_cw = 64 # Default
+    if args.cw:
+        target_cw = int(args.cw)
+    elif args.w:
+        target_cw = int(int(args.w) / 2)
+        
+    success = run_unicode_forge(input_vid, final_vid, width=target_cw)
+    
+    if success:
+        logging.info(f"🚀 Cartoon Video Complete: {final_vid}")
+    else:
+        logging.error("❌ Cartoon Video Failed.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Cartoon Producer v1.1: The Creative Agency")
     
@@ -2708,7 +4156,8 @@ def main():
     parser.add_argument("--vpform", type=str, default=None, help="VP Form (default: creative-agency)") # Default via logic
     parser.add_argument("--tf", type=Path, default=DEFAULT_TF, help="Transcript Folder (Source)")
     parser.add_argument("--vf", type=Path, default=DEFAULT_VF, help="Video Folder (Corpus)")
-    parser.add_argument("--fps", type=int, default=4, help="Expansion Factor (FBF) or Output FPS (Legacy). Default: 1")
+    parser.add_argument("--fps", type=float, default=0.0, help="Expansion Factor (FBF) or Output FPS (Legacy). Default: Auto-calculated if 0")
+    parser.add_argument("--fsync", type=float, default=1.0, help="FPS Sync Multiplier (0.1 - 6.0). Scales auto-calculated FPS.")
     parser.add_argument("--delay", type=float, default=5.0, help="Delay between requests in seconds (Default: 5.0)")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of frames per project (for testing)")
     parser.add_argument("--project", type=str, default=None, help="Specific project name to process (Optional)")
@@ -2733,14 +4182,18 @@ def main():
     parser.add_argument("--pg", action="store_true", help="Enable PG Mode (Relaxed Celebrity/Strict Child Safety)")
     
     # v1.2 FC Integration
-    parser.add_argument("--vspeed", type=float, default=8.0, help="Visualizer Speed (FPS) for music-agency. Default 8. Supports 2, 4, 16.")
+    parser.add_argument("--vspeed", type=float, default=None, help="Visualizer Speed (FPS) for music-agency. Default 8. Supports 2, 4, 16.")
     parser.add_argument("--fc", action="store_true", help="Enable Frame & Canvas (Code Painter) Mode")
     parser.add_argument("--retcon", action="store_true", help="Retcon Mode: Rewrite the script/beats of the input XML")
     parser.add_argument("--wan", action="store_true", help="Use Wan 2.1 Keyframe Animation workflow (Local Only)")
     parser.add_argument("--kid", type=int, default=512, help="Keyframe Init Dimension (default: 512). Higher = Better composition before downscale.")
     parser.add_argument("--local", action="store_true", help="Local Mode (Use Gemma + Flux)") # NEW
-    parser.add_argument("--w", type=int, help="Override width (Local Only, e.g. 1920)")
-    parser.add_argument("--h", type=int, help="Override height (Local Only, e.g. 1080)")
+    parser.add_argument("--cloud", action="store_true", help="Cloud Mode (Use HF Endpoints / Gemini)") # Explicit Cloud Flag
+    parser.add_argument("--w", type=int, help="Override width (e.g. 1920)")
+    parser.add_argument("--h", type=int, help="Override height (e.g. 1080)")
+    parser.add_argument("--strength", type=int, default=50, help="Img2Img noise strength 1-99 (Default: 50). Lower = MORE frame coherence. 10-30: very stable. 30-50: balanced. 50-80: creative/different.")
+    parser.add_argument("--blend", type=int, default=66, help="Unicode Overlay Opacity 0-100 (Default: 66). 0 = Skip Unicode Redraw.")
+    parser.add_argument("--cw", type=int, help="Unicode Character Width (Grid Width). Default: w/2 or 64.")
     
     args, unknown = parser.parse_known_args()
 
@@ -2764,6 +4217,12 @@ def main():
     args.vpform = definitions.parse_global_vpform(args, current_default="creative-agency")
     
     logging.info(f"   CLI: Resolved VPForm: {args.vpform}")
+
+    # --- UNICODE VIDEO INTERCEPT ---
+    if args.vpform == "cartoon-video":
+        process_cartoon_video_unicode(args)
+        return
+    # -------------------------------
 
     # CLI Polish: Inferred Prompt from Positional Args
     # If explicit --prompt is missing, check if we have any 'orphan' string in cli_args 
@@ -2863,6 +4322,11 @@ def main():
             definitions.set_active_model(Modality.VIDEO, "ltx-video")
         except Exception as e:
             logging.error(f"❌ Failed to switch to Local Mode: {e}")
+    
+    # Cloud Mode: Force Gemini API for text
+    elif args.cloud:
+        logging.info("☁️  Cloud Mode Requested. Using Gemini API for text generation...")
+        os.environ["TEXT_ENGINE"] = "gemini_cloud"
             
     # Initialize Engines
     # ----------------
@@ -2886,7 +4350,7 @@ def main():
          # Force Image Model? Or respect Registry?
          # Legacy behavior was specific. Let's stick to Registry unless overridden.
          pass
-    elif args.vpform in ["creative-agency", "music-visualizer", "music-agency", "music-video", "full-movie"]:
+    elif args.vpform in ["creative-agency", "music-visualizer", "music-agency", "music-video", "full-movie", "ansi-video", "ansi-redraw"]:
         # Only switch to Gemini 2.0 (Director Mode) if NOT local.
         # Local mode uses Flux directly.
         if not args.local:
@@ -2898,7 +4362,7 @@ def main():
     logging.info(f"   Model: {model}")
     
     # Scan (Only needed for legacy FBF/Transcript mode)
-    if args.vpform in ["creative-agency", "music-visualizer", "music-agency", "music-video", "full-movie", "cartoon-video"] or args.xb:
+    if args.vpform in ["creative-agency", "music-visualizer", "music-agency", "music-video", "full-movie", "cartoon-video", "ansi-video", "ansi-redraw"] or args.xb:
         # Virtual Project
         try:
              args.model = model

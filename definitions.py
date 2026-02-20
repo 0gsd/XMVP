@@ -69,12 +69,14 @@ MODAL_REGISTRY: Dict[Modality, Dict[str, ModelConfig]] = {
         "gemini-2.5-flash-image": ModelConfig("gemini-2.5-flash-image", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
         "imagen-3": ModelConfig("imagen-3.0-generate-001", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
         "flux-schnell": ModelConfig("flux-schnell", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root"),
-        "flux-klein": ModelConfig("flux-klein", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root/klein-9b")
+        "flux-klein": ModelConfig("flux-klein", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root/klein-9b"),
+        "flux-2-klein-hf": ModelConfig("flux-2-klein-hf", BackendType.CLOUD, Modality.IMAGE, endpoint="env:FLUX_KLEIN_ENDPOINT", api_key_env="HF_TOKEN")
     },
     Modality.VIDEO: {
         "veo-3.1-fast": ModelConfig("veo-3.1-fast-generate-preview", BackendType.CLOUD, Modality.VIDEO, api_key_env="GEMINI_API_KEY"),
         "veo-3.1-4k": ModelConfig("veo-3.1-generate-preview", BackendType.CLOUD, Modality.VIDEO, api_key_env="GEMINI_API_KEY"),
-        "ltx-video": ModelConfig("ltx-video", BackendType.LOCAL, Modality.VIDEO, path="/Volumes/XMVPX/mw/LT2X-root/ltxv-13b-0.9.8-dev.safetensors")
+        "ltx-video": ModelConfig("ltx-video", BackendType.LOCAL, Modality.VIDEO, path="/Volumes/XMVPX/mw/LT2X-root/ltxv-13b-0.9.8-dev.safetensors"),
+        "skyreels": ModelConfig("skyreels", BackendType.LOCAL, Modality.VIDEO, path="/Volumes/XMVPX/mw/skyreels-root")
     },
     Modality.SPOKEN_TTS: {
         "google-journey": ModelConfig("en-US-Journey-F", BackendType.CLOUD, Modality.SPOKEN_TTS, api_key_env="GOOGLE_CLOUD_ACCESS_TOKEN"),
@@ -276,6 +278,30 @@ FORM_REGISTRY = {
         aliases=["ap", "audioplay", "play"],
         default_args={"local": True},
         description="Audio-Only Play Generator (MP3 Output)"
+    ),
+    "audio-movie": VPFormConfig(
+        key="audio-movie",
+        aliases=["am", "a2v", "audiomovie"],
+        default_args={"local": True},
+        description="Audio-to-Video Workflow (SkyReels A2V). Ingests Master Audio + XMVP XML."
+    ),
+    "element-47": VPFormConfig(
+        key="element-47",
+        aliases=["e47", "element47"],
+        default_args={"local": True},
+        description="Element 47 Audio Podcast (Audio + SFX + Static Visual)"
+    ),
+    "ansi-video": VPFormConfig(
+        key="ansi-video",
+        aliases=["ansi", "ascii", "pixel-art", "blocks"],
+        default_args={"fps": 4, "w": 60, "h": 40, "local": True},
+        description="ANSI Block Character Animation. LLM 'draws' each frame using █▓▒░ characters."
+    ),
+    "ansi-redraw": VPFormConfig(
+        key="ansi-redraw",
+        aliases=["ansi-trace", "ascii-redraw", "block-trace"],
+        default_args={"fps": 4, "w": 120, "h": 80, "local": True},
+        description="ANSI Frame Redraw. LLM redraws each video frame as block character art."
     ),
 }
 

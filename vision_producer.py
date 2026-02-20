@@ -352,6 +352,7 @@ def run_producer(vpform_name: str, prompt: str, slength: float = 60.0, flength: 
         scenario=f"A {duration_sec:.1f}-second {form.description}",
         situation=situation_text,
         vision=get_default_vision(form.name, seg_count=seg_count),
+        form_name=vpform_name, # Pass vpform through pipeline
         mll_template=template_id
     )
 

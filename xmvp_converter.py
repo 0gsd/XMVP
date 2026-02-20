@@ -33,7 +33,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 try:
     from text_engine import get_engine, TextEngine
     import mvp_shared
-    from mvp_shared import save_xmvp, CSSV, VPForm, Story, Portion, Constraints, Manifest, Seg
+    from mvp_shared import save_xmvp, CSSV, VPForm, Story, Portion, Constraints, Manifest, Seg, DialogueLine, DialogueScript
     import definitions
 except ImportError as e:
     logging.error(f"MVP Import Error: {e}")
@@ -358,6 +358,98 @@ def parse_fountain(content):
     logging.info(f"   ⛲️ Fountain Parsing: Extracted {len(segments)} segments.")
     return segments
 
+def parse_element47_fountain(content):
+    """
+    Custom parser for Element-47 Podcast Scripts (Shadow Detected format).
+    Extracts:
+    1. Dialogue: PERFORMER (as Character) -> Line
+    2. SFX: [[SFX: ...]]
+    3. Music: [[MUSIC: ...]]
+    
+    Returns a list of Segment Dicts:
+    { "type": "dialogue"|"sfx"|"music", "speaker": "...", "text": "...", "metadata": ... }
+    """
+    lines = content.split('\n')
+    parsed_items = []
+    
+    current_performer = None
+    current_character = None
+    
+    # Regex for Tags
+    sfx_re = re.compile(r'\[\[SFX:\s*(.*?)\]\]', re.IGNORECASE)
+    music_re = re.compile(r'\[\[MUSIC:\s*(.*?)\]\]', re.IGNORECASE)
+    
+    # Iterate
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line: 
+            i += 1
+            continue
+            
+        # 1. Check SFX/Music
+        sfx_match = sfx_re.search(line)
+        if sfx_match:
+            parsed_items.append({
+                "type": "sfx",
+                "text": sfx_match.group(1).strip()
+            })
+            i += 1
+            continue
+            
+        music_match = music_re.search(line)
+        if music_match:
+            parsed_items.append({
+                "type": "music",
+                "text": music_match.group(1).strip()
+            })
+            i += 1
+            continue
+            
+        # 2. Check Performer Header (UPPERCASE)
+        # Needs to be a known performer? Burn, Cruise, Drip, Anchor.
+        # Or just generic UPPER handling if it's not a transition.
+        if line.isupper() and len(line) < 30 and not line.startswith(".") and not line.startswith(">"):
+            potential_performer = line
+            
+            # Look ahead for (as Character)
+            if i + 1 < len(lines):
+                next_line = lines[i+1].strip()
+                if next_line.startswith("(as ") and next_line.endswith(")"):
+                    # Precise Match
+                    current_performer = potential_performer
+                    current_character = next_line[4:-1].strip() # Remove (as )
+                    i += 2
+                    
+                    # Look ahead for dialogue
+                    # Skip parentheticals like (smooth) if present
+                    while i < len(lines) and lines[i].strip().startswith("("):
+                        # Capture as action/direction?
+                        # For now, ignore direction
+                        i += 1
+                        
+                    # Capture Dialogue Block
+                    dialogue_text = ""
+                    while i < len(lines):
+                        d_line = lines[i].strip()
+                        if not d_line or d_line.isupper() or "[[" in d_line:
+                            break
+                        dialogue_text += " " + d_line
+                        i += 1
+                        
+                    if dialogue_text:
+                        parsed_items.append({
+                            "type": "dialogue",
+                            "speaker": f"{current_performer}::{current_character}",
+                            "text": dialogue_text.strip()
+                        })
+                    continue
+        
+        # 3. Fallback or Skip
+        i += 1
+        
+    return parsed_items
+
 # --- CORE CONVERTER ---
 
 def setup_gemma_director():
@@ -501,6 +593,96 @@ def process_file(input_path, args):
         path_obj = Path(input_path)
         filename = path_obj.name
         logging.info(f"📄 Ingesting: {filename}")
+
+        # --- ELEMENT 47 MODE ---
+        if args.vpform == "element-47":
+            logging.info("   🎙️  Parsing for Element-47 (Podcast)...")
+            try:
+                raw_text = path_obj.read_text(encoding='utf-8', errors='ignore')
+                e47_items = parse_element47_fountain(raw_text)
+                
+                # Convert to Manifest format immediately and return?
+                # The normal flow goes down to "engine init" etc.
+                # We can hijack here or adapt to the shared flow.
+                # Let's adapt. We need to populate `mapping` and `smart_chunk_ingest` equivalent.
+                # Actually, E47 structure is strict. We should bypass the "segmentation" logic later.
+                
+                # Construct XMVP Data directly
+                vp = VPForm(name="element-47", fps=24, description="Element 47 Podcast", mime_type="video/mp4")
+                cssv = CSSV(
+                    constraints=Constraints(width=1024, height=1024, fps=24),
+                    scenario="Element 47 Episode",
+                    situation="Podcast",
+                    vision="Static/Audio-First"
+                )
+                
+                # Story Characters
+                chars = list(set([item['speaker'] for item in e47_items if item['type'] == 'dialogue']))
+                story = Story(title=filename, synopsis="E47 Ep", characters=chars, theme="Podcast")
+                
+                # Dialogue Script
+                dialogue_lines = []
+                # Mix SFX into dialogue script with special flags?
+                # Or use the `foley` field in DialogueLine for SFX that happens *during*?
+                # The parser returns a linear list. SFX are their own items.
+                # We can make SFX items into DialogueLines with character="SFX".
+                
+                for item in e47_items:
+                    if item['type'] == 'dialogue':
+                        # "CRUISE::Breezy Fontaine"
+                        dialogue_lines.append(DialogueLine(
+                            character=item['speaker'],
+                            text=item['text'],
+                            action="",
+                            foley="", # Attached foley?
+                            duration=0.0
+                        ))
+                    elif item['type'] in ['sfx', 'music']:
+                        # Encode as SFX line
+                        dialogue_lines.append(DialogueLine(
+                            character="SFX" if item['type'] == 'sfx' else "MUSIC",
+                            text=item['text'], # Description
+                            duration=5.0 # default duration for sfx
+                        ))
+
+                manifest = Manifest(
+                    segs=[], # No visual segs needed really, or one big one?
+                    dialogue=DialogueScript(lines=dialogue_lines),
+                    files={}
+                )
+                
+                # Add one dummy seg for the video track
+                manifest.segs.append(Seg(id=1, start_frame=0, end_frame=100, prompt="Static Visual"))
+                
+                # EXPORT
+                # We need to use `args.output` or derive it.
+                # Since this function is designed to run and populate `content` etc.,
+                # hijacking the return might break the caller conventions if it expects flow to continue.
+                # But looking at main block (not shown), it calls process_file.
+                
+                # Let's just SAVE here and exit or return a special signal?
+                # Better: Allow flow to continue but skip the expensive "Smart Chunking" parts.
+                # But `xmvp_converter` is usually "Generic Text -> XMVP".
+                # We have done the conversion. 
+                
+                # Let's save and return.
+                out_name = filename.replace(path_obj.suffix, "_manifest.xml")
+                out_path = Path(input_path).parent / out_name
+                
+                xmvp_data = {
+                    "VPForm": vp, "CSSV": cssv, "Story": story, "Manifest": manifest
+                }
+                save_xmvp(xmvp_data, out_path)
+                logging.info(f"   ✅ Element-47 Manifest Saved: {out_path}")
+                return # Done
+                
+            except Exception as e:
+                logging.error(f"E47 Parse Failed: {e}")
+                import traceback
+                traceback.print_exc()
+                return
+
+        # -----------------------
         
         # --- XML RE-INGESTION SUPPORT ---
         if path_obj.suffix.lower() == '.xml':

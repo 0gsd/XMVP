@@ -7,8 +7,19 @@ import logging
 from diffusers import FluxPipeline, FluxImg2ImgPipeline, DiffusionPipeline
 from transformers import CLIPTextModel, T5EncoderModel, CLIPTokenizer, T5TokenizerFast
 from PIL import Image
+try:
+    from huggingface_hub import InferenceClient
+except ImportError:
+    InferenceClient = None # Handle optional dependency
+
+import logging
 
 logging.basicConfig(level=logging.INFO)
+
+def _make_multiple_of_32(val: int) -> int:
+    """Rounds an integer to the nearest multiple of 32 to prevent Flux VAE tensor size mismatch."""
+    return int(round(val / 32) * 32)
+
 
 class FluxBridge:
     def __init__(self, model_path, device="mps"):
@@ -52,7 +63,7 @@ class FluxBridge:
                     model_path,
                     torch_dtype=torch.bfloat16,
                     trust_remote_code=True # Needed for custom pipelines like Klein
-                ).to(self.device)
+                )
             else:
                 # Single File Loader (Needs explicit encoders usually if not in file)
                 # Attempt 1: Try default loading (might fail if weights missing)
@@ -60,7 +71,7 @@ class FluxBridge:
                     self.pipeline = FluxPipeline.from_single_file(
                         model_path,
                         torch_dtype=torch.bfloat16
-                    ).to(self.device)
+                    )
                 except Exception as e:
                      if "CLIPTextModel" in str(e) or "text_encoder" in str(e):
                          logging.warning("   ⚠️ Flux Single File missing Encoders. Loading from Local/Hub...")
@@ -87,14 +98,15 @@ class FluxBridge:
                              text_encoder_2=text_encoder_2,
                              tokenizer_2=tokenizer_2,
                              torch_dtype=torch.bfloat16
-                         ).to(self.device)
+                         )
                      else:
                          raise e
 
             # Optimization for Mac
-            if self.device == "mps":
+            if self.device == "mps" and self.pipeline:
                 # Recommended for Flux on Mac
-                pass 
+                logging.info("   ⚡ Enabling Model CPU Offload for MacOS MPS limits...")
+                self.pipeline.enable_model_cpu_offload(device=self.device)
                 
             logging.info("   ✅ Flux Pipeline Ready.")
             
@@ -120,7 +132,7 @@ class FluxBridge:
             logging.error(f"   ❌ LoRA Load Failed: {e}")
             return False
 
-    def generate(self, prompt, width=1024, height=1024, steps=4, seed=None, guidance_scale=3.5, image=None, strength=0.65):
+    def generate(self, prompt, width=1024, height=1024, steps=4, seed=None, guidance_scale=3.5, image=None, strength=0.5):
         """
         Unified generation method.
         If 'image' is provided, performs Img2Img.
@@ -165,14 +177,15 @@ class FluxBridge:
             safe_prompt = prompt[:1024]
             
         try:
-            image_obj = self.pipeline(
-                prompt=safe_prompt,
-                height=height,
-                width=width,
-                num_inference_steps=steps,
-                generator=generator,
-                guidance_scale=guidance_scale # Configurable
-            )
+            with torch.inference_mode():
+                image_obj = self.pipeline(
+                    prompt=safe_prompt,
+                    height=height,
+                    width=width,
+                    num_inference_steps=steps,
+                    generator=generator,
+                    guidance_scale=guidance_scale # Configurable
+                )
             image = image_obj.images[0]
             del image_obj
             
@@ -194,71 +207,96 @@ class FluxBridge:
         logging.info("   🔄 Loading Flux Img2Img Pipeline...")
         
         try:
-            # DIRECT LOADING (Avoid AutoPipeline due to Transformers conflicts)
             from diffusers import FluxImg2ImgPipeline
             import inspect
 
-            # 1. Zero-Copy Reuse: Check if the current pipeline already supports img2img (has 'image' argument)
-            # This handles custom pipelines like Flux2Klein if they are unified.
+            # 1. Component Casting (Primary Path)
+            # Cast T2I pipeline components into a proper FluxImg2ImgPipeline.
+            # This gives us native 'strength' and 'denoising_start' support
+            # while reusing the already-loaded model weights (zero VRAM cost).
             if self.pipeline:
-                call_args = inspect.signature(self.pipeline.__call__).parameters
-                if "image" in call_args:
-                     # RELAXED CHECK: If it has 'image', we assume it's a valid Img2Img pipeline (or Unified Pipeline).
-                     # Flux2Klein and others might hide strength/denoising in kwargs or use different names,
-                     # but stopping here causes a fallback to Txt2Img which breaks everything.
-                     logging.info("   ✨ Pipeline natively supports 'image' input. Reusing as Img2Img (Zero-Copy).")
-                     self.img2img_pipeline = self.pipeline
-                     return
-
-            if self.pipeline:
-                # 2. Component Casting (Try to promote T2I to I2I)
-                # FluxImg2ImgPipeline shares components with FluxPipeline
                 try:
-                    # SPECIAL HANDLING FOR FLUX 2 KLEIN (Custom Class)
                     pipe_cls = self.pipeline.__class__.__name__
-                    if "Klein" in pipe_cls:
-                        logging.info(f"   ✨ Detected Custom Pipeline ({pipe_cls}). Checking for Img2Img support or casting...")
-                        # If Klein supports image in call, step 1 should have caught it.
-                        # If not, we might need to reload as Img2Img or assume it doesn't support it directly.
-                        # But wait! Flux2Klein usually wraps standard logic.
-                        # If casting fails, we might just assume success if components match.
-                        pass # Try standard cast below
-
-                    self.img2img_pipeline = FluxImg2ImgPipeline(**self.pipeline.components).to(self.device)
-                    logging.info("   ✅ Flux Img2Img Ready (Shared Components).")
-                except TypeError as e:
-                    # Missing components (e.g. text_encoder_2 for quantized/distilled models)
-                    logging.warning(f"   ⚠️ Cannot cast to FluxImg2ImgPipeline (Missing Components: {e}).")
+                    logging.info(f"   🔧 Casting {pipe_cls} → FluxImg2ImgPipeline (Shared Components)...")
+                    
+                    # Get components and log them for diagnostics
+                    comps = self.pipeline.components
+                    logging.info(f"   📦 Components available: {list(comps.keys())}")
+                    
+                    # Inject missing T5 components (distilled models like Klein/Schnell lack these)
+                    if "text_encoder_2" not in comps or "tokenizer_2" not in comps:
+                        logging.info("   📚 Injecting T5 encoder/tokenizer for Img2Img compatibility...")
+                        t5_local_path = "/Volumes/XMVPX/mw/t5weights-root"
+                        if os.path.exists(t5_local_path):
+                            logging.info(f"      📚 Loading T5 from Local: {t5_local_path}")
+                            comps["text_encoder_2"] = T5EncoderModel.from_pretrained(t5_local_path, torch_dtype=torch.bfloat16)
+                            comps["tokenizer_2"] = T5TokenizerFast.from_pretrained(t5_local_path)
+                        else:
+                            logging.info("      ☁️ Loading T5 from Hub (city96/t5-v1_1-xxl-encoder-bf16)...")
+                            comps["text_encoder_2"] = T5EncoderModel.from_pretrained("city96/t5-v1_1-xxl-encoder-bf16", torch_dtype=torch.bfloat16)
+                            comps["tokenizer_2"] = T5TokenizerFast.from_pretrained("city96/t5-v1_1-xxl-encoder-bf16")
+                    
+                    # Fill optional components the constructor expects
+                    for opt_key in ["image_encoder", "feature_extractor"]:
+                        if opt_key not in comps:
+                            comps[opt_key] = None
+                    
+                    # Cast — Apply components (don't force to device explicitly here)
+                    self.img2img_pipeline = FluxImg2ImgPipeline(**comps)
+                    
+                    # Verify the cast worked and has strength
+                    cast_args = inspect.signature(self.img2img_pipeline.__call__).parameters
+                    has_strength = "strength" in cast_args
+                    has_denoising = "denoising_start" in cast_args
+                    logging.info(f"   ✅ Flux Img2Img Ready (Shared Components). strength={has_strength}, denoising_start={has_denoising}")
+                except Exception as e:
+                    logging.warning(f"   ⚠️ Cannot cast to FluxImg2ImgPipeline: {type(e).__name__}: {e}")
                     self.img2img_pipeline = None
             
             if not self.img2img_pipeline:
-                 # 3. Independent Load (Force Standard Flux Img2Img from disk)
-                 logging.info("   ⚠️ Component Casting failed. Attempting independent load of FluxImg2ImgPipeline...")
-                 try:
-                     # Force standard class. Use ignore_mismatched_sizes if needed?
-                     self.img2img_pipeline = FluxImg2ImgPipeline.from_pretrained(
-                         self.model_path,
-                         torch_dtype=torch.bfloat16,
-                         trust_remote_code=True
-                     ).to(self.device)
-                     logging.info("   ✅ Flux Img2Img Loaded (Independent).")
-                 except Exception as e_ind:
-                     logging.warning(f"   ⚠️ Independent Load Failed: {e_ind}")
+                # 2. Independent Load (Force Standard Flux Img2Img from disk)
+                logging.info("   ⚠️ Component Casting failed. Attempting independent load of FluxImg2ImgPipeline...")
+                try:
+                    self.img2img_pipeline = FluxImg2ImgPipeline.from_pretrained(
+                        self.model_path,
+                        torch_dtype=torch.bfloat16,
+                        trust_remote_code=True
+                    )
+                    logging.info("   ✅ Flux Img2Img Loaded (Independent).")
+                except Exception as e_ind:
+                    logging.warning(f"   ⚠️ Independent Load Failed: {e_ind}")
+
+            # 3. Last Resort: Reuse pipeline directly if it has both 'image' AND 'strength'
+            if not self.img2img_pipeline and self.pipeline:
+                call_args = inspect.signature(self.pipeline.__call__).parameters
+                if "image" in call_args and "strength" in call_args:
+                    logging.info("   ✨ Pipeline natively supports image+strength. Reusing directly.")
+                    self.img2img_pipeline = self.pipeline
+                elif "image" in call_args:
+                    logging.warning("   ⚠️ Pipeline has 'image' but no 'strength'. Using as fallback (limited control).")
+                    self.img2img_pipeline = self.pipeline
 
         except Exception as e:
             logging.error(f"   ❌ Failed to load Flux Img2Img: {e}")
+            
+        if self.device == "mps" and self.img2img_pipeline:
+             logging.info("   ⚡ Enabling Model CPU Offload for FluxImg2ImgPipeline...")
+             self.img2img_pipeline.enable_model_cpu_offload(device=self.device)
         
         if not self.img2img_pipeline:
-            logging.warning("   ⚠️ Flux Img2Img incompatible or failed. Fallback default: None (T2I Fallback will activate).")
+            logging.warning("   ⚠️ Flux Img2Img incompatible or failed. Fallback: T2I will activate.")
 
-    def generate_img2img(self, prompt, image, strength=0.6, width=1024, height=1024, steps=4, seed=None, guidance_scale=3.5):
+    def generate_img2img(self, prompt, image, strength=0.5, width=1024, height=1024, steps=4, seed=None, guidance_scale=3.5, denoising_start=None):
         if not self.img2img_pipeline:
             self.load_img2img()
             
         if not self.img2img_pipeline:
             return None
-            
-        logging.info(f"   🎨 Flux Img2Img: {prompt[:40]}... (Str: {strength}, {width}x{height}, G:{guidance_scale})")
+        
+        # Clamp strength to valid range
+        strength = max(0.01, min(strength, 1.0))
+        
+        logging.info(f"   🎨 Flux Img2Img: {prompt[:40]}... (Str: {strength:.2f}, {width}x{height}, G:{guidance_scale})")
         
         # Memory Cleanup
         import gc
@@ -266,169 +304,78 @@ class FluxBridge:
         if self.device == "mps":
             torch.mps.empty_cache()
         
-        # Inspect signature to adapt arguments
         import inspect
         try:
-             # Check if we are dealing with a pipeline call or a method
-             call_method = self.img2img_pipeline.__call__
-             sig = inspect.signature(call_method)
-             available_args = sig.parameters.keys()
-             
-             kwargs = {
-                 "prompt": prompt,
-                 "image": image,
-                 "num_inference_steps": steps,
-                 "guidance_scale": guidance_scale,
-                 "height": height,
-                 "width": width
-             }
-             
-             if seed is not None:
-                 kwargs["generator"] = torch.Generator(device="cpu").manual_seed(seed)
-             
-             # Handle 'strength' vs 'denoising_start'
-             if "strength" in available_args:
-                 kwargs["strength"] = strength
-             elif "denoising_start" in available_args:
-                 logging.info(f"   ⚠️ Pipeline missing 'strength'. Mapping {strength} -> 'denoising_start' ({1.0 - strength:.2f})")
-                 kwargs["denoising_start"] = 1.0 - strength
-             else:
-                 logging.warning(f"   ⚠️ Pipeline signature missing 'strength' or 'denoising_start'. Available args: {list(available_args)}")
-                 # Hail Mary: Just try passing strength anyway.
-                 # Many custom pipelines or wrapped renderers accept kwargs that signature inspection misses.
-                 logging.info(f"   🤞 Force-passing 'strength={strength}' to pipeline (Hope it takes it)...")
-                 kwargs["strength"] = strength
-                 
-                 # Strategy Update: Check for 'sigmas'?
-                 if "sigmas" in available_args:
-                     logging.info(f"   ✨ Pipeline uses 'sigmas'. Calculating noise schedule for strength {strength}...")
-                     try:
-                         # 1. Get full sigmas from scheduler
-                         # FluxFlowMatchEulerDiscreteScheduler usually has a set_timesteps method
-                         # or we can generate them.
-                         # Simpler: Use the pipe's internal logic if possible, or manual generation.
-                         
-                         # Manual Sigma Generation for Flux (Simplified)
-                         # This maps 'strength' to a sigma start index.
-                         from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
-                         if isinstance(self.img2img_pipeline.scheduler, FlowMatchEulerDiscreteScheduler):
-                             # Generate full steps
-                             try:
-                                 # Newer Flux schedulers require 'mu' (e.g. for dynamic shifting)
-                                 # Standard Flux1.0 mu is often derived or default.
-                                 # Let's try passing it if needed.
-                                 # Inspect signature? Or just try/except with args.
-                                 
-                                 # Attempt 1: Standard
-                                 # self.img2img_pipeline.scheduler.set_timesteps(steps, device=self.device)
-                                 
-                                 # Attempt 2: With 'mu' (if error previously)
-                                 # What value? Default is often 1.0 or based on resolution?
-                                 # Let's try passing mu (assuming 256*256 resolution base or similar?)
-                                 # Actually, let's catch the error and retry with mu.
-                                 
-                                 # Attempt 1: Standard
-                                 # We force CPU for the scheduler to avoid "MPS->Numpy" crashes later.
-                                 self.img2img_pipeline.scheduler.set_timesteps(steps, device="cpu")
-                             except Exception as te:
-                                 # Standard Flux1.0 mu error is usually TypeError, but let's be safe.
-                                 logging.warning(f"      🔧 Scheduler set_timesteps failed: {te} ({type(te).__name__}). Retrying with mu=1.0 and device='cpu'...")
-                                 # FIX: Pass 'mu' (some schedulers require it for dynamic shifting)
-                                 # Warning: Some diffusers versions expect 'mu' in init, others in set_timesteps.
-                                 # We try passing it here.
-                                 try:
-                                     self.img2img_pipeline.scheduler.set_timesteps(steps, device="cpu", mu=1.0)
-                                 except TypeError:
-                                     # If mu is not accepted, maybe it's older pattern? Just retry without mu (already failed) or try just device?
-                                     # Actually, the error was "mu must be passed". So we MUST pass it.
-                                     pass
+            # CRITICAL: Ensure inputs are multiples of 32 for the VAE to prevent 64GB buffer size error
+            fixed_width = _make_multiple_of_32(width)
+            fixed_height = _make_multiple_of_32(height)
+            
+            # CRITICAL: Resize input image to target dimensions BEFORE passing to pipeline.
+            # FluxImg2ImgPipeline derives output dims from the input image.
+            # Passing height/width as separate kwargs causes a latent-space mismatch
+            # that triggers a 64GB buffer allocation on MPS/Metal.
+            if isinstance(image, Image.Image):
+                if image.size != (fixed_width, fixed_height):
+                    logging.info(f"   📐 Resizing input image {image.size} → ({fixed_width}, {fixed_height}) (multiple of 32) for Img2Img")
+                    image = image.resize((fixed_width, fixed_height), Image.Resampling.LANCZOS)
+            
+            sig = inspect.signature(self.img2img_pipeline.__call__)
+            available_args = sig.parameters.keys()
+            
+            # NOTE: Do NOT pass height/width to Img2Img — the pipeline infers them 
+            # from the input image. Passing them separately causes buffer explosions.
+            kwargs = {
+                "prompt": prompt,
+                "image": image,
+                "num_inference_steps": steps,
+                "guidance_scale": guidance_scale,
+            }
+            
+            if seed is not None:
+                kwargs["generator"] = torch.Generator(device="cpu").manual_seed(seed)
+            
+            # Strength / Denoising Control
+            # denoising_start overrides strength when provided (per diffusers API).
+            if denoising_start is not None and "denoising_start" in available_args:
+                kwargs["denoising_start"] = denoising_start
+                logging.info(f"   🎛️  Using denoising_start={denoising_start:.2f} (strength ignored)")
+            elif "strength" in available_args:
+                kwargs["strength"] = strength
+            elif "denoising_start" in available_args:
+                # Map strength → denoising_start (inverse relationship)
+                kwargs["denoising_start"] = 1.0 - strength
+                logging.info(f"   🎛️  Mapped strength {strength:.2f} → denoising_start={1.0 - strength:.2f}")
+            else:
+                # Last resort: pass strength anyway (some custom pipelines accept **kwargs)
+                logging.warning(f"   ⚠️ Pipeline lacks 'strength' and 'denoising_start'. Force-passing strength={strength:.2f}.")
+                kwargs["strength"] = strength
 
-                             timesteps = self.img2img_pipeline.scheduler.timesteps
-                             
-                             # Calculate start index based on strength
-                             # Strength 1.0 = Index 0 (Full Denoise)
-                             # Strength 0.0 = Index Max (No Denoise)
-                             # num_inference_steps * strength
-                             start_idx = int(len(timesteps) * (1.0 - strength))
-                             start_idx = max(0, min(start_idx, len(timesteps) - 1))
-                             
-                             # Slice sigmas/timesteps?
-                             # Some pipelines want 'sigmas', some want 'timesteps'.
-                             # The error message said 'sigmas' is an arg.
-                             
-                             # Flux uses 'sigmas'.
-                             # We need the full list but start from a specific point? 
-                             # Or does it accept a list of sigmas to run?
-                             # Usually passing 'sigmas' overrides 'num_inference_steps'.
-                             
-                             # FIX: Move sigmas to CPU and convert to LIST to avoid "can't convert mps:0..." and "numpy()" errors.
-                             # Lists are device-agnostic.
-                             filtered_sigmas = self.img2img_pipeline.scheduler.sigmas[start_idx:].cpu().tolist()
-                             
-                             filtered_sigmas = self.img2img_pipeline.scheduler.sigmas[start_idx:].cpu().tolist()
-                             
-                             kwargs["sigmas"] = filtered_sigmas
-                             logging.info(f"   Generated {len(kwargs['sigmas'])} sigmas from {steps} steps (Strength {strength}).")
+            try:
+                with torch.inference_mode():
+                    out_img_obj = self.img2img_pipeline(**kwargs)
+            except TypeError as te:
+                # If strength caused the TypeError, retry without it
+                if "strength" in str(te) and "strength" in kwargs:
+                    logging.warning(f"   ⚠️ Pipeline rejected 'strength'. Retrying without it...")
+                    del kwargs["strength"]
+                    with torch.inference_mode():
+                        out_img_obj = self.img2img_pipeline(**kwargs)
+                else:
+                    logging.error(f"   ❌ Flux Img2Img TypeError: {te}. Attempted kwargs: {list(kwargs.keys())}")
+                    return None
 
-                             # FIX: Failed 'Flux2KleinPipeline' rejects 'strength' arg if we passed it in "Hail Mary".
-                             # Since we have sigmas, we MUST remove strength/denoising_start to avoid TypeError.
-                             if "strength" in kwargs:
-                                 del kwargs["strength"]
-                             if "denoising_start" in kwargs:
-                                 del kwargs["denoising_start"]
+            out_img = out_img_obj.images[0]
+            del out_img_obj
+            
+            # Post-Gen Cleanup
+            gc.collect() 
+            if self.device == "mps":
+                torch.mps.empty_cache()
 
-                             
-                             # Let's try passing 'timesteps' if available? No, log didn't key it.
-                             # Let's try passing 'sigmas' as the full list?
-                             
-                             # WAIT! If we pass 'sigmas', we override the scheduler.
-                             # We want to run only the last X steps.
-                             
-                            # Clean up: Don't overwrite our good list!
-
-                         
-                     except Exception as exc:
-                         logging.warning(f"   ⚠️ Sigma calculation failed: {exc}")
-
-
-                 # If we are here, we are desperate?
-                 # Only if we failed to set strength, denoising_start, OR sigmas.
-                 if "sigmas" not in kwargs and "strength" not in kwargs and "denoising_start" not in kwargs:
-                     logging.warning("   ⚠️ Dropping strength/denoising arguments entirely (Pipeline might do full redraw).")
-                     # We only delete if they exist and we've decided they are invalid?
-                     # Actually, if they are not in kwargs, we don't need to delete.
-                     # But above "Hail Mary" might have put 'strength' in.
-                     
-                     # Check again:
-                     # If "strength" is in kwargs but signature check failed...
-                     # We force passed it. So we should NOT delete it here unless we are sure.
-                     pass 
-                 
-                 # Clean up specific keys if we found a better alternative (conflicts)
-                 # If we have sigmas, we might want to remove strength to avoid "ambiguous argument" errors?
-                 # Standard Flux pipeline behaves fine with sigmas + strength (sigmas win).
-                 # So let's REMOVE the deletion logic.
-                 pass
-
-             try:
-                 out_img_obj = self.img2img_pipeline(**kwargs)
-             except TypeError as te:
-                 logging.error(f"   ❌ Flux Img2Img TypeError: {te}. Available args: {list(available_args)}. Attempted kwargs: {kwargs.keys()}")
-                 return None
-
-             out_img = out_img_obj.images[0]
-             del out_img_obj
-             
-             # Post-Gen Cleanup
-             import gc
-             gc.collect() 
-             if self.device == "mps":
-                 torch.mps.empty_cache()
-
-             return out_img
+            return out_img
         except Exception as e:
-             logging.error(f"   ❌ Flux Img2Img Error: {e}")
-             return None
+            logging.error(f"   ❌ Flux Img2Img Error: {e}")
+            return None
 
     def unload(self):
         """Unload Flux pipelines."""
@@ -455,6 +402,89 @@ def get_flux_bridge(path):
     if _BRIDGE is None:
         _BRIDGE = FluxBridge(path)
     return _BRIDGE
+
+    return _BRIDGE
+
+def generate_via_hf_endpoint(prompt, width=1024, height=1024, steps=28, guidance=3.5, seed=None, api_key=None, endpoint_url=None, image=None, strength=0.5):
+    """
+    Generates an image using Hugging Face InferenceClient (fal-ai provider).
+    Supports Text-to-Image and Image-to-Image.
+    """
+    if not InferenceClient:
+        logging.error("❌ huggingface_hub not installed. Cannot use Cloud Flux.")
+        return None
+
+    if not api_key:
+        api_key = os.environ.get("HF_TOKEN") or os.environ.get("HF_API_KEY")
+        
+    if not api_key:
+        logging.error("❌ Missing HF_TOKEN for Cloud Flux.")
+        return None
+        
+    # Use standard Flux.1-dev via fal-ai provider (as used in LTX Cloud Director)
+    # We ignore endpoint_url unless specifically passed, but default to the Repo ID.
+    model_id = "black-forest-labs/FLUX.1-dev"
+    if endpoint_url and "http" not in endpoint_url:
+         # If user passed a model ID as endpoint_url
+         model_id = endpoint_url
+    
+    # Enforce multiples of 32 for HF Inference API to prevent buffer size issues
+    fixed_width = _make_multiple_of_32(width)
+    fixed_height = _make_multiple_of_32(height)
+    
+    try:
+        client = InferenceClient(provider="fal-ai", api_key=api_key)
+        
+        if image:
+            logging.info(f"   ☁️  Flux Cloud Img2Img (fal-ai): '{prompt[:40]}...' (Str: {strength}, {fixed_width}x{fixed_height})")
+            try:
+                # Image-to-Image Mode
+                generated_image = client.image_to_image(
+                    image=image,
+                    prompt=prompt,
+                    model=model_id,
+                    strength=strength, 
+                    num_inference_steps=steps,
+                    guidance_scale=guidance,
+                    seed=seed,
+                    width=fixed_width,
+                    height=fixed_height
+                )
+                return generated_image
+            except Exception as e_i2i:
+                logging.warning(f"   ⚠️ Cloud Img2Img Failed: {e_i2i}")
+                logging.warning("      -> Falling back to Text-to-Image (Fluidity lost, but generating).")
+                # Fall through to T2I
+                image = None # Disable image input for fallback
+            
+        if not image:
+            logging.info(f"   ☁️  Flux Cloud T2I (fal-ai): '{prompt[:40]}...' ({fixed_width}x{fixed_height})")
+            generated_image = client.text_to_image(
+                prompt=prompt,
+                model=model_id,
+                width=fixed_width,
+                height=fixed_height,
+                num_inference_steps=steps,
+                guidance_scale=guidance,
+                seed=seed
+            )
+            return generated_image
+        
+    except Exception as e:
+        logging.error(f"   ❌ Flux Cloud Generation Failed: {e}")
+        return None
+
+if __name__ == "__main__":
+    # Test
+    path = "/Volumes/XMVPX/mw/flux-root"
+    if os.path.exists(path):
+        bridge = FluxBridge(path)
+        img = bridge.generate("A pixel art cyberpunk city", width=512, height=512)
+        if img:
+            img.save("test_flux.png")
+            print("Saved test_flux.png")
+    else:
+        print(f"Skipping test, path not found: {path}")
 
 
 if __name__ == "__main__":

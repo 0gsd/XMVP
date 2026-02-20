@@ -16,7 +16,8 @@ from PIL import Image
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from diffusers import FluxPipeline, FlowMatchEulerDiscreteScheduler
+from torch.utils.data import Dataset, DataLoader
+from diffusers import DiffusionPipeline, FlowMatchEulerDiscreteScheduler
 from peft import LoraConfig, get_peft_model
 
 # Standard Paths
@@ -36,16 +37,56 @@ def compute_text_embeddings(pipeline, prompt):
     with torch.no_grad():
         # Flux requires getting both T5 and CLIP embeddings
         # Pipeline has encode_prompt methods.
-        (
-            prompt_embeds,
-            pooled_prompt_embeds,
-            text_ids,
-        ) = pipeline.encode_prompt(
-            prompt=prompt,
-            prompt_2=prompt, # Usually same prompt for both
-            device=device
-        )
+        try:
+            (
+                prompt_embeds,
+                pooled_prompt_embeds,
+                text_ids,
+            ) = pipeline.encode_prompt(
+                prompt=prompt,
+                prompt_2=prompt, # Usually same prompt for both
+                device=device
+            )
+        except TypeError:
+            # Fallback for pipelines that don't accept prompt_2 (e.g. Flux2KleinPipeline)
+            ret = pipeline.encode_prompt(
+                prompt=prompt,
+                device=device
+            )
+            
+            # Handle variable return length
+            if len(ret) == 3:
+                prompt_embeds, pooled_prompt_embeds, text_ids = ret
+            elif len(ret) == 2:
+                prompt_embeds, pooled_prompt_embeds = ret
+                # Synthesize text_ids (zeros of shape [Batch, SeqLen, 3])
+                # Usually text_ids are simple position IDs.
+                # Flux uses 3 dimensions? or just passed through.
+                # Let's verify shape. 
+                # prompt_embeds shape: [B, SeqLen, Dim]
+                # text_ids shape: [B, SeqLen, 3] usually?
+                # Actually, standard Flux pipeline generates them as zeros mostly?
+                # Let's try zeros.
+                text_ids = torch.zeros(prompt_embeds.shape[0], prompt_embeds.shape[1], 3).to(device=device, dtype=prompt_embeds.dtype)
+            else:
+                raise ValueError(f"Unexpected return length from encode_prompt: {len(ret)}")
+                
     return prompt_embeds, pooled_prompt_embeds, text_ids
+
+def pack_latents(latents, batch_size, num_channels_latents, height, width):
+    latents = latents.view(batch_size, num_channels_latents, height // 2, 2, width // 2, 2)
+    latents = latents.permute(0, 2, 4, 1, 3, 5)
+    latents = latents.reshape(batch_size, (height // 2) * (width // 2), num_channels_latents * 4)
+    return latents
+
+def unpack_latents(latents, height, width, vae_scale_factor):
+    batch_size, num_patches, channels = latents.shape
+    height = height // vae_scale_factor
+    width = width // vae_scale_factor
+    latents = latents.view(batch_size, height // 2, width // 2, channels // 4, 2, 2)
+    latents = latents.permute(0, 3, 1, 4, 2, 5)
+    latents = latents.reshape(batch_size, channels // 4, height, width)
+    return latents
 
 class MovieDataset(Dataset):
     def __init__(self, root_dir, size=512): # LoRA on 512 is faster/stable
@@ -88,17 +129,41 @@ def main():
 
     print(f"🎬 Train MLL: {args.name} | Device: {device}")
 
-    # 1. Load Pipeline (BFloat16 for MPS compatibility? torch.float16 is better? MPS prefers Float16)
-    # Flux is BF16 native. MPS supports BF16 on M-series.
+    # 1. Load Pipeline (BFloat16 for MPS compatibility)
     dtype = torch.bfloat16
     
-    print("   🌊 Loading Flux Pipeline...")
-    pipeline = FluxPipeline.from_pretrained(FLUX_ROOT, torch_dtype=dtype).to(device)
+    print("   🌊 Loading Flux Pipeline (DiffusionPipeline)...")
+    # Use DiffusionPipeline to handle custom architectures (Klein) and Auto-Download of components
+    pipeline = DiffusionPipeline.from_pretrained(FLUX_ROOT, torch_dtype=dtype, trust_remote_code=True).to(device)
+    
+    # Validation: Check for T5 (text_encoder_2)
+    if not hasattr(pipeline, "text_encoder_2") or pipeline.text_encoder_2 is None:
+         print("   ⚠️ Pipeline missing text_encoder_2 (T5). Attempting manual load...")
+         try:
+             # Fallback logic from flux_bridge
+             from transformers import T5EncoderModel, T5TokenizerFast
+             t5_local = "/Volumes/XMVPX/mw/t5weights-root"
+             if os.path.exists(t5_local):
+                 print(f"      📚 Loading T5 from Local Cache: {t5_local}")
+                 pipeline.text_encoder_2 = T5EncoderModel.from_pretrained(t5_local, torch_dtype=dtype).to(device)
+                 pipeline.tokenizer_2 = T5TokenizerFast.from_pretrained(t5_local)
+             else:
+                 print("      ☁️ Loading T5 from Hub (city96/t5-v1_1-xxl-encoder-bf16)...")
+                 pipeline.text_encoder_2 = T5EncoderModel.from_pretrained("city96/t5-v1_1-xxl-encoder-bf16", torch_dtype=dtype).to(device)
+                 pipeline.tokenizer_2 = T5TokenizerFast.from_pretrained("city96/t5-v1_1-xxl-encoder-bf16")
+         except Exception as e:
+             print(f"   ❌ Failed to load T5 fallback: {e}")
+             # We might crash later if encode_prompt needs it, but let's try.
+    
+    # Verify Transformer access
+    if not hasattr(pipeline, "transformer"):
+        # Some custom pipelines might nest it?
+        raise ValueError(f"Pipeline {type(pipeline)} missing 'transformer' attribute.")
     
     # Freeze Components
-    pipeline.vae.requires_grad_(False)
-    pipeline.text_encoder.requires_grad_(False)
-    pipeline.text_encoder_2.requires_grad_(False)
+    if hasattr(pipeline, "vae"): pipeline.vae.requires_grad_(False)
+    if hasattr(pipeline, "text_encoder"): pipeline.text_encoder.requires_grad_(False)
+    if hasattr(pipeline, "text_encoder_2"): pipeline.text_encoder_2.requires_grad_(False)
     pipeline.transformer.requires_grad_(False) 
     
     # 2. Add LoRA
@@ -136,7 +201,11 @@ def main():
             pixels = batch["pixel_values"].to(device, dtype=dtype)
             with torch.no_grad():
                 latents = pipeline.vae.encode(pixels).latent_dist.sample()
-                latents = (latents - pipeline.vae.config.shift_factor) * pipeline.vae.config.scaling_factor
+                # Handle FrozenDict config access
+                shift_factor = pipeline.vae.config.get("shift_factor", 0.0) if hasattr(pipeline.vae.config, "get") else getattr(pipeline.vae.config, "shift_factor", 0.0)
+                scaling_factor = pipeline.vae.config.get("scaling_factor", 1.0) if hasattr(pipeline.vae.config, "get") else getattr(pipeline.vae.config, "scaling_factor", 0.3611)
+                
+                latents = (latents - shift_factor) * scaling_factor
                 
             # B. Text Embeds
             prompts = batch["prompt"]
@@ -195,54 +264,69 @@ def main():
             
             H = latents.shape[-2]
             W = latents.shape[-1]
+            C = latents.shape[1]
+            
+            H = latents.shape[-2]
+            W = latents.shape[-1]
+            C = latents.shape[1]
             
             # Get Image IDs (3D positional embeddings)
-            # From source:
-            img_ids = torch.zeros(H // 2, W // 2, 3) 
+            # Standard Flux is 3 dims. This custom one seems to want 4? (Index 3 out of bounds)
+            # We try 4 dimensions.
+            img_ids = torch.zeros(H // 2, W // 2, 4)
+            img_ids = torch.zeros(H // 2, W // 2, 4)
             img_ids[..., 1] = img_ids[..., 1] + torch.arange(H // 2)[:, None]
             img_ids[..., 2] = img_ids[..., 2] + torch.arange(W // 2)[None, :]
-            img_ids = img_ids.reshape(1, -1, 3).repeat(bsz, 1, 1).to(device)
+            # Leave index 0 and 3 as zeros?
+            
+            img_ids = img_ids.reshape(1, -1, 4).repeat(bsz, 1, 1).to(device, dtype=dtype)
+            
+            # Update Text IDs too if we synthesized them
+            if text_ids.shape[-1] == 3:
+                # Pad text_ids to 4
+                text_ids_pad = torch.zeros(text_ids.shape[0], text_ids.shape[1], 4).to(device, dtype=dtype)
+                text_ids_pad[..., :3] = text_ids
+                text_ids = text_ids_pad
             
             # Pack Latents
-            # (B, C, H, W) -> (B, (H/2)*(W/2), C*4)
-            # latents = latents.view(bsz, C, H//2, 2, W//2, 2)
-            # latents = latents.permute(0, 2, 4, 1, 3, 5)
-            # latents = latents.reshape(bsz, (H//2)*(W//2), C*4)
-            
-            # Wait, Flux expects specific packing.
-            # Let's try to just run it through without manual packing and see if it errors?
-            # The error will guide me. 
-            # But let's try to pass unpacked? No, it's a transformer.
-            
-            # Simplified Pack (Standard Patchify)
-            hidden_states = latents.permute(0, 2, 3, 1) # b h w c
-            hidden_states = hidden_states.reshape(bsz, -1, hidden_states.shape[-1]) # b n c
-            
-            # This is likely WRONG for Flux which uses patch size 2x2.
-            # But for a "Minimal Script" I'm blocking.
-            
-            # DECISION: To avoid writing a broken trainer, I will use a dummy trainer approach:
-            # Use `FluxBridge` to "dry run" a generation command which we hijack? No.
-            
-            # Real solution: Use the `FluxPipeline` itself? No training support.
-            
-            # I will trust that standard `diffusers` training examples pack correctly.
-            # Pack:
-            latents = pipeline._pack_latents(latents, bsz, latents.shape[1], latents.shape[2], latents.shape[3])
+            latents = pack_latents(latents, bsz, C, H, W)
             
             # Predict
-            model_pred = transformer(
-                hidden_states=latents,
-                timestep=t,     # Scalar in range [0, 1]? Or [0, 1000]? Flux uses [0,1] sigma.
-                encoder_hidden_states=prompt_embeds,
-                pooled_projections=pooled,
-                txt_ids=text_ids,
-                img_ids=img_ids,
-                return_dict=False
-            )[0]
+            # Dynamic Argument Mapping (Handle different Flux variants)
+            forward_kwargs = {
+                "hidden_states": latents,
+                "encoder_hidden_states": prompt_embeds,
+                "return_dict": False
+            }
+            
+            import inspect
+            sig = inspect.signature(transformer.forward)
+            params = sig.parameters
+            
+            # Map Timestep
+            if "timestep" in params: forward_kwargs["timestep"] = t
+            elif "timesteps" in params: forward_kwargs["timesteps"] = t
+            elif "guidance" in params: forward_kwargs["guidance"] = t # Some variants map t to guidance
+            
+            # Map Pooled Projections (Vector Embeds)
+            if "pooled_projections" in params:
+                forward_kwargs["pooled_projections"] = pooled
+            elif "vec" in params:
+                 forward_kwargs["vec"] = pooled
+            elif "vector_embeddings" in params:
+                 forward_kwargs["vector_embeddings"] = pooled
+            
+            # Map IDs
+            if "txt_ids" in params: forward_kwargs["txt_ids"] = text_ids
+            elif "text_ids" in params: forward_kwargs["text_ids"] = text_ids
+            
+            if "img_ids" in params: forward_kwargs["img_ids"] = img_ids
+            elif "image_ids" in params: forward_kwargs["image_ids"] = img_ids
+            
+            model_pred = transformer(**forward_kwargs)[0]
             
             # Target Packing
-            target_packed = pipeline._pack_latents(target, bsz, target.shape[1], target.shape[2], target.shape[3])
+            target_packed = pack_latents(target, bsz, C, H, W)
             
             loss = F.mse_loss(model_pred, target_packed)
             loss.backward()

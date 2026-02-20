@@ -557,9 +557,8 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
         return False
         
     width = kwargs.get('width', 768)
-    height = kwargs.get('height', 512) # Use 512 default for Video if not passed
-    # Note: caller passes args.height which defaults to 768. 
-    # For video, LTX prefers 512 height usually (768x512).
+    height = kwargs.get('height', 512)
+    strength = kwargs.get('strength', 0.50)
         
     # 2. Setup Staging
     staging_path = Path(staging_dir)
@@ -667,7 +666,8 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
                 prompt=seg.prompt,
                 width=width,
                 height=height,
-                seed=seed
+                seed=seed,
+                strength=strength
             )
              if img:
                  img.save(filepath)
@@ -677,9 +677,10 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
             # LTX Logic (Local OR Cloud)
             
             # Use Argument Dimensions (Default 1280x720)
-            # LTX prefers multiples of 32. 
-            t_width = (width // 32) * 32
-            t_height = (height // 32) * 32
+            # LTX prefers multiples of 32, but Flux (often used for keyframes) 
+            # requires multiples of 128 (escalated from 64) on MPS to prevent buffer size issues.
+            t_width = (width // 128) * 128
+            t_height = (height // 128) * 128
             
             # Calculate Target Frames
             target_frames = seg.end_frame - seg.start_frame

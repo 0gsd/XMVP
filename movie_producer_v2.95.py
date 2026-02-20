@@ -74,7 +74,6 @@ def main():
 
     parser.add_argument("--retcon", action="store_true", help="Force Text-Only Expansion (Implies --local, Skips Video)")
     parser.add_argument("--reshoot", action="store_true", help="Force Re-shoot of Video (Ignore existing clips)")
-    parser.add_argument("--strength", "--str", dest="strength", type=int, default=50, help="Img2Img noise strength 1-99 (Default: 50). Lower = MORE frame coherence. 10-30: very stable. 30-50: balanced. 50-80: creative/different.")
     parser.add_argument("--prompt", type=str, help="Alias for concept (the prompt)")
     
     args, unknown = parser.parse_known_args()
@@ -779,8 +778,7 @@ def main():
             manifest_path=p_manifest,
             out_path=p_manifest_updated,
             staging_dir=DIR_PARTS,
-            flux_path=flux_path,
-            strength=getattr(args, 'strength', 50) / 100.0
+            flux_path=flux_path
         )
     else:
         # DEFAULT DIRECTOR (LTX / Veo / Parody)
@@ -837,8 +835,7 @@ def main():
             local_mode=args.local,
             width=vid_w,
             height=vid_h,
-            reshoot=args.reshoot,
-            strength=getattr(args, 'strength', 50) / 100.0
+            reshoot=args.reshoot
         )
     
     if not success:

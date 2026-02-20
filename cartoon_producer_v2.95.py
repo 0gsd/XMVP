@@ -1674,7 +1674,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 out_img = bridge.generate_img2img(
                     prompt=prompt,
                     image=input_img,
-                    strength=getattr(args, "strength", 50) / 100.0, 
+                    strength=0.65, 
                     width=target_w,
                     height=target_h,
                     seed=42 + i
@@ -2028,7 +2028,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                  if bridge:
                       logging.info(f"   ✨ Flux Img2Img: {out_p.name} (Str: 0.65)...")
                       # Use a lower strength to preserve the "morph" but add details
-                      return bridge.generate(prompt_text, image=t_img, strength=getattr(args, "strength", 50) / 100.0, width=target_w, height=target_h)
+                      return bridge.generate(prompt_text, image=t_img, strength=0.65, width=target_w, height=target_h)
                  return t_img # Fallback
             
             if mid_i > i_idx and mid_i < next_i:
@@ -2274,7 +2274,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 width=args.w if (args.local and args.w) else args.kid,
                 height=args.h if (args.local and args.h) else args.kid,
                 force_local=args.local,
-                strength=getattr(args, "strength", 50) / 100.0
+                strength=getattr(args, "strength", 0.65)
             )
             
             if success:
@@ -2741,7 +2741,6 @@ def main():
     parser.add_argument("--local", action="store_true", help="Local Mode (Use Gemma + Flux)") # NEW
     parser.add_argument("--w", type=int, help="Override width (Local Only, e.g. 1920)")
     parser.add_argument("--h", type=int, help="Override height (Local Only, e.g. 1080)")
-    parser.add_argument("--strength", "--str", dest="strength", type=int, default=50, help="Img2Img noise strength 1-99 (Default: 50). Lower = MORE frame coherence. 10-30: very stable. 30-50: balanced. 50-80: creative/different.")
     
     args, unknown = parser.parse_known_args()
 

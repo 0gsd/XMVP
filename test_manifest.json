@@ -1,0 +1,14 @@
+{
+    "project_id": "test_strength",
+    "segs": [
+        {
+            "id": 1,
+            "prompt": "An astronaut riding a horse",
+            "start_frame": 0,
+            "end_frame": 33
+        }
+    ],
+    "files": {
+        "1": "input.png"
+    }
+}

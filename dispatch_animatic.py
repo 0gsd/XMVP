@@ -152,7 +152,7 @@ class DirectorEngine:
         
         return text.strip()
 
-def run_animatic(manifest_path, out_path, staging_dir, flux_path):
+def run_animatic(manifest_path, out_path, staging_dir, flux_path, strength=0.65):
     # 1. Load Manifest
     try:
         manifest = load_manifest(manifest_path)
@@ -191,7 +191,7 @@ def run_animatic(manifest_path, out_path, staging_dir, flux_path):
     # We want to KEEP the motion, so we start with a medium-low strength to preserve the 'edit' we made,
     # but let Flux dream details.
     
-    DEFAULT_DENOISE = 0.65 # Balance
+    DEFAULT_DENOISE = strength 
     
     for seg in sorted_segs:
         # Skip if done

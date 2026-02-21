@@ -1,1141 +1,0 @@
-/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/amp/autocast_mode.py:270: UserWarning: User provided device_type of 'cuda', but CUDA is not available. Disabling
-  warnings.warn(
-Loading pipeline components...:   0%|          | 0/7 [00:00<?, ?it/s]Loading pipeline components...:  29%|██▊       | 2/7 [00:00<00:00,  7.99it/s]
-Loading weights:   0%|          | 0/219 [00:00<?, ?it/s][A
-Loading weights:   0%|          | 1/219 [00:00<00:00, 2457.12it/s, Materializing param=encoder.block.0.layer.0.SelfAttention.k.weight][A
-Loading weights:   0%|          | 1/219 [00:00<00:00, 942.54it/s, Materializing param=encoder.block.0.layer.0.SelfAttention.k.weight] [A
-Loading weights:   1%|          | 2/219 [00:00<00:00, 899.68it/s, Materializing param=encoder.block.0.layer.0.SelfAttention.o.weight][A
-Loading weights:   1%|          | 2/219 [00:00<00:00, 813.64it/s, Materializing param=encoder.block.0.layer.0.SelfAttention.o.weight][A
-Loading weights:   1%|▏         | 3/219 [00:00<00:00, 881.34it/s, Materializing param=encoder.block.0.layer.0.SelfAttention.q.weight][A
-Loading weights:   1%|▏         | 3/219 [00:00<00:00, 831.49it/s, Materializing param=encoder.block.0.layer.0.SelfAttention.q.weight][A
-Loading weights:   2%|▏         | 4/219 [00:00<00:00, 1068.41it/s, Materializing param=encoder.block.0.layer.0.SelfAttention.relative_attention_bias.weight][A
-Loading weights:   2%|▏         | 4/219 [00:00<00:00, 1055.44it/s, Materializing param=encoder.block.0.layer.0.SelfAttention.relative_attention_bias.weight][A
-Loading weights:   2%|▏         | 5/219 [00:00<00:00, 1300.40it/s, Materializing param=encoder.block.0.layer.0.SelfAttention.v.weight]                      [A
-Loading weights:   2%|▏         | 5/219 [00:00<00:00, 1289.29it/s, Materializing param=encoder.block.0.layer.0.SelfAttention.v.weight][A
-Loading weights:   3%|▎         | 6/219 [00:00<00:00, 1524.00it/s, Materializing param=encoder.block.0.layer.0.layer_norm.weight]     [A
-Loading weights:   3%|▎         | 6/219 [00:00<00:00, 1512.82it/s, Materializing param=encoder.block.0.layer.0.layer_norm.weight][A
-Loading weights:   3%|▎         | 7/219 [00:00<00:00, 1741.72it/s, Materializing param=encoder.block.0.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:   3%|▎         | 7/219 [00:00<00:00, 1731.45it/s, Materializing param=encoder.block.0.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:   4%|▎         | 8/219 [00:00<00:00, 1951.75it/s, Materializing param=encoder.block.0.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:   4%|▎         | 8/219 [00:00<00:00, 1937.55it/s, Materializing param=encoder.block.0.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:   4%|▍         | 9/219 [00:00<00:00, 2155.72it/s, Materializing param=encoder.block.0.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:   4%|▍         | 9/219 [00:00<00:00, 2140.32it/s, Materializing param=encoder.block.0.layer.1.DenseReluDense.wo.weight][A
-Loading weights:   5%|▍         | 10/219 [00:00<00:08, 25.99it/s, Materializing param=encoder.block.0.layer.1.DenseReluDense.wo.weight] [A
-Loading weights:   5%|▍         | 10/219 [00:00<00:08, 25.99it/s, Materializing param=encoder.block.0.layer.1.layer_norm.weight]       [A
-Loading weights:   5%|▍         | 10/219 [00:00<00:08, 25.99it/s, Materializing param=encoder.block.0.layer.1.layer_norm.weight][A
-Loading weights:   5%|▌         | 11/219 [00:00<00:08, 25.99it/s, Materializing param=encoder.block.1.layer.0.SelfAttention.k.weight][A
-Loading weights:   5%|▌         | 11/219 [00:00<00:08, 25.99it/s, Materializing param=encoder.block.1.layer.0.SelfAttention.k.weight][A
-Loading weights:   5%|▌         | 12/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.0.SelfAttention.o.weight][A
-Loading weights:   5%|▌         | 12/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.0.SelfAttention.o.weight][A
-Loading weights:   6%|▌         | 13/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.0.SelfAttention.q.weight][A
-Loading weights:   6%|▌         | 13/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.0.SelfAttention.q.weight][A
-Loading weights:   6%|▋         | 14/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.0.SelfAttention.v.weight][A
-Loading weights:   6%|▋         | 14/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.0.SelfAttention.v.weight][A
-Loading weights:   7%|▋         | 15/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.0.layer_norm.weight]     [A
-Loading weights:   7%|▋         | 15/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.0.layer_norm.weight][A
-Loading weights:   7%|▋         | 16/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:   7%|▋         | 16/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:   8%|▊         | 17/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:   8%|▊         | 17/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:   8%|▊         | 18/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:   8%|▊         | 18/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.1.DenseReluDense.wo.weight][A
-Loading weights:   9%|▊         | 19/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.1.layer_norm.weight]       [A
-Loading weights:   9%|▊         | 19/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.1.layer.1.layer_norm.weight][A
-Loading weights:   9%|▉         | 20/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.0.SelfAttention.k.weight][A
-Loading weights:   9%|▉         | 20/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.0.SelfAttention.k.weight][A
-Loading weights:  10%|▉         | 21/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.0.SelfAttention.o.weight][A
-Loading weights:  10%|▉         | 21/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.0.SelfAttention.o.weight][A
-Loading weights:  10%|█         | 22/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.0.SelfAttention.q.weight][A
-Loading weights:  10%|█         | 22/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.0.SelfAttention.q.weight][A
-Loading weights:  11%|█         | 23/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.0.SelfAttention.v.weight][A
-Loading weights:  11%|█         | 23/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.0.SelfAttention.v.weight][A
-Loading weights:  11%|█         | 24/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.0.layer_norm.weight]     [A
-Loading weights:  11%|█         | 24/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.0.layer_norm.weight][A
-Loading weights:  11%|█▏        | 25/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  11%|█▏        | 25/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  12%|█▏        | 26/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  12%|█▏        | 26/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  12%|█▏        | 27/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  12%|█▏        | 27/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  13%|█▎        | 28/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.1.layer_norm.weight]       [A
-Loading weights:  13%|█▎        | 28/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.2.layer.1.layer_norm.weight][A
-Loading weights:  13%|█▎        | 29/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.0.SelfAttention.k.weight][A
-Loading weights:  13%|█▎        | 29/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.0.SelfAttention.k.weight][A
-Loading weights:  14%|█▎        | 30/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.0.SelfAttention.o.weight][A
-Loading weights:  14%|█▎        | 30/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.0.SelfAttention.o.weight][A
-Loading weights:  14%|█▍        | 31/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.0.SelfAttention.q.weight][A
-Loading weights:  14%|█▍        | 31/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.0.SelfAttention.q.weight][A
-Loading weights:  15%|█▍        | 32/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.0.SelfAttention.v.weight][A
-Loading weights:  15%|█▍        | 32/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.0.SelfAttention.v.weight][A
-Loading weights:  15%|█▌        | 33/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.0.layer_norm.weight]     [A
-Loading weights:  15%|█▌        | 33/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.0.layer_norm.weight][A
-Loading weights:  16%|█▌        | 34/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  16%|█▌        | 34/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  16%|█▌        | 35/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  16%|█▌        | 35/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  16%|█▋        | 36/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  16%|█▋        | 36/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  17%|█▋        | 37/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.1.layer_norm.weight]       [A
-Loading weights:  17%|█▋        | 37/219 [00:00<00:07, 25.99it/s, Materializing param=encoder.block.3.layer.1.layer_norm.weight][A
-Loading weights:  17%|█▋        | 38/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.0.SelfAttention.k.weight][A
-Loading weights:  17%|█▋        | 38/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.0.SelfAttention.k.weight][A
-Loading weights:  18%|█▊        | 39/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.0.SelfAttention.o.weight][A
-Loading weights:  18%|█▊        | 39/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.0.SelfAttention.o.weight][A
-Loading weights:  18%|█▊        | 40/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.0.SelfAttention.q.weight][A
-Loading weights:  18%|█▊        | 40/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.0.SelfAttention.q.weight][A
-Loading weights:  19%|█▊        | 41/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.0.SelfAttention.v.weight][A
-Loading weights:  19%|█▊        | 41/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.0.SelfAttention.v.weight][A
-Loading weights:  19%|█▉        | 42/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.0.layer_norm.weight]     [A
-Loading weights:  19%|█▉        | 42/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.0.layer_norm.weight][A
-Loading weights:  20%|█▉        | 43/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  20%|█▉        | 43/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  20%|██        | 44/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  20%|██        | 44/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  21%|██        | 45/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  21%|██        | 45/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  21%|██        | 46/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.1.layer_norm.weight]       [A
-Loading weights:  21%|██        | 46/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.4.layer.1.layer_norm.weight][A
-Loading weights:  21%|██▏       | 47/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.0.SelfAttention.k.weight][A
-Loading weights:  21%|██▏       | 47/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.0.SelfAttention.k.weight][A
-Loading weights:  22%|██▏       | 48/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.0.SelfAttention.o.weight][A
-Loading weights:  22%|██▏       | 48/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.0.SelfAttention.o.weight][A
-Loading weights:  22%|██▏       | 49/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.0.SelfAttention.q.weight][A
-Loading weights:  22%|██▏       | 49/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.0.SelfAttention.q.weight][A
-Loading weights:  23%|██▎       | 50/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.0.SelfAttention.v.weight][A
-Loading weights:  23%|██▎       | 50/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.0.SelfAttention.v.weight][A
-Loading weights:  23%|██▎       | 51/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.0.layer_norm.weight]     [A
-Loading weights:  23%|██▎       | 51/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.0.layer_norm.weight][A
-Loading weights:  24%|██▎       | 52/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  24%|██▎       | 52/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  24%|██▍       | 53/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  24%|██▍       | 53/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  25%|██▍       | 54/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  25%|██▍       | 54/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  25%|██▌       | 55/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.1.layer_norm.weight]       [A
-Loading weights:  25%|██▌       | 55/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.5.layer.1.layer_norm.weight][A
-Loading weights:  26%|██▌       | 56/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.0.SelfAttention.k.weight][A
-Loading weights:  26%|██▌       | 56/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.0.SelfAttention.k.weight][A
-Loading weights:  26%|██▌       | 57/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.0.SelfAttention.o.weight][A
-Loading weights:  26%|██▌       | 57/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.0.SelfAttention.o.weight][A
-Loading weights:  26%|██▋       | 58/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.0.SelfAttention.q.weight][A
-Loading weights:  26%|██▋       | 58/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.0.SelfAttention.q.weight][A
-Loading weights:  27%|██▋       | 59/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.0.SelfAttention.v.weight][A
-Loading weights:  27%|██▋       | 59/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.0.SelfAttention.v.weight][A
-Loading weights:  27%|██▋       | 60/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.0.layer_norm.weight]     [A
-Loading weights:  27%|██▋       | 60/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.0.layer_norm.weight][A
-Loading weights:  28%|██▊       | 61/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  28%|██▊       | 61/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  28%|██▊       | 62/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  28%|██▊       | 62/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  29%|██▉       | 63/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  29%|██▉       | 63/219 [00:00<00:06, 25.99it/s, Materializing param=encoder.block.6.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  29%|██▉       | 64/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.6.layer.1.layer_norm.weight]       [A
-Loading weights:  29%|██▉       | 64/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.6.layer.1.layer_norm.weight][A
-Loading weights:  30%|██▉       | 65/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.0.SelfAttention.k.weight][A
-Loading weights:  30%|██▉       | 65/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.0.SelfAttention.k.weight][A
-Loading weights:  30%|███       | 66/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.0.SelfAttention.o.weight][A
-Loading weights:  30%|███       | 66/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.0.SelfAttention.o.weight][A
-Loading weights:  31%|███       | 67/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.0.SelfAttention.q.weight][A
-Loading weights:  31%|███       | 67/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.0.SelfAttention.q.weight][A
-Loading weights:  31%|███       | 68/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.0.SelfAttention.v.weight][A
-Loading weights:  31%|███       | 68/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.0.SelfAttention.v.weight][A
-Loading weights:  32%|███▏      | 69/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.0.layer_norm.weight]     [A
-Loading weights:  32%|███▏      | 69/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.0.layer_norm.weight][A
-Loading weights:  32%|███▏      | 70/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  32%|███▏      | 70/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  32%|███▏      | 71/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  32%|███▏      | 71/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  33%|███▎      | 72/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  33%|███▎      | 72/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  33%|███▎      | 73/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.1.layer_norm.weight]       [A
-Loading weights:  33%|███▎      | 73/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.7.layer.1.layer_norm.weight][A
-Loading weights:  34%|███▍      | 74/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.0.SelfAttention.k.weight][A
-Loading weights:  34%|███▍      | 74/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.0.SelfAttention.k.weight][A
-Loading weights:  34%|███▍      | 75/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.0.SelfAttention.o.weight][A
-Loading weights:  34%|███▍      | 75/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.0.SelfAttention.o.weight][A
-Loading weights:  35%|███▍      | 76/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.0.SelfAttention.q.weight][A
-Loading weights:  35%|███▍      | 76/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.0.SelfAttention.q.weight][A
-Loading weights:  35%|███▌      | 77/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.0.SelfAttention.v.weight][A
-Loading weights:  35%|███▌      | 77/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.0.SelfAttention.v.weight][A
-Loading weights:  36%|███▌      | 78/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.0.layer_norm.weight]     [A
-Loading weights:  36%|███▌      | 78/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.0.layer_norm.weight][A
-Loading weights:  36%|███▌      | 79/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  36%|███▌      | 79/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  37%|███▋      | 80/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  37%|███▋      | 80/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  37%|███▋      | 81/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  37%|███▋      | 81/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  37%|███▋      | 82/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.1.layer_norm.weight]       [A
-Loading weights:  37%|███▋      | 82/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.8.layer.1.layer_norm.weight][A
-Loading weights:  38%|███▊      | 83/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.9.layer.0.SelfAttention.k.weight][A
-Loading weights:  38%|███▊      | 83/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.9.layer.0.SelfAttention.k.weight][A
-Loading weights:  38%|███▊      | 84/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.9.layer.0.SelfAttention.o.weight][A
-Loading weights:  38%|███▊      | 84/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.9.layer.0.SelfAttention.o.weight][A
-Loading weights:  39%|███▉      | 85/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.9.layer.0.SelfAttention.q.weight][A
-Loading weights:  39%|███▉      | 85/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.9.layer.0.SelfAttention.q.weight][A
-Loading weights:  39%|███▉      | 86/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.9.layer.0.SelfAttention.v.weight][A
-Loading weights:  39%|███▉      | 86/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.9.layer.0.SelfAttention.v.weight][A
-Loading weights:  40%|███▉      | 87/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.9.layer.0.layer_norm.weight]     [A
-Loading weights:  40%|███▉      | 87/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.9.layer.0.layer_norm.weight][A
-Loading weights:  40%|████      | 88/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.9.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  40%|████      | 88/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.9.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  41%|████      | 89/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.9.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  41%|████      | 89/219 [00:00<00:05, 25.99it/s, Materializing param=encoder.block.9.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  41%|████      | 90/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.9.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  41%|████      | 90/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.9.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  42%|████▏     | 91/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.9.layer.1.layer_norm.weight]       [A
-Loading weights:  42%|████▏     | 91/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.9.layer.1.layer_norm.weight][A
-Loading weights:  42%|████▏     | 92/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.0.SelfAttention.k.weight][A
-Loading weights:  42%|████▏     | 92/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.0.SelfAttention.k.weight][A
-Loading weights:  42%|████▏     | 93/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.0.SelfAttention.o.weight][A
-Loading weights:  42%|████▏     | 93/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.0.SelfAttention.o.weight][A
-Loading weights:  43%|████▎     | 94/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.0.SelfAttention.q.weight][A
-Loading weights:  43%|████▎     | 94/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.0.SelfAttention.q.weight][A
-Loading weights:  43%|████▎     | 95/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.0.SelfAttention.v.weight][A
-Loading weights:  43%|████▎     | 95/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.0.SelfAttention.v.weight][A
-Loading weights:  44%|████▍     | 96/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.0.layer_norm.weight]     [A
-Loading weights:  44%|████▍     | 96/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.0.layer_norm.weight][A
-Loading weights:  44%|████▍     | 97/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  44%|████▍     | 97/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  45%|████▍     | 98/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  45%|████▍     | 98/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  45%|████▌     | 99/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  45%|████▌     | 99/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  46%|████▌     | 100/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.1.layer_norm.weight]      [A
-Loading weights:  46%|████▌     | 100/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.10.layer.1.layer_norm.weight][A
-Loading weights:  46%|████▌     | 101/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.0.SelfAttention.k.weight][A
-Loading weights:  46%|████▌     | 101/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.0.SelfAttention.k.weight][A
-Loading weights:  47%|████▋     | 102/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.0.SelfAttention.o.weight][A
-Loading weights:  47%|████▋     | 102/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.0.SelfAttention.o.weight][A
-Loading weights:  47%|████▋     | 103/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.0.SelfAttention.q.weight][A
-Loading weights:  47%|████▋     | 103/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.0.SelfAttention.q.weight][A
-Loading weights:  47%|████▋     | 104/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.0.SelfAttention.v.weight][A
-Loading weights:  47%|████▋     | 104/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.0.SelfAttention.v.weight][A
-Loading weights:  48%|████▊     | 105/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.0.layer_norm.weight]     [A
-Loading weights:  48%|████▊     | 105/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.0.layer_norm.weight][A
-Loading weights:  48%|████▊     | 106/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  48%|████▊     | 106/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  49%|████▉     | 107/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  49%|████▉     | 107/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  49%|████▉     | 108/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  49%|████▉     | 108/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  50%|████▉     | 109/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.1.layer_norm.weight]       [A
-Loading weights:  50%|████▉     | 109/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.11.layer.1.layer_norm.weight][A
-Loading weights:  50%|█████     | 110/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.12.layer.0.SelfAttention.k.weight][A
-Loading weights:  50%|█████     | 110/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.12.layer.0.SelfAttention.k.weight][A
-Loading weights:  51%|█████     | 111/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.12.layer.0.SelfAttention.o.weight][A
-Loading weights:  51%|█████     | 111/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.12.layer.0.SelfAttention.o.weight][A
-Loading weights:  51%|█████     | 112/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.12.layer.0.SelfAttention.q.weight][A
-Loading weights:  51%|█████     | 112/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.12.layer.0.SelfAttention.q.weight][A
-Loading weights:  52%|█████▏    | 113/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.12.layer.0.SelfAttention.v.weight][A
-Loading weights:  52%|█████▏    | 113/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.12.layer.0.SelfAttention.v.weight][A
-Loading weights:  52%|█████▏    | 114/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.12.layer.0.layer_norm.weight]     [A
-Loading weights:  52%|█████▏    | 114/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.12.layer.0.layer_norm.weight][A
-Loading weights:  53%|█████▎    | 115/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.12.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  53%|█████▎    | 115/219 [00:00<00:04, 25.99it/s, Materializing param=encoder.block.12.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  53%|█████▎    | 116/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.12.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  53%|█████▎    | 116/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.12.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  53%|█████▎    | 117/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.12.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  53%|█████▎    | 117/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.12.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  54%|█████▍    | 118/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.12.layer.1.layer_norm.weight]       [A
-Loading weights:  54%|█████▍    | 118/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.12.layer.1.layer_norm.weight][A
-Loading weights:  54%|█████▍    | 119/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.0.SelfAttention.k.weight][A
-Loading weights:  54%|█████▍    | 119/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.0.SelfAttention.k.weight][A
-Loading weights:  55%|█████▍    | 120/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.0.SelfAttention.o.weight][A
-Loading weights:  55%|█████▍    | 120/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.0.SelfAttention.o.weight][A
-Loading weights:  55%|█████▌    | 121/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.0.SelfAttention.q.weight][A
-Loading weights:  55%|█████▌    | 121/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.0.SelfAttention.q.weight][A
-Loading weights:  56%|█████▌    | 122/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.0.SelfAttention.v.weight][A
-Loading weights:  56%|█████▌    | 122/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.0.SelfAttention.v.weight][A
-Loading weights:  56%|█████▌    | 123/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.0.layer_norm.weight]     [A
-Loading weights:  56%|█████▌    | 123/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.0.layer_norm.weight][A
-Loading weights:  57%|█████▋    | 124/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  57%|█████▋    | 124/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  57%|█████▋    | 125/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  57%|█████▋    | 125/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  58%|█████▊    | 126/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  58%|█████▊    | 126/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  58%|█████▊    | 127/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.1.layer_norm.weight]       [A
-Loading weights:  58%|█████▊    | 127/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.13.layer.1.layer_norm.weight][A
-Loading weights:  58%|█████▊    | 128/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.0.SelfAttention.k.weight][A
-Loading weights:  58%|█████▊    | 128/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.0.SelfAttention.k.weight][A
-Loading weights:  59%|█████▉    | 129/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.0.SelfAttention.o.weight][A
-Loading weights:  59%|█████▉    | 129/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.0.SelfAttention.o.weight][A
-Loading weights:  59%|█████▉    | 130/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.0.SelfAttention.q.weight][A
-Loading weights:  59%|█████▉    | 130/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.0.SelfAttention.q.weight][A
-Loading weights:  60%|█████▉    | 131/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.0.SelfAttention.v.weight][A
-Loading weights:  60%|█████▉    | 131/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.0.SelfAttention.v.weight][A
-Loading weights:  60%|██████    | 132/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.0.layer_norm.weight]     [A
-Loading weights:  60%|██████    | 132/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.0.layer_norm.weight][A
-Loading weights:  61%|██████    | 133/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  61%|██████    | 133/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  61%|██████    | 134/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  61%|██████    | 134/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  62%|██████▏   | 135/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  62%|██████▏   | 135/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  62%|██████▏   | 136/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.1.layer_norm.weight]       [A
-Loading weights:  62%|██████▏   | 136/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.14.layer.1.layer_norm.weight][A
-Loading weights:  63%|██████▎   | 137/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.15.layer.0.SelfAttention.k.weight][A
-Loading weights:  63%|██████▎   | 137/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.15.layer.0.SelfAttention.k.weight][A
-Loading weights:  63%|██████▎   | 138/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.15.layer.0.SelfAttention.o.weight][A
-Loading weights:  63%|██████▎   | 138/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.15.layer.0.SelfAttention.o.weight][A
-Loading weights:  63%|██████▎   | 139/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.15.layer.0.SelfAttention.q.weight][A
-Loading weights:  63%|██████▎   | 139/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.15.layer.0.SelfAttention.q.weight][A
-Loading weights:  64%|██████▍   | 140/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.15.layer.0.SelfAttention.v.weight][A
-Loading weights:  64%|██████▍   | 140/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.15.layer.0.SelfAttention.v.weight][A
-Loading weights:  64%|██████▍   | 141/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.15.layer.0.layer_norm.weight]     [A
-Loading weights:  64%|██████▍   | 141/219 [00:00<00:03, 25.99it/s, Materializing param=encoder.block.15.layer.0.layer_norm.weight][A
-Loading weights:  65%|██████▍   | 142/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.15.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  65%|██████▍   | 142/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.15.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  65%|██████▌   | 143/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.15.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  65%|██████▌   | 143/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.15.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  66%|██████▌   | 144/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.15.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  66%|██████▌   | 144/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.15.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  66%|██████▌   | 145/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.15.layer.1.layer_norm.weight]       [A
-Loading weights:  66%|██████▌   | 145/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.15.layer.1.layer_norm.weight][A
-Loading weights:  67%|██████▋   | 146/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.0.SelfAttention.k.weight][A
-Loading weights:  67%|██████▋   | 146/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.0.SelfAttention.k.weight][A
-Loading weights:  67%|██████▋   | 147/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.0.SelfAttention.o.weight][A
-Loading weights:  67%|██████▋   | 147/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.0.SelfAttention.o.weight][A
-Loading weights:  68%|██████▊   | 148/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.0.SelfAttention.q.weight][A
-Loading weights:  68%|██████▊   | 148/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.0.SelfAttention.q.weight][A
-Loading weights:  68%|██████▊   | 149/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.0.SelfAttention.v.weight][A
-Loading weights:  68%|██████▊   | 149/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.0.SelfAttention.v.weight][A
-Loading weights:  68%|██████▊   | 150/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.0.layer_norm.weight]     [A
-Loading weights:  68%|██████▊   | 150/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.0.layer_norm.weight][A
-Loading weights:  69%|██████▉   | 151/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  69%|██████▉   | 151/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  69%|██████▉   | 152/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  69%|██████▉   | 152/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  70%|██████▉   | 153/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  70%|██████▉   | 153/219 [00:00<00:02, 25.99it/s, Materializing param=encoder.block.16.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  70%|███████   | 154/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.16.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  70%|███████   | 154/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.16.layer.1.layer_norm.weight]       [A
-Loading weights:  70%|███████   | 154/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.16.layer.1.layer_norm.weight][A
-Loading weights:  71%|███████   | 155/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.0.SelfAttention.k.weight][A
-Loading weights:  71%|███████   | 155/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.0.SelfAttention.k.weight][A
-Loading weights:  71%|███████   | 156/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.0.SelfAttention.o.weight][A
-Loading weights:  71%|███████   | 156/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.0.SelfAttention.o.weight][A
-Loading weights:  72%|███████▏  | 157/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.0.SelfAttention.q.weight][A
-Loading weights:  72%|███████▏  | 157/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.0.SelfAttention.q.weight][A
-Loading weights:  72%|███████▏  | 158/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.0.SelfAttention.v.weight][A
-Loading weights:  72%|███████▏  | 158/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.0.SelfAttention.v.weight][A
-Loading weights:  73%|███████▎  | 159/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.0.layer_norm.weight]     [A
-Loading weights:  73%|███████▎  | 159/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.0.layer_norm.weight][A
-Loading weights:  73%|███████▎  | 160/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  73%|███████▎  | 160/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  74%|███████▎  | 161/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  74%|███████▎  | 161/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  74%|███████▍  | 162/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  74%|███████▍  | 162/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  74%|███████▍  | 163/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.1.layer_norm.weight]       [A
-Loading weights:  74%|███████▍  | 163/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.17.layer.1.layer_norm.weight][A
-Loading weights:  75%|███████▍  | 164/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.0.SelfAttention.k.weight][A
-Loading weights:  75%|███████▍  | 164/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.0.SelfAttention.k.weight][A
-Loading weights:  75%|███████▌  | 165/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.0.SelfAttention.o.weight][A
-Loading weights:  75%|███████▌  | 165/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.0.SelfAttention.o.weight][A
-Loading weights:  76%|███████▌  | 166/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.0.SelfAttention.q.weight][A
-Loading weights:  76%|███████▌  | 166/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.0.SelfAttention.q.weight][A
-Loading weights:  76%|███████▋  | 167/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.0.SelfAttention.v.weight][A
-Loading weights:  76%|███████▋  | 167/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.0.SelfAttention.v.weight][A
-Loading weights:  77%|███████▋  | 168/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.0.layer_norm.weight]     [A
-Loading weights:  77%|███████▋  | 168/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.0.layer_norm.weight][A
-Loading weights:  77%|███████▋  | 169/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  77%|███████▋  | 169/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  78%|███████▊  | 170/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  78%|███████▊  | 170/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  78%|███████▊  | 171/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  78%|███████▊  | 171/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  79%|███████▊  | 172/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.1.layer_norm.weight]       [A
-Loading weights:  79%|███████▊  | 172/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.18.layer.1.layer_norm.weight][A
-Loading weights:  79%|███████▉  | 173/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.0.SelfAttention.k.weight][A
-Loading weights:  79%|███████▉  | 173/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.0.SelfAttention.k.weight][A
-Loading weights:  79%|███████▉  | 174/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.0.SelfAttention.o.weight][A
-Loading weights:  79%|███████▉  | 174/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.0.SelfAttention.o.weight][A
-Loading weights:  80%|███████▉  | 175/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.0.SelfAttention.q.weight][A
-Loading weights:  80%|███████▉  | 175/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.0.SelfAttention.q.weight][A
-Loading weights:  80%|████████  | 176/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.0.SelfAttention.v.weight][A
-Loading weights:  80%|████████  | 176/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.0.SelfAttention.v.weight][A
-Loading weights:  81%|████████  | 177/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.0.layer_norm.weight]     [A
-Loading weights:  81%|████████  | 177/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.0.layer_norm.weight][A
-Loading weights:  81%|████████▏ | 178/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  81%|████████▏ | 178/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  82%|████████▏ | 179/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  82%|████████▏ | 179/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  82%|████████▏ | 180/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  82%|████████▏ | 180/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  83%|████████▎ | 181/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.1.layer_norm.weight]       [A
-Loading weights:  83%|████████▎ | 181/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.19.layer.1.layer_norm.weight][A
-Loading weights:  83%|████████▎ | 182/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.0.SelfAttention.k.weight][A
-Loading weights:  83%|████████▎ | 182/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.0.SelfAttention.k.weight][A
-Loading weights:  84%|████████▎ | 183/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.0.SelfAttention.o.weight][A
-Loading weights:  84%|████████▎ | 183/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.0.SelfAttention.o.weight][A
-Loading weights:  84%|████████▍ | 184/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.0.SelfAttention.q.weight][A
-Loading weights:  84%|████████▍ | 184/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.0.SelfAttention.q.weight][A
-Loading weights:  84%|████████▍ | 185/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.0.SelfAttention.v.weight][A
-Loading weights:  84%|████████▍ | 185/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.0.SelfAttention.v.weight][A
-Loading weights:  85%|████████▍ | 186/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.0.layer_norm.weight]     [A
-Loading weights:  85%|████████▍ | 186/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.0.layer_norm.weight][A
-Loading weights:  85%|████████▌ | 187/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  85%|████████▌ | 187/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  86%|████████▌ | 188/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  86%|████████▌ | 188/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  86%|████████▋ | 189/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  86%|████████▋ | 189/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  87%|████████▋ | 190/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.1.layer_norm.weight]       [A
-Loading weights:  87%|████████▋ | 190/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.20.layer.1.layer_norm.weight][A
-Loading weights:  87%|████████▋ | 191/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.0.SelfAttention.k.weight][A
-Loading weights:  87%|████████▋ | 191/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.0.SelfAttention.k.weight][A
-Loading weights:  88%|████████▊ | 192/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.0.SelfAttention.o.weight][A
-Loading weights:  88%|████████▊ | 192/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.0.SelfAttention.o.weight][A
-Loading weights:  88%|████████▊ | 193/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.0.SelfAttention.q.weight][A
-Loading weights:  88%|████████▊ | 193/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.0.SelfAttention.q.weight][A
-Loading weights:  89%|████████▊ | 194/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.0.SelfAttention.v.weight][A
-Loading weights:  89%|████████▊ | 194/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.0.SelfAttention.v.weight][A
-Loading weights:  89%|████████▉ | 195/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.0.layer_norm.weight]     [A
-Loading weights:  89%|████████▉ | 195/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.0.layer_norm.weight][A
-Loading weights:  89%|████████▉ | 196/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  89%|████████▉ | 196/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  90%|████████▉ | 197/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  90%|████████▉ | 197/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  90%|█████████ | 198/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  90%|█████████ | 198/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  91%|█████████ | 199/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.1.layer_norm.weight]       [A
-Loading weights:  91%|█████████ | 199/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.21.layer.1.layer_norm.weight][A
-Loading weights:  91%|█████████▏| 200/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.0.SelfAttention.k.weight][A
-Loading weights:  91%|█████████▏| 200/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.0.SelfAttention.k.weight][A
-Loading weights:  92%|█████████▏| 201/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.0.SelfAttention.o.weight][A
-Loading weights:  92%|█████████▏| 201/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.0.SelfAttention.o.weight][A
-Loading weights:  92%|█████████▏| 202/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.0.SelfAttention.q.weight][A
-Loading weights:  92%|█████████▏| 202/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.0.SelfAttention.q.weight][A
-Loading weights:  93%|█████████▎| 203/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.0.SelfAttention.v.weight][A
-Loading weights:  93%|█████████▎| 203/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.0.SelfAttention.v.weight][A
-Loading weights:  93%|█████████▎| 204/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.0.layer_norm.weight]     [A
-Loading weights:  93%|█████████▎| 204/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.0.layer_norm.weight][A
-Loading weights:  94%|█████████▎| 205/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  94%|█████████▎| 205/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  94%|█████████▍| 206/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  94%|█████████▍| 206/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  95%|█████████▍| 207/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  95%|█████████▍| 207/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  95%|█████████▍| 208/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.1.layer_norm.weight]       [A
-Loading weights:  95%|█████████▍| 208/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.22.layer.1.layer_norm.weight][A
-Loading weights:  95%|█████████▌| 209/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.0.SelfAttention.k.weight][A
-Loading weights:  95%|█████████▌| 209/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.0.SelfAttention.k.weight][A
-Loading weights:  96%|█████████▌| 210/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.0.SelfAttention.o.weight][A
-Loading weights:  96%|█████████▌| 210/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.0.SelfAttention.o.weight][A
-Loading weights:  96%|█████████▋| 211/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.0.SelfAttention.q.weight][A
-Loading weights:  96%|█████████▋| 211/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.0.SelfAttention.q.weight][A
-Loading weights:  97%|█████████▋| 212/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.0.SelfAttention.v.weight][A
-Loading weights:  97%|█████████▋| 212/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.0.SelfAttention.v.weight][A
-Loading weights:  97%|█████████▋| 213/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.0.layer_norm.weight]     [A
-Loading weights:  97%|█████████▋| 213/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.0.layer_norm.weight][A
-Loading weights:  98%|█████████▊| 214/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  98%|█████████▊| 214/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.1.DenseReluDense.wi_0.weight][A
-Loading weights:  98%|█████████▊| 215/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  98%|█████████▊| 215/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.1.DenseReluDense.wi_1.weight][A
-Loading weights:  99%|█████████▊| 216/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.1.DenseReluDense.wo.weight]  [A
-Loading weights:  99%|█████████▊| 216/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.1.DenseReluDense.wo.weight][A
-Loading weights:  99%|█████████▉| 217/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.1.layer_norm.weight]       [A
-Loading weights:  99%|█████████▉| 217/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.block.23.layer.1.layer_norm.weight][A
-Loading weights: 100%|█████████▉| 218/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.final_layer_norm.weight]           [A
-Loading weights: 100%|█████████▉| 218/219 [00:00<00:00, 372.80it/s, Materializing param=encoder.final_layer_norm.weight][A
-Loading weights: 100%|██████████| 219/219 [00:00<00:00, 372.80it/s, Materializing param=shared.weight]                  [A
-Loading weights: 100%|██████████| 219/219 [00:00<00:00, 372.80it/s, Materializing param=shared.weight][ALoading weights: 100%|██████████| 219/219 [00:00<00:00, 361.25it/s, Materializing param=shared.weight]
-Loading pipeline components...:  57%|█████▋    | 4/7 [00:01<00:01,  2.91it/s]
-Loading weights:   0%|          | 0/196 [00:00<?, ?it/s][A
-Loading weights:   1%|          | 1/196 [00:00<00:00, 1897.02it/s, Materializing param=text_model.embeddings.position_embedding.weight][A
-Loading weights:   1%|          | 1/196 [00:00<00:00, 1485.76it/s, Materializing param=text_model.embeddings.position_embedding.weight][A
-Loading weights:   1%|          | 2/196 [00:00<00:00, 1647.41it/s, Materializing param=text_model.embeddings.token_embedding.weight]   [A
-Loading weights:   1%|          | 2/196 [00:00<00:00, 1564.75it/s, Materializing param=text_model.embeddings.token_embedding.weight][A
-Loading weights:   2%|▏         | 3/196 [00:00<00:00, 1736.29it/s, Materializing param=text_model.encoder.layers.0.layer_norm1.bias][A
-Loading weights:   2%|▏         | 3/196 [00:00<00:00, 1558.45it/s, Materializing param=text_model.encoder.layers.0.layer_norm1.bias][A
-Loading weights:   2%|▏         | 4/196 [00:00<00:00, 1569.72it/s, Materializing param=text_model.encoder.layers.0.layer_norm1.weight][A
-Loading weights:   2%|▏         | 4/196 [00:00<00:00, 1541.46it/s, Materializing param=text_model.encoder.layers.0.layer_norm1.weight][A
-Loading weights:   3%|▎         | 5/196 [00:00<00:00, 1816.19it/s, Materializing param=text_model.encoder.layers.0.layer_norm2.bias]  [A
-Loading weights:   3%|▎         | 5/196 [00:00<00:00, 1788.31it/s, Materializing param=text_model.encoder.layers.0.layer_norm2.bias][A
-Loading weights:   3%|▎         | 6/196 [00:00<00:00, 1758.37it/s, Materializing param=text_model.encoder.layers.0.layer_norm2.weight][A
-Loading weights:   3%|▎         | 6/196 [00:00<00:00, 1515.56it/s, Materializing param=text_model.encoder.layers.0.layer_norm2.weight][A
-Loading weights:   4%|▎         | 7/196 [00:00<00:00, 1727.47it/s, Materializing param=text_model.encoder.layers.0.mlp.fc1.bias]      [A
-Loading weights:   4%|▎         | 7/196 [00:00<00:00, 1707.28it/s, Materializing param=text_model.encoder.layers.0.mlp.fc1.bias][A
-Loading weights:   4%|▍         | 8/196 [00:00<00:00, 1918.82it/s, Materializing param=text_model.encoder.layers.0.mlp.fc1.weight][A
-Loading weights:   4%|▍         | 8/196 [00:00<00:00, 1670.21it/s, Materializing param=text_model.encoder.layers.0.mlp.fc1.weight][A
-Loading weights:   5%|▍         | 9/196 [00:00<00:00, 1842.03it/s, Materializing param=text_model.encoder.layers.0.mlp.fc2.bias]  [A
-Loading weights:   5%|▍         | 9/196 [00:00<00:00, 1826.61it/s, Materializing param=text_model.encoder.layers.0.mlp.fc2.bias][A
-Loading weights:   5%|▌         | 10/196 [00:00<00:00, 2007.52it/s, Materializing param=text_model.encoder.layers.0.mlp.fc2.weight][A
-Loading weights:   5%|▌         | 10/196 [00:00<00:00, 1993.59it/s, Materializing param=text_model.encoder.layers.0.mlp.fc2.weight][A
-Loading weights:   6%|▌         | 11/196 [00:00<00:00, 2175.67it/s, Materializing param=text_model.encoder.layers.0.self_attn.k_proj.bias][A
-Loading weights:   6%|▌         | 11/196 [00:00<00:00, 2165.77it/s, Materializing param=text_model.encoder.layers.0.self_attn.k_proj.bias][A
-Loading weights:   6%|▌         | 12/196 [00:00<00:00, 2343.30it/s, Materializing param=text_model.encoder.layers.0.self_attn.k_proj.weight][A
-Loading weights:   6%|▌         | 12/196 [00:00<00:00, 2333.73it/s, Materializing param=text_model.encoder.layers.0.self_attn.k_proj.weight][A
-Loading weights:   7%|▋         | 13/196 [00:00<00:00, 2510.06it/s, Materializing param=text_model.encoder.layers.0.self_attn.out_proj.bias][A
-Loading weights:   7%|▋         | 13/196 [00:00<00:00, 2499.93it/s, Materializing param=text_model.encoder.layers.0.self_attn.out_proj.bias][A
-Loading weights:   7%|▋         | 14/196 [00:00<00:00, 2673.72it/s, Materializing param=text_model.encoder.layers.0.self_attn.out_proj.weight][A
-Loading weights:   7%|▋         | 14/196 [00:00<00:00, 2663.05it/s, Materializing param=text_model.encoder.layers.0.self_attn.out_proj.weight][A
-Loading weights:   8%|▊         | 15/196 [00:00<00:00, 2835.39it/s, Materializing param=text_model.encoder.layers.0.self_attn.q_proj.bias]    [A
-Loading weights:   8%|▊         | 15/196 [00:00<00:00, 2824.19it/s, Materializing param=text_model.encoder.layers.0.self_attn.q_proj.bias][A
-Loading weights:   8%|▊         | 16/196 [00:00<00:00, 2994.46it/s, Materializing param=text_model.encoder.layers.0.self_attn.q_proj.weight][A
-Loading weights:   8%|▊         | 16/196 [00:00<00:00, 2982.75it/s, Materializing param=text_model.encoder.layers.0.self_attn.q_proj.weight][A
-Loading weights:   9%|▊         | 17/196 [00:00<00:00, 3150.96it/s, Materializing param=text_model.encoder.layers.0.self_attn.v_proj.bias]  [A
-Loading weights:   9%|▊         | 17/196 [00:00<00:00, 3138.76it/s, Materializing param=text_model.encoder.layers.0.self_attn.v_proj.bias][A
-Loading weights:   9%|▉         | 18/196 [00:00<00:00, 3304.48it/s, Materializing param=text_model.encoder.layers.0.self_attn.v_proj.weight][A
-Loading weights:   9%|▉         | 18/196 [00:00<00:00, 3292.38it/s, Materializing param=text_model.encoder.layers.0.self_attn.v_proj.weight][A
-Loading weights:  10%|▉         | 19/196 [00:00<00:00, 3453.15it/s, Materializing param=text_model.encoder.layers.1.layer_norm1.bias]       [A
-Loading weights:  10%|▉         | 19/196 [00:00<00:00, 3440.77it/s, Materializing param=text_model.encoder.layers.1.layer_norm1.bias][A
-Loading weights:  10%|█         | 20/196 [00:00<00:00, 3600.88it/s, Materializing param=text_model.encoder.layers.1.layer_norm1.weight][A
-Loading weights:  10%|█         | 20/196 [00:00<00:00, 3588.10it/s, Materializing param=text_model.encoder.layers.1.layer_norm1.weight][A
-Loading weights:  11%|█         | 21/196 [00:00<00:00, 3747.30it/s, Materializing param=text_model.encoder.layers.1.layer_norm2.bias]  [A
-Loading weights:  11%|█         | 21/196 [00:00<00:00, 3733.96it/s, Materializing param=text_model.encoder.layers.1.layer_norm2.bias][A
-Loading weights:  11%|█         | 22/196 [00:00<00:00, 3890.33it/s, Materializing param=text_model.encoder.layers.1.layer_norm2.weight][A
-Loading weights:  11%|█         | 22/196 [00:00<00:00, 3877.25it/s, Materializing param=text_model.encoder.layers.1.layer_norm2.weight][A
-Loading weights:  12%|█▏        | 23/196 [00:00<00:00, 4032.14it/s, Materializing param=text_model.encoder.layers.1.mlp.fc1.bias]      [A
-Loading weights:  12%|█▏        | 23/196 [00:00<00:00, 4016.03it/s, Materializing param=text_model.encoder.layers.1.mlp.fc1.bias][A
-Loading weights:  12%|█▏        | 24/196 [00:00<00:00, 4147.13it/s, Materializing param=text_model.encoder.layers.1.mlp.fc1.weight][A
-Loading weights:  12%|█▏        | 24/196 [00:00<00:00, 4126.56it/s, Materializing param=text_model.encoder.layers.1.mlp.fc1.weight][A
-Loading weights:  13%|█▎        | 25/196 [00:00<00:00, 4267.01it/s, Materializing param=text_model.encoder.layers.1.mlp.fc2.bias]  [A
-Loading weights:  13%|█▎        | 25/196 [00:00<00:00, 4249.55it/s, Materializing param=text_model.encoder.layers.1.mlp.fc2.bias][A
-Loading weights:  13%|█▎        | 26/196 [00:00<00:00, 4387.35it/s, Materializing param=text_model.encoder.layers.1.mlp.fc2.weight][A
-Loading weights:  13%|█▎        | 26/196 [00:00<00:00, 4366.79it/s, Materializing param=text_model.encoder.layers.1.mlp.fc2.weight][A
-Loading weights:  14%|█▍        | 27/196 [00:00<00:00, 4504.44it/s, Materializing param=text_model.encoder.layers.1.self_attn.k_proj.bias][A
-Loading weights:  14%|█▍        | 27/196 [00:00<00:00, 4487.31it/s, Materializing param=text_model.encoder.layers.1.self_attn.k_proj.bias][A
-Loading weights:  14%|█▍        | 28/196 [00:00<00:00, 4624.19it/s, Materializing param=text_model.encoder.layers.1.self_attn.k_proj.weight][A
-Loading weights:  14%|█▍        | 28/196 [00:00<00:00, 4607.50it/s, Materializing param=text_model.encoder.layers.1.self_attn.k_proj.weight][A
-Loading weights:  15%|█▍        | 29/196 [00:00<00:00, 4742.47it/s, Materializing param=text_model.encoder.layers.1.self_attn.out_proj.bias][A
-Loading weights:  15%|█▍        | 29/196 [00:00<00:00, 4710.15it/s, Materializing param=text_model.encoder.layers.1.self_attn.out_proj.bias][A
-Loading weights:  15%|█▌        | 30/196 [00:00<00:00, 4826.22it/s, Materializing param=text_model.encoder.layers.1.self_attn.out_proj.weight][A
-Loading weights:  15%|█▌        | 30/196 [00:00<00:00, 4803.74it/s, Materializing param=text_model.encoder.layers.1.self_attn.out_proj.weight][A
-Loading weights:  16%|█▌        | 31/196 [00:00<00:00, 4929.98it/s, Materializing param=text_model.encoder.layers.1.self_attn.q_proj.bias]    [A
-Loading weights:  16%|█▌        | 31/196 [00:00<00:00, 4911.18it/s, Materializing param=text_model.encoder.layers.1.self_attn.q_proj.bias][A
-Loading weights:  16%|█▋        | 32/196 [00:00<00:00, 5038.58it/s, Materializing param=text_model.encoder.layers.1.self_attn.q_proj.weight][A
-Loading weights:  16%|█▋        | 32/196 [00:00<00:00, 5017.11it/s, Materializing param=text_model.encoder.layers.1.self_attn.q_proj.weight][A
-Loading weights:  17%|█▋        | 33/196 [00:00<00:00, 5144.09it/s, Materializing param=text_model.encoder.layers.1.self_attn.v_proj.bias]  [A
-Loading weights:  17%|█▋        | 33/196 [00:00<00:00, 5127.32it/s, Materializing param=text_model.encoder.layers.1.self_attn.v_proj.bias][A
-Loading weights:  17%|█▋        | 34/196 [00:00<00:00, 5253.31it/s, Materializing param=text_model.encoder.layers.1.self_attn.v_proj.weight][A
-Loading weights:  17%|█▋        | 34/196 [00:00<00:00, 5237.10it/s, Materializing param=text_model.encoder.layers.1.self_attn.v_proj.weight][A
-Loading weights:  18%|█▊        | 35/196 [00:00<00:00, 5362.97it/s, Materializing param=text_model.encoder.layers.2.layer_norm1.bias]       [A
-Loading weights:  18%|█▊        | 35/196 [00:00<00:00, 5346.76it/s, Materializing param=text_model.encoder.layers.2.layer_norm1.bias][A
-Loading weights:  18%|█▊        | 36/196 [00:00<00:00, 5465.29it/s, Materializing param=text_model.encoder.layers.2.layer_norm1.weight][A
-Loading weights:  18%|█▊        | 36/196 [00:00<00:00, 5446.17it/s, Materializing param=text_model.encoder.layers.2.layer_norm1.weight][A
-Loading weights:  19%|█▉        | 37/196 [00:00<00:00, 5567.93it/s, Materializing param=text_model.encoder.layers.2.layer_norm2.bias]  [A
-Loading weights:  19%|█▉        | 37/196 [00:00<00:00, 5545.44it/s, Materializing param=text_model.encoder.layers.2.layer_norm2.bias][A
-Loading weights:  19%|█▉        | 38/196 [00:00<00:00, 5659.73it/s, Materializing param=text_model.encoder.layers.2.layer_norm2.weight][A
-Loading weights:  19%|█▉        | 38/196 [00:00<00:00, 5640.50it/s, Materializing param=text_model.encoder.layers.2.layer_norm2.weight][A
-Loading weights:  20%|█▉        | 39/196 [00:00<00:00, 5760.60it/s, Materializing param=text_model.encoder.layers.2.mlp.fc1.bias]      [A
-Loading weights:  20%|█▉        | 39/196 [00:00<00:00, 5743.60it/s, Materializing param=text_model.encoder.layers.2.mlp.fc1.bias][A
-Loading weights:  20%|██        | 40/196 [00:00<00:00, 5863.29it/s, Materializing param=text_model.encoder.layers.2.mlp.fc1.weight][A
-Loading weights:  20%|██        | 40/196 [00:00<00:00, 5845.31it/s, Materializing param=text_model.encoder.layers.2.mlp.fc1.weight][A
-Loading weights:  21%|██        | 41/196 [00:00<00:00, 5961.74it/s, Materializing param=text_model.encoder.layers.2.mlp.fc2.bias]  [A
-Loading weights:  21%|██        | 41/196 [00:00<00:00, 5944.64it/s, Materializing param=text_model.encoder.layers.2.mlp.fc2.bias][A
-Loading weights:  21%|██▏       | 42/196 [00:00<00:00, 6062.38it/s, Materializing param=text_model.encoder.layers.2.mlp.fc2.weight][A
-Loading weights:  21%|██▏       | 42/196 [00:00<00:00, 6045.74it/s, Materializing param=text_model.encoder.layers.2.mlp.fc2.weight][A
-Loading weights:  22%|██▏       | 43/196 [00:00<00:00, 6163.25it/s, Materializing param=text_model.encoder.layers.2.self_attn.k_proj.bias][A
-Loading weights:  22%|██▏       | 43/196 [00:00<00:00, 6145.40it/s, Materializing param=text_model.encoder.layers.2.self_attn.k_proj.bias][A
-Loading weights:  22%|██▏       | 44/196 [00:00<00:00, 6260.58it/s, Materializing param=text_model.encoder.layers.2.self_attn.k_proj.weight][A
-Loading weights:  22%|██▏       | 44/196 [00:00<00:00, 6243.64it/s, Materializing param=text_model.encoder.layers.2.self_attn.k_proj.weight][A
-Loading weights:  23%|██▎       | 45/196 [00:00<00:00, 6357.57it/s, Materializing param=text_model.encoder.layers.2.self_attn.out_proj.bias][A
-Loading weights:  23%|██▎       | 45/196 [00:00<00:00, 6340.70it/s, Materializing param=text_model.encoder.layers.2.self_attn.out_proj.bias][A
-Loading weights:  23%|██▎       | 46/196 [00:00<00:00, 6454.29it/s, Materializing param=text_model.encoder.layers.2.self_attn.out_proj.weight][A
-Loading weights:  23%|██▎       | 46/196 [00:00<00:00, 6437.06it/s, Materializing param=text_model.encoder.layers.2.self_attn.out_proj.weight][A
-Loading weights:  24%|██▍       | 47/196 [00:00<00:00, 6549.46it/s, Materializing param=text_model.encoder.layers.2.self_attn.q_proj.bias]    [A
-Loading weights:  24%|██▍       | 47/196 [00:00<00:00, 6532.32it/s, Materializing param=text_model.encoder.layers.2.self_attn.q_proj.bias][A
-Loading weights:  24%|██▍       | 48/196 [00:00<00:00, 6630.66it/s, Materializing param=text_model.encoder.layers.2.self_attn.q_proj.weight][A
-Loading weights:  24%|██▍       | 48/196 [00:00<00:00, 6608.67it/s, Materializing param=text_model.encoder.layers.2.self_attn.q_proj.weight][A
-Loading weights:  25%|██▌       | 49/196 [00:00<00:00, 6708.48it/s, Materializing param=text_model.encoder.layers.2.self_attn.v_proj.bias]  [A
-Loading weights:  25%|██▌       | 49/196 [00:00<00:00, 6688.39it/s, Materializing param=text_model.encoder.layers.2.self_attn.v_proj.bias][A
-Loading weights:  26%|██▌       | 50/196 [00:00<00:00, 6797.02it/s, Materializing param=text_model.encoder.layers.2.self_attn.v_proj.weight][A
-Loading weights:  26%|██▌       | 50/196 [00:00<00:00, 6779.66it/s, Materializing param=text_model.encoder.layers.2.self_attn.v_proj.weight][A
-Loading weights:  26%|██▌       | 51/196 [00:00<00:00, 6887.20it/s, Materializing param=text_model.encoder.layers.3.layer_norm1.bias]       [A
-Loading weights:  26%|██▌       | 51/196 [00:00<00:00, 6869.73it/s, Materializing param=text_model.encoder.layers.3.layer_norm1.bias][A
-Loading weights:  27%|██▋       | 52/196 [00:00<00:00, 6975.97it/s, Materializing param=text_model.encoder.layers.3.layer_norm1.weight][A
-Loading weights:  27%|██▋       | 52/196 [00:00<00:00, 6956.39it/s, Materializing param=text_model.encoder.layers.3.layer_norm1.weight][A
-Loading weights:  27%|██▋       | 53/196 [00:00<00:00, 7051.49it/s, Materializing param=text_model.encoder.layers.3.layer_norm2.bias]  [A
-Loading weights:  27%|██▋       | 53/196 [00:00<00:00, 7027.41it/s, Materializing param=text_model.encoder.layers.3.layer_norm2.bias][A
-Loading weights:  28%|██▊       | 54/196 [00:00<00:00, 7129.80it/s, Materializing param=text_model.encoder.layers.3.layer_norm2.weight][A
-Loading weights:  28%|██▊       | 54/196 [00:00<00:00, 7110.78it/s, Materializing param=text_model.encoder.layers.3.layer_norm2.weight][A
-Loading weights:  28%|██▊       | 55/196 [00:00<00:00, 7214.82it/s, Materializing param=text_model.encoder.layers.3.mlp.fc1.bias]      [A
-Loading weights:  28%|██▊       | 55/196 [00:00<00:00, 7197.04it/s, Materializing param=text_model.encoder.layers.3.mlp.fc1.bias][A
-Loading weights:  29%|██▊       | 56/196 [00:00<00:00, 7295.35it/s, Materializing param=text_model.encoder.layers.3.mlp.fc1.weight][A
-Loading weights:  29%|██▊       | 56/196 [00:00<00:00, 7277.49it/s, Materializing param=text_model.encoder.layers.3.mlp.fc1.weight][A
-Loading weights:  29%|██▉       | 57/196 [00:00<00:00, 7374.77it/s, Materializing param=text_model.encoder.layers.3.mlp.fc2.bias]  [A
-Loading weights:  29%|██▉       | 57/196 [00:00<00:00, 7349.15it/s, Materializing param=text_model.encoder.layers.3.mlp.fc2.bias][A
-Loading weights:  30%|██▉       | 58/196 [00:00<00:00, 7428.31it/s, Materializing param=text_model.encoder.layers.3.mlp.fc2.weight][A
-Loading weights:  30%|██▉       | 58/196 [00:00<00:00, 7403.67it/s, Materializing param=text_model.encoder.layers.3.mlp.fc2.weight][A
-Loading weights:  30%|███       | 59/196 [00:00<00:00, 7491.19it/s, Materializing param=text_model.encoder.layers.3.self_attn.k_proj.bias][A
-Loading weights:  30%|███       | 59/196 [00:00<00:00, 7468.35it/s, Materializing param=text_model.encoder.layers.3.self_attn.k_proj.bias][A
-Loading weights:  31%|███       | 60/196 [00:00<00:00, 7564.12it/s, Materializing param=text_model.encoder.layers.3.self_attn.k_proj.weight][A
-Loading weights:  31%|███       | 60/196 [00:00<00:00, 7546.20it/s, Materializing param=text_model.encoder.layers.3.self_attn.k_proj.weight][A
-Loading weights:  31%|███       | 61/196 [00:00<00:00, 7642.18it/s, Materializing param=text_model.encoder.layers.3.self_attn.out_proj.bias][A
-Loading weights:  31%|███       | 61/196 [00:00<00:00, 7624.19it/s, Materializing param=text_model.encoder.layers.3.self_attn.out_proj.bias][A
-Loading weights:  32%|███▏      | 62/196 [00:00<00:00, 7719.04it/s, Materializing param=text_model.encoder.layers.3.self_attn.out_proj.weight][A
-Loading weights:  32%|███▏      | 62/196 [00:00<00:00, 7700.76it/s, Materializing param=text_model.encoder.layers.3.self_attn.out_proj.weight][A
-Loading weights:  32%|███▏      | 63/196 [00:00<00:00, 7795.87it/s, Materializing param=text_model.encoder.layers.3.self_attn.q_proj.bias]    [A
-Loading weights:  32%|███▏      | 63/196 [00:00<00:00, 7776.83it/s, Materializing param=text_model.encoder.layers.3.self_attn.q_proj.bias][A
-Loading weights:  33%|███▎      | 64/196 [00:00<00:00, 7870.16it/s, Materializing param=text_model.encoder.layers.3.self_attn.q_proj.weight][A
-Loading weights:  33%|███▎      | 64/196 [00:00<00:00, 7851.74it/s, Materializing param=text_model.encoder.layers.3.self_attn.q_proj.weight][A
-Loading weights:  33%|███▎      | 65/196 [00:00<00:00, 7942.37it/s, Materializing param=text_model.encoder.layers.3.self_attn.v_proj.bias]  [A
-Loading weights:  33%|███▎      | 65/196 [00:00<00:00, 7923.90it/s, Materializing param=text_model.encoder.layers.3.self_attn.v_proj.bias][A
-Loading weights:  34%|███▎      | 66/196 [00:00<00:00, 8016.45it/s, Materializing param=text_model.encoder.layers.3.self_attn.v_proj.weight][A
-Loading weights:  34%|███▎      | 66/196 [00:00<00:00, 7997.00it/s, Materializing param=text_model.encoder.layers.3.self_attn.v_proj.weight][A
-Loading weights:  34%|███▍      | 67/196 [00:00<00:00, 8087.79it/s, Materializing param=text_model.encoder.layers.4.layer_norm1.bias]       [A
-Loading weights:  34%|███▍      | 67/196 [00:00<00:00, 8069.44it/s, Materializing param=text_model.encoder.layers.4.layer_norm1.bias][A
-Loading weights:  35%|███▍      | 68/196 [00:00<00:00, 8159.42it/s, Materializing param=text_model.encoder.layers.4.layer_norm1.weight][A
-Loading weights:  35%|███▍      | 68/196 [00:00<00:00, 8141.49it/s, Materializing param=text_model.encoder.layers.4.layer_norm1.weight][A
-Loading weights:  35%|███▌      | 69/196 [00:00<00:00, 8228.10it/s, Materializing param=text_model.encoder.layers.4.layer_norm2.bias]  [A
-Loading weights:  35%|███▌      | 69/196 [00:00<00:00, 8209.20it/s, Materializing param=text_model.encoder.layers.4.layer_norm2.bias][A
-Loading weights:  36%|███▌      | 70/196 [00:00<00:00, 8295.93it/s, Materializing param=text_model.encoder.layers.4.layer_norm2.weight][A
-Loading weights:  36%|███▌      | 70/196 [00:00<00:00, 8269.29it/s, Materializing param=text_model.encoder.layers.4.layer_norm2.weight][A
-Loading weights:  36%|███▌      | 71/196 [00:00<00:00, 8344.89it/s, Materializing param=text_model.encoder.layers.4.mlp.fc1.bias]      [A
-Loading weights:  36%|███▌      | 71/196 [00:00<00:00, 8326.45it/s, Materializing param=text_model.encoder.layers.4.mlp.fc1.bias][A
-Loading weights:  37%|███▋      | 72/196 [00:00<00:00, 8405.42it/s, Materializing param=text_model.encoder.layers.4.mlp.fc1.weight][A
-Loading weights:  37%|███▋      | 72/196 [00:00<00:00, 8385.58it/s, Materializing param=text_model.encoder.layers.4.mlp.fc1.weight][A
-Loading weights:  37%|███▋      | 73/196 [00:00<00:00, 8464.67it/s, Materializing param=text_model.encoder.layers.4.mlp.fc2.bias]  [A
-Loading weights:  37%|███▋      | 73/196 [00:00<00:00, 8439.24it/s, Materializing param=text_model.encoder.layers.4.mlp.fc2.bias][A
-Loading weights:  38%|███▊      | 74/196 [00:00<00:00, 8522.43it/s, Materializing param=text_model.encoder.layers.4.mlp.fc2.weight][A
-Loading weights:  38%|███▊      | 74/196 [00:00<00:00, 8498.86it/s, Materializing param=text_model.encoder.layers.4.mlp.fc2.weight][A
-Loading weights:  38%|███▊      | 75/196 [00:00<00:00, 8581.29it/s, Materializing param=text_model.encoder.layers.4.self_attn.k_proj.bias][A
-Loading weights:  38%|███▊      | 75/196 [00:00<00:00, 8561.67it/s, Materializing param=text_model.encoder.layers.4.self_attn.k_proj.bias][A
-Loading weights:  39%|███▉      | 76/196 [00:00<00:00, 8641.25it/s, Materializing param=text_model.encoder.layers.4.self_attn.k_proj.weight][A
-Loading weights:  39%|███▉      | 76/196 [00:00<00:00, 8621.62it/s, Materializing param=text_model.encoder.layers.4.self_attn.k_proj.weight][A
-Loading weights:  39%|███▉      | 77/196 [00:00<00:00, 8703.52it/s, Materializing param=text_model.encoder.layers.4.self_attn.out_proj.bias][A
-Loading weights:  39%|███▉      | 77/196 [00:00<00:00, 8681.99it/s, Materializing param=text_model.encoder.layers.4.self_attn.out_proj.bias][A
-Loading weights:  40%|███▉      | 78/196 [00:00<00:00, 8753.10it/s, Materializing param=text_model.encoder.layers.4.self_attn.out_proj.weight][A
-Loading weights:  40%|███▉      | 78/196 [00:00<00:00, 8728.57it/s, Materializing param=text_model.encoder.layers.4.self_attn.out_proj.weight][A
-Loading weights:  40%|████      | 79/196 [00:00<00:00, 8801.26it/s, Materializing param=text_model.encoder.layers.4.self_attn.q_proj.bias]    [A
-Loading weights:  40%|████      | 79/196 [00:00<00:00, 8782.60it/s, Materializing param=text_model.encoder.layers.4.self_attn.q_proj.bias][A
-Loading weights:  41%|████      | 80/196 [00:00<00:00, 8863.23it/s, Materializing param=text_model.encoder.layers.4.self_attn.q_proj.weight][A
-Loading weights:  41%|████      | 80/196 [00:00<00:00, 8844.54it/s, Materializing param=text_model.encoder.layers.4.self_attn.q_proj.weight][A
-Loading weights:  41%|████▏     | 81/196 [00:00<00:00, 8925.46it/s, Materializing param=text_model.encoder.layers.4.self_attn.v_proj.bias]  [A
-Loading weights:  41%|████▏     | 81/196 [00:00<00:00, 8906.97it/s, Materializing param=text_model.encoder.layers.4.self_attn.v_proj.bias][A
-Loading weights:  42%|████▏     | 82/196 [00:00<00:00, 8983.26it/s, Materializing param=text_model.encoder.layers.4.self_attn.v_proj.weight][A
-Loading weights:  42%|████▏     | 82/196 [00:00<00:00, 8964.52it/s, Materializing param=text_model.encoder.layers.4.self_attn.v_proj.weight][A
-Loading weights:  42%|████▏     | 83/196 [00:00<00:00, 9045.32it/s, Materializing param=text_model.encoder.layers.5.layer_norm1.bias]       [A
-Loading weights:  42%|████▏     | 83/196 [00:00<00:00, 9026.79it/s, Materializing param=text_model.encoder.layers.5.layer_norm1.bias][A
-Loading weights:  43%|████▎     | 84/196 [00:00<00:00, 9105.56it/s, Materializing param=text_model.encoder.layers.5.layer_norm1.weight][A
-Loading weights:  43%|████▎     | 84/196 [00:00<00:00, 9087.95it/s, Materializing param=text_model.encoder.layers.5.layer_norm1.weight][A
-Loading weights:  43%|████▎     | 85/196 [00:00<00:00, 9166.35it/s, Materializing param=text_model.encoder.layers.5.layer_norm2.bias]  [A
-Loading weights:  43%|████▎     | 85/196 [00:00<00:00, 9147.76it/s, Materializing param=text_model.encoder.layers.5.layer_norm2.bias][A
-Loading weights:  44%|████▍     | 86/196 [00:00<00:00, 9218.49it/s, Materializing param=text_model.encoder.layers.5.layer_norm2.weight][A
-Loading weights:  44%|████▍     | 86/196 [00:00<00:00, 9199.91it/s, Materializing param=text_model.encoder.layers.5.layer_norm2.weight][A
-Loading weights:  44%|████▍     | 87/196 [00:00<00:00, 9278.02it/s, Materializing param=text_model.encoder.layers.5.mlp.fc1.bias]      [A
-Loading weights:  44%|████▍     | 87/196 [00:00<00:00, 9259.18it/s, Materializing param=text_model.encoder.layers.5.mlp.fc1.bias][A
-Loading weights:  45%|████▍     | 88/196 [00:00<00:00, 9336.71it/s, Materializing param=text_model.encoder.layers.5.mlp.fc1.weight][A
-Loading weights:  45%|████▍     | 88/196 [00:00<00:00, 9318.09it/s, Materializing param=text_model.encoder.layers.5.mlp.fc1.weight][A
-Loading weights:  45%|████▌     | 89/196 [00:00<00:00, 9395.27it/s, Materializing param=text_model.encoder.layers.5.mlp.fc2.bias]  [A
-Loading weights:  45%|████▌     | 89/196 [00:00<00:00, 9376.16it/s, Materializing param=text_model.encoder.layers.5.mlp.fc2.bias][A
-Loading weights:  46%|████▌     | 90/196 [00:00<00:00, 9450.65it/s, Materializing param=text_model.encoder.layers.5.mlp.fc2.weight][A
-Loading weights:  46%|████▌     | 90/196 [00:00<00:00, 9432.00it/s, Materializing param=text_model.encoder.layers.5.mlp.fc2.weight][A
-Loading weights:  46%|████▋     | 91/196 [00:00<00:00, 9499.06it/s, Materializing param=text_model.encoder.layers.5.self_attn.k_proj.bias][A
-Loading weights:  46%|████▋     | 91/196 [00:00<00:00, 9475.24it/s, Materializing param=text_model.encoder.layers.5.self_attn.k_proj.bias][A
-Loading weights:  47%|████▋     | 92/196 [00:00<00:00, 9537.69it/s, Materializing param=text_model.encoder.layers.5.self_attn.k_proj.weight][A
-Loading weights:  47%|████▋     | 92/196 [00:00<00:00, 9511.83it/s, Materializing param=text_model.encoder.layers.5.self_attn.k_proj.weight][A
-Loading weights:  47%|████▋     | 93/196 [00:00<00:00, 9573.69it/s, Materializing param=text_model.encoder.layers.5.self_attn.out_proj.bias][A
-Loading weights:  47%|████▋     | 93/196 [00:00<00:00, 9548.38it/s, Materializing param=text_model.encoder.layers.5.self_attn.out_proj.bias][A
-Loading weights:  48%|████▊     | 94/196 [00:00<00:00, 9616.44it/s, Materializing param=text_model.encoder.layers.5.self_attn.out_proj.weight][A
-Loading weights:  48%|████▊     | 94/196 [00:00<00:00, 9596.78it/s, Materializing param=text_model.encoder.layers.5.self_attn.out_proj.weight][A
-Loading weights:  48%|████▊     | 95/196 [00:00<00:00, 9661.25it/s, Materializing param=text_model.encoder.layers.5.self_attn.q_proj.bias]    [A
-Loading weights:  48%|████▊     | 95/196 [00:00<00:00, 9634.85it/s, Materializing param=text_model.encoder.layers.5.self_attn.q_proj.bias][A
-Loading weights:  49%|████▉     | 96/196 [00:00<00:00, 9705.76it/s, Materializing param=text_model.encoder.layers.5.self_attn.q_proj.weight][A
-Loading weights:  49%|████▉     | 96/196 [00:00<00:00, 9687.31it/s, Materializing param=text_model.encoder.layers.5.self_attn.q_proj.weight][A
-Loading weights:  49%|████▉     | 97/196 [00:00<00:00, 9758.41it/s, Materializing param=text_model.encoder.layers.5.self_attn.v_proj.bias]  [A
-Loading weights:  49%|████▉     | 97/196 [00:00<00:00, 9739.95it/s, Materializing param=text_model.encoder.layers.5.self_attn.v_proj.bias][A
-Loading weights:  50%|█████     | 98/196 [00:00<00:00, 9811.71it/s, Materializing param=text_model.encoder.layers.5.self_attn.v_proj.weight][A
-Loading weights:  50%|█████     | 98/196 [00:00<00:00, 9792.07it/s, Materializing param=text_model.encoder.layers.5.self_attn.v_proj.weight][A
-Loading weights:  51%|█████     | 99/196 [00:00<00:00, 9862.62it/s, Materializing param=text_model.encoder.layers.6.layer_norm1.bias]       [A
-Loading weights:  51%|█████     | 99/196 [00:00<00:00, 9843.68it/s, Materializing param=text_model.encoder.layers.6.layer_norm1.bias][A
-Loading weights:  51%|█████     | 100/196 [00:00<00:00, 9910.69it/s, Materializing param=text_model.encoder.layers.6.layer_norm1.weight][A
-Loading weights:  51%|█████     | 100/196 [00:00<00:00, 9891.99it/s, Materializing param=text_model.encoder.layers.6.layer_norm1.weight][A
-Loading weights:  52%|█████▏    | 101/196 [00:00<00:00, 9958.50it/s, Materializing param=text_model.encoder.layers.6.layer_norm2.bias]  [A
-Loading weights:  52%|█████▏    | 101/196 [00:00<00:00, 9939.81it/s, Materializing param=text_model.encoder.layers.6.layer_norm2.bias][A
-Loading weights:  52%|█████▏    | 102/196 [00:00<00:00, 10008.87it/s, Materializing param=text_model.encoder.layers.6.layer_norm2.weight][A
-Loading weights:  52%|█████▏    | 102/196 [00:00<00:00, 9991.34it/s, Materializing param=text_model.encoder.layers.6.layer_norm2.weight] [A
-Loading weights:  53%|█████▎    | 103/196 [00:00<00:00, 10059.45it/s, Materializing param=text_model.encoder.layers.6.mlp.fc1.bias]     [A
-Loading weights:  53%|█████▎    | 103/196 [00:00<00:00, 10040.75it/s, Materializing param=text_model.encoder.layers.6.mlp.fc1.bias][A
-Loading weights:  53%|█████▎    | 104/196 [00:00<00:00, 10108.86it/s, Materializing param=text_model.encoder.layers.6.mlp.fc1.weight][A
-Loading weights:  53%|█████▎    | 104/196 [00:00<00:00, 10090.16it/s, Materializing param=text_model.encoder.layers.6.mlp.fc1.weight][A
-Loading weights:  54%|█████▎    | 105/196 [00:00<00:00, 10157.81it/s, Materializing param=text_model.encoder.layers.6.mlp.fc2.bias]  [A
-Loading weights:  54%|█████▎    | 105/196 [00:00<00:00, 10137.93it/s, Materializing param=text_model.encoder.layers.6.mlp.fc2.bias][A
-Loading weights:  54%|█████▍    | 106/196 [00:00<00:00, 10206.06it/s, Materializing param=text_model.encoder.layers.6.mlp.fc2.weight][A
-Loading weights:  54%|█████▍    | 106/196 [00:00<00:00, 10187.35it/s, Materializing param=text_model.encoder.layers.6.mlp.fc2.weight][A
-Loading weights:  55%|█████▍    | 107/196 [00:00<00:00, 10253.85it/s, Materializing param=text_model.encoder.layers.6.self_attn.k_proj.bias][A
-Loading weights:  55%|█████▍    | 107/196 [00:00<00:00, 10235.38it/s, Materializing param=text_model.encoder.layers.6.self_attn.k_proj.bias][A
-Loading weights:  55%|█████▌    | 108/196 [00:00<00:00, 10301.20it/s, Materializing param=text_model.encoder.layers.6.self_attn.k_proj.weight][A
-Loading weights:  55%|█████▌    | 108/196 [00:00<00:00, 10282.72it/s, Materializing param=text_model.encoder.layers.6.self_attn.k_proj.weight][A
-Loading weights:  56%|█████▌    | 109/196 [00:00<00:00, 10349.27it/s, Materializing param=text_model.encoder.layers.6.self_attn.out_proj.bias][A
-Loading weights:  56%|█████▌    | 109/196 [00:00<00:00, 10330.80it/s, Materializing param=text_model.encoder.layers.6.self_attn.out_proj.bias][A
-Loading weights:  56%|█████▌    | 110/196 [00:00<00:00, 10395.74it/s, Materializing param=text_model.encoder.layers.6.self_attn.out_proj.weight][A
-Loading weights:  56%|█████▌    | 110/196 [00:00<00:00, 10376.34it/s, Materializing param=text_model.encoder.layers.6.self_attn.out_proj.weight][A
-Loading weights:  57%|█████▋    | 111/196 [00:00<00:00, 10432.19it/s, Materializing param=text_model.encoder.layers.6.self_attn.q_proj.bias]    [A
-Loading weights:  57%|█████▋    | 111/196 [00:00<00:00, 10410.73it/s, Materializing param=text_model.encoder.layers.6.self_attn.q_proj.bias][A
-Loading weights:  57%|█████▋    | 112/196 [00:00<00:00, 10466.37it/s, Materializing param=text_model.encoder.layers.6.self_attn.q_proj.weight][A
-Loading weights:  57%|█████▋    | 112/196 [00:00<00:00, 10442.87it/s, Materializing param=text_model.encoder.layers.6.self_attn.q_proj.weight][A
-Loading weights:  58%|█████▊    | 113/196 [00:00<00:00, 10506.68it/s, Materializing param=text_model.encoder.layers.6.self_attn.v_proj.bias]  [A
-Loading weights:  58%|█████▊    | 113/196 [00:00<00:00, 10488.31it/s, Materializing param=text_model.encoder.layers.6.self_attn.v_proj.bias][A
-Loading weights:  58%|█████▊    | 114/196 [00:00<00:00, 10549.85it/s, Materializing param=text_model.encoder.layers.6.self_attn.v_proj.weight][A
-Loading weights:  58%|█████▊    | 114/196 [00:00<00:00, 10531.02it/s, Materializing param=text_model.encoder.layers.6.self_attn.v_proj.weight][A
-Loading weights:  59%|█████▊    | 115/196 [00:00<00:00, 10593.07it/s, Materializing param=text_model.encoder.layers.7.layer_norm1.bias]       [A
-Loading weights:  59%|█████▊    | 115/196 [00:00<00:00, 10574.73it/s, Materializing param=text_model.encoder.layers.7.layer_norm1.bias][A
-Loading weights:  59%|█████▉    | 116/196 [00:00<00:00, 10638.23it/s, Materializing param=text_model.encoder.layers.7.layer_norm1.weight][A
-Loading weights:  59%|█████▉    | 116/196 [00:00<00:00, 10618.95it/s, Materializing param=text_model.encoder.layers.7.layer_norm1.weight][A
-Loading weights:  60%|█████▉    | 117/196 [00:00<00:00, 10681.82it/s, Materializing param=text_model.encoder.layers.7.layer_norm2.bias]  [A
-Loading weights:  60%|█████▉    | 117/196 [00:00<00:00, 10663.48it/s, Materializing param=text_model.encoder.layers.7.layer_norm2.bias][A
-Loading weights:  60%|██████    | 118/196 [00:00<00:00, 10725.26it/s, Materializing param=text_model.encoder.layers.7.layer_norm2.weight][A
-Loading weights:  60%|██████    | 118/196 [00:00<00:00, 10706.93it/s, Materializing param=text_model.encoder.layers.7.layer_norm2.weight][A
-Loading weights:  61%|██████    | 119/196 [00:00<00:00, 10769.01it/s, Materializing param=text_model.encoder.layers.7.mlp.fc1.bias]      [A
-Loading weights:  61%|██████    | 119/196 [00:00<00:00, 10750.69it/s, Materializing param=text_model.encoder.layers.7.mlp.fc1.bias][A
-Loading weights:  61%|██████    | 120/196 [00:00<00:00, 10811.69it/s, Materializing param=text_model.encoder.layers.7.mlp.fc1.weight][A
-Loading weights:  61%|██████    | 120/196 [00:00<00:00, 10793.37it/s, Materializing param=text_model.encoder.layers.7.mlp.fc1.weight][A
-Loading weights:  62%|██████▏   | 121/196 [00:00<00:00, 10850.04it/s, Materializing param=text_model.encoder.layers.7.mlp.fc2.bias]  [A
-Loading weights:  62%|██████▏   | 121/196 [00:00<00:00, 10830.59it/s, Materializing param=text_model.encoder.layers.7.mlp.fc2.bias][A
-Loading weights:  62%|██████▏   | 122/196 [00:00<00:00, 10885.95it/s, Materializing param=text_model.encoder.layers.7.mlp.fc2.weight][A
-Loading weights:  62%|██████▏   | 122/196 [00:00<00:00, 10861.00it/s, Materializing param=text_model.encoder.layers.7.mlp.fc2.weight][A
-Loading weights:  63%|██████▎   | 123/196 [00:00<00:00, 10918.74it/s, Materializing param=text_model.encoder.layers.7.self_attn.k_proj.bias][A
-Loading weights:  63%|██████▎   | 123/196 [00:00<00:00, 10899.36it/s, Materializing param=text_model.encoder.layers.7.self_attn.k_proj.bias][A
-Loading weights:  63%|██████▎   | 124/196 [00:00<00:00, 10959.72it/s, Materializing param=text_model.encoder.layers.7.self_attn.k_proj.weight][A
-Loading weights:  63%|██████▎   | 124/196 [00:00<00:00, 10941.51it/s, Materializing param=text_model.encoder.layers.7.self_attn.k_proj.weight][A
-Loading weights:  64%|██████▍   | 125/196 [00:00<00:00, 11000.59it/s, Materializing param=text_model.encoder.layers.7.self_attn.out_proj.bias][A
-Loading weights:  64%|██████▍   | 125/196 [00:00<00:00, 10981.23it/s, Materializing param=text_model.encoder.layers.7.self_attn.out_proj.bias][A
-Loading weights:  64%|██████▍   | 126/196 [00:00<00:00, 11039.95it/s, Materializing param=text_model.encoder.layers.7.self_attn.out_proj.weight][A
-Loading weights:  64%|██████▍   | 126/196 [00:00<00:00, 11021.53it/s, Materializing param=text_model.encoder.layers.7.self_attn.out_proj.weight][A
-Loading weights:  65%|██████▍   | 127/196 [00:00<00:00, 11077.12it/s, Materializing param=text_model.encoder.layers.7.self_attn.q_proj.bias]    [A
-Loading weights:  65%|██████▍   | 127/196 [00:00<00:00, 11058.72it/s, Materializing param=text_model.encoder.layers.7.self_attn.q_proj.bias][A
-Loading weights:  65%|██████▌   | 128/196 [00:00<00:00, 11111.20it/s, Materializing param=text_model.encoder.layers.7.self_attn.q_proj.weight][A
-Loading weights:  65%|██████▌   | 128/196 [00:00<00:00, 11085.96it/s, Materializing param=text_model.encoder.layers.7.self_attn.q_proj.weight][A
-Loading weights:  66%|██████▌   | 129/196 [00:00<00:00, 11140.82it/s, Materializing param=text_model.encoder.layers.7.self_attn.v_proj.bias]  [A
-Loading weights:  66%|██████▌   | 129/196 [00:00<00:00, 11122.50it/s, Materializing param=text_model.encoder.layers.7.self_attn.v_proj.bias][A
-Loading weights:  66%|██████▋   | 130/196 [00:00<00:00, 11179.99it/s, Materializing param=text_model.encoder.layers.7.self_attn.v_proj.weight][A
-Loading weights:  66%|██████▋   | 130/196 [00:00<00:00, 11161.46it/s, Materializing param=text_model.encoder.layers.7.self_attn.v_proj.weight][A
-Loading weights:  67%|██████▋   | 131/196 [00:00<00:00, 11219.53it/s, Materializing param=text_model.encoder.layers.8.layer_norm1.bias]       [A
-Loading weights:  67%|██████▋   | 131/196 [00:00<00:00, 11200.31it/s, Materializing param=text_model.encoder.layers.8.layer_norm1.bias][A
-Loading weights:  67%|██████▋   | 132/196 [00:00<00:00, 11255.07it/s, Materializing param=text_model.encoder.layers.8.layer_norm1.weight][A
-Loading weights:  67%|██████▋   | 132/196 [00:00<00:00, 11235.88it/s, Materializing param=text_model.encoder.layers.8.layer_norm1.weight][A
-Loading weights:  68%|██████▊   | 133/196 [00:00<00:00, 11293.27it/s, Materializing param=text_model.encoder.layers.8.layer_norm2.bias]  [A
-Loading weights:  68%|██████▊   | 133/196 [00:00<00:00, 11274.78it/s, Materializing param=text_model.encoder.layers.8.layer_norm2.bias][A
-Loading weights:  68%|██████▊   | 134/196 [00:00<00:00, 11332.76it/s, Materializing param=text_model.encoder.layers.8.layer_norm2.weight][A
-Loading weights:  68%|██████▊   | 134/196 [00:00<00:00, 11314.73it/s, Materializing param=text_model.encoder.layers.8.layer_norm2.weight][A
-Loading weights:  69%|██████▉   | 135/196 [00:00<00:00, 11371.01it/s, Materializing param=text_model.encoder.layers.8.mlp.fc1.bias]      [A
-Loading weights:  69%|██████▉   | 135/196 [00:00<00:00, 11353.00it/s, Materializing param=text_model.encoder.layers.8.mlp.fc1.bias][A
-Loading weights:  69%|██████▉   | 136/196 [00:00<00:00, 11408.28it/s, Materializing param=text_model.encoder.layers.8.mlp.fc1.weight][A
-Loading weights:  69%|██████▉   | 136/196 [00:00<00:00, 11391.19it/s, Materializing param=text_model.encoder.layers.8.mlp.fc1.weight][A
-Loading weights:  70%|██████▉   | 137/196 [00:00<00:00, 11445.24it/s, Materializing param=text_model.encoder.layers.8.mlp.fc2.bias]  [A
-Loading weights:  70%|██████▉   | 137/196 [00:00<00:00, 11424.30it/s, Materializing param=text_model.encoder.layers.8.mlp.fc2.bias][A
-Loading weights:  70%|███████   | 138/196 [00:00<00:00, 11478.94it/s, Materializing param=text_model.encoder.layers.8.mlp.fc2.weight][A
-Loading weights:  70%|███████   | 138/196 [00:00<00:00, 11454.18it/s, Materializing param=text_model.encoder.layers.8.mlp.fc2.weight][A
-Loading weights:  71%|███████   | 139/196 [00:00<00:00, 11500.99it/s, Materializing param=text_model.encoder.layers.8.self_attn.k_proj.bias][A
-Loading weights:  71%|███████   | 139/196 [00:00<00:00, 11482.64it/s, Materializing param=text_model.encoder.layers.8.self_attn.k_proj.bias][A
-Loading weights:  71%|███████▏  | 140/196 [00:00<00:00, 11536.85it/s, Materializing param=text_model.encoder.layers.8.self_attn.k_proj.weight][A
-Loading weights:  71%|███████▏  | 140/196 [00:00<00:00, 11518.74it/s, Materializing param=text_model.encoder.layers.8.self_attn.k_proj.weight][A
-Loading weights:  72%|███████▏  | 141/196 [00:00<00:00, 11571.51it/s, Materializing param=text_model.encoder.layers.8.self_attn.out_proj.bias][A
-Loading weights:  72%|███████▏  | 141/196 [00:00<00:00, 11553.65it/s, Materializing param=text_model.encoder.layers.8.self_attn.out_proj.bias][A
-Loading weights:  72%|███████▏  | 142/196 [00:00<00:00, 11606.12it/s, Materializing param=text_model.encoder.layers.8.self_attn.out_proj.weight][A
-Loading weights:  72%|███████▏  | 142/196 [00:00<00:00, 11587.83it/s, Materializing param=text_model.encoder.layers.8.self_attn.out_proj.weight][A
-Loading weights:  73%|███████▎  | 143/196 [00:00<00:00, 11641.12it/s, Materializing param=text_model.encoder.layers.8.self_attn.q_proj.bias]    [A
-Loading weights:  73%|███████▎  | 143/196 [00:00<00:00, 11623.07it/s, Materializing param=text_model.encoder.layers.8.self_attn.q_proj.bias][A
-Loading weights:  73%|███████▎  | 144/196 [00:00<00:00, 11676.07it/s, Materializing param=text_model.encoder.layers.8.self_attn.q_proj.weight][A
-Loading weights:  73%|███████▎  | 144/196 [00:00<00:00, 11657.14it/s, Materializing param=text_model.encoder.layers.8.self_attn.q_proj.weight][A
-Loading weights:  74%|███████▍  | 145/196 [00:00<00:00, 11710.52it/s, Materializing param=text_model.encoder.layers.8.self_attn.v_proj.bias]  [A
-Loading weights:  74%|███████▍  | 145/196 [00:00<00:00, 11691.61it/s, Materializing param=text_model.encoder.layers.8.self_attn.v_proj.bias][A
-Loading weights:  74%|███████▍  | 146/196 [00:00<00:00, 11741.99it/s, Materializing param=text_model.encoder.layers.8.self_attn.v_proj.weight][A
-Loading weights:  74%|███████▍  | 146/196 [00:00<00:00, 11723.11it/s, Materializing param=text_model.encoder.layers.8.self_attn.v_proj.weight][A
-Loading weights:  75%|███████▌  | 147/196 [00:00<00:00, 11775.00it/s, Materializing param=text_model.encoder.layers.9.layer_norm1.bias]       [A
-Loading weights:  75%|███████▌  | 147/196 [00:00<00:00, 11756.14it/s, Materializing param=text_model.encoder.layers.9.layer_norm1.bias][A
-Loading weights:  76%|███████▌  | 148/196 [00:00<00:00, 11805.95it/s, Materializing param=text_model.encoder.layers.9.layer_norm1.weight][A
-Loading weights:  76%|███████▌  | 148/196 [00:00<00:00, 11784.44it/s, Materializing param=text_model.encoder.layers.9.layer_norm1.weight][A
-Loading weights:  76%|███████▌  | 149/196 [00:00<00:00, 11835.75it/s, Materializing param=text_model.encoder.layers.9.layer_norm2.bias]  [A
-Loading weights:  76%|███████▌  | 149/196 [00:00<00:00, 11815.16it/s, Materializing param=text_model.encoder.layers.9.layer_norm2.bias][A
-Loading weights:  77%|███████▋  | 150/196 [00:00<00:00, 11860.38it/s, Materializing param=text_model.encoder.layers.9.layer_norm2.weight][A
-Loading weights:  77%|███████▋  | 150/196 [00:00<00:00, 11840.73it/s, Materializing param=text_model.encoder.layers.9.layer_norm2.weight][A
-Loading weights:  77%|███████▋  | 151/196 [00:00<00:00, 11892.59it/s, Materializing param=text_model.encoder.layers.9.mlp.fc1.bias]      [A
-Loading weights:  77%|███████▋  | 151/196 [00:00<00:00, 11875.87it/s, Materializing param=text_model.encoder.layers.9.mlp.fc1.bias][A
-Loading weights:  78%|███████▊  | 152/196 [00:00<00:00, 11926.11it/s, Materializing param=text_model.encoder.layers.9.mlp.fc1.weight][A
-Loading weights:  78%|███████▊  | 152/196 [00:00<00:00, 11905.62it/s, Materializing param=text_model.encoder.layers.9.mlp.fc1.weight][A
-Loading weights:  78%|███████▊  | 153/196 [00:00<00:00, 11954.93it/s, Materializing param=text_model.encoder.layers.9.mlp.fc2.bias]  [A
-Loading weights:  78%|███████▊  | 153/196 [00:00<00:00, 11937.14it/s, Materializing param=text_model.encoder.layers.9.mlp.fc2.bias][A
-Loading weights:  79%|███████▊  | 154/196 [00:00<00:00, 11977.95it/s, Materializing param=text_model.encoder.layers.9.mlp.fc2.weight][A
-Loading weights:  79%|███████▊  | 154/196 [00:00<00:00, 11955.56it/s, Materializing param=text_model.encoder.layers.9.mlp.fc2.weight][A
-Loading weights:  79%|███████▉  | 155/196 [00:00<00:00, 12006.08it/s, Materializing param=text_model.encoder.layers.9.self_attn.k_proj.bias][A
-Loading weights:  79%|███████▉  | 155/196 [00:00<00:00, 11987.70it/s, Materializing param=text_model.encoder.layers.9.self_attn.k_proj.bias][A
-Loading weights:  80%|███████▉  | 156/196 [00:00<00:00, 12036.86it/s, Materializing param=text_model.encoder.layers.9.self_attn.k_proj.weight][A
-Loading weights:  80%|███████▉  | 156/196 [00:00<00:00, 12018.28it/s, Materializing param=text_model.encoder.layers.9.self_attn.k_proj.weight][A
-Loading weights:  80%|████████  | 157/196 [00:00<00:00, 12068.50it/s, Materializing param=text_model.encoder.layers.9.self_attn.out_proj.bias][A
-Loading weights:  80%|████████  | 157/196 [00:00<00:00, 12049.95it/s, Materializing param=text_model.encoder.layers.9.self_attn.out_proj.bias][A
-Loading weights:  81%|████████  | 158/196 [00:00<00:00, 12091.52it/s, Materializing param=text_model.encoder.layers.9.self_attn.out_proj.weight][A
-Loading weights:  81%|████████  | 158/196 [00:00<00:00, 12070.38it/s, Materializing param=text_model.encoder.layers.9.self_attn.out_proj.weight][A
-Loading weights:  81%|████████  | 159/196 [00:00<00:00, 12107.96it/s, Materializing param=text_model.encoder.layers.9.self_attn.q_proj.bias]    [A
-Loading weights:  81%|████████  | 159/196 [00:00<00:00, 12086.67it/s, Materializing param=text_model.encoder.layers.9.self_attn.q_proj.bias][A
-Loading weights:  82%|████████▏ | 160/196 [00:00<00:00, 12132.13it/s, Materializing param=text_model.encoder.layers.9.self_attn.q_proj.weight][A
-Loading weights:  82%|████████▏ | 160/196 [00:00<00:00, 12112.86it/s, Materializing param=text_model.encoder.layers.9.self_attn.q_proj.weight][A
-Loading weights:  82%|████████▏ | 161/196 [00:00<00:00, 12156.31it/s, Materializing param=text_model.encoder.layers.9.self_attn.v_proj.bias]  [A
-Loading weights:  82%|████████▏ | 161/196 [00:00<00:00, 12135.34it/s, Materializing param=text_model.encoder.layers.9.self_attn.v_proj.bias][A
-Loading weights:  83%|████████▎ | 162/196 [00:00<00:00, 12178.76it/s, Materializing param=text_model.encoder.layers.9.self_attn.v_proj.weight][A
-Loading weights:  83%|████████▎ | 162/196 [00:00<00:00, 12153.92it/s, Materializing param=text_model.encoder.layers.9.self_attn.v_proj.weight][A
-Loading weights:  83%|████████▎ | 163/196 [00:00<00:00, 12193.40it/s, Materializing param=text_model.encoder.layers.10.layer_norm1.bias]      [A
-Loading weights:  83%|████████▎ | 163/196 [00:00<00:00, 12172.34it/s, Materializing param=text_model.encoder.layers.10.layer_norm1.bias][A
-Loading weights:  84%|████████▎ | 164/196 [00:00<00:00, 12219.60it/s, Materializing param=text_model.encoder.layers.10.layer_norm1.weight][A
-Loading weights:  84%|████████▎ | 164/196 [00:00<00:00, 12201.61it/s, Materializing param=text_model.encoder.layers.10.layer_norm1.weight][A
-Loading weights:  84%|████████▍ | 165/196 [00:00<00:00, 12240.19it/s, Materializing param=text_model.encoder.layers.10.layer_norm2.bias]  [A
-Loading weights:  84%|████████▍ | 165/196 [00:00<00:00, 12217.71it/s, Materializing param=text_model.encoder.layers.10.layer_norm2.bias][A
-Loading weights:  85%|████████▍ | 166/196 [00:00<00:00, 12266.21it/s, Materializing param=text_model.encoder.layers.10.layer_norm2.weight][A
-Loading weights:  85%|████████▍ | 166/196 [00:00<00:00, 12249.16it/s, Materializing param=text_model.encoder.layers.10.layer_norm2.weight][A
-Loading weights:  85%|████████▌ | 167/196 [00:00<00:00, 12296.56it/s, Materializing param=text_model.encoder.layers.10.mlp.fc1.bias]      [A
-Loading weights:  85%|████████▌ | 167/196 [00:00<00:00, 12280.17it/s, Materializing param=text_model.encoder.layers.10.mlp.fc1.bias][A
-Loading weights:  86%|████████▌ | 168/196 [00:00<00:00, 12327.56it/s, Materializing param=text_model.encoder.layers.10.mlp.fc1.weight][A
-Loading weights:  86%|████████▌ | 168/196 [00:00<00:00, 12310.33it/s, Materializing param=text_model.encoder.layers.10.mlp.fc1.weight][A
-Loading weights:  86%|████████▌ | 169/196 [00:00<00:00, 12355.54it/s, Materializing param=text_model.encoder.layers.10.mlp.fc2.bias]  [A
-Loading weights:  86%|████████▌ | 169/196 [00:00<00:00, 12338.55it/s, Materializing param=text_model.encoder.layers.10.mlp.fc2.bias][A
-Loading weights:  87%|████████▋ | 170/196 [00:00<00:00, 12384.18it/s, Materializing param=text_model.encoder.layers.10.mlp.fc2.weight][A
-Loading weights:  87%|████████▋ | 170/196 [00:00<00:00, 12367.21it/s, Materializing param=text_model.encoder.layers.10.mlp.fc2.weight][A
-Loading weights:  87%|████████▋ | 171/196 [00:00<00:00, 12412.83it/s, Materializing param=text_model.encoder.layers.10.self_attn.k_proj.bias][A
-Loading weights:  87%|████████▋ | 171/196 [00:00<00:00, 12395.89it/s, Materializing param=text_model.encoder.layers.10.self_attn.k_proj.bias][A
-Loading weights:  88%|████████▊ | 172/196 [00:00<00:00, 12436.57it/s, Materializing param=text_model.encoder.layers.10.self_attn.k_proj.weight][A
-Loading weights:  88%|████████▊ | 172/196 [00:00<00:00, 12418.80it/s, Materializing param=text_model.encoder.layers.10.self_attn.k_proj.weight][A
-Loading weights:  88%|████████▊ | 173/196 [00:00<00:00, 12456.90it/s, Materializing param=text_model.encoder.layers.10.self_attn.out_proj.bias][A
-Loading weights:  88%|████████▊ | 173/196 [00:00<00:00, 12436.19it/s, Materializing param=text_model.encoder.layers.10.self_attn.out_proj.bias][A
-Loading weights:  89%|████████▉ | 174/196 [00:00<00:00, 12472.17it/s, Materializing param=text_model.encoder.layers.10.self_attn.out_proj.weight][A
-Loading weights:  89%|████████▉ | 174/196 [00:00<00:00, 12449.83it/s, Materializing param=text_model.encoder.layers.10.self_attn.out_proj.weight][A
-Loading weights:  89%|████████▉ | 175/196 [00:00<00:00, 12491.97it/s, Materializing param=text_model.encoder.layers.10.self_attn.q_proj.bias]    [A
-Loading weights:  89%|████████▉ | 175/196 [00:00<00:00, 12474.99it/s, Materializing param=text_model.encoder.layers.10.self_attn.q_proj.bias][A
-Loading weights:  90%|████████▉ | 176/196 [00:00<00:00, 12519.46it/s, Materializing param=text_model.encoder.layers.10.self_attn.q_proj.weight][A
-Loading weights:  90%|████████▉ | 176/196 [00:00<00:00, 12502.50it/s, Materializing param=text_model.encoder.layers.10.self_attn.q_proj.weight][A
-Loading weights:  90%|█████████ | 177/196 [00:00<00:00, 12546.97it/s, Materializing param=text_model.encoder.layers.10.self_attn.v_proj.bias]  [A
-Loading weights:  90%|█████████ | 177/196 [00:00<00:00, 12530.03it/s, Materializing param=text_model.encoder.layers.10.self_attn.v_proj.bias][A
-Loading weights:  91%|█████████ | 178/196 [00:00<00:00, 12572.39it/s, Materializing param=text_model.encoder.layers.10.self_attn.v_proj.weight][A
-Loading weights:  91%|█████████ | 178/196 [00:00<00:00, 12555.68it/s, Materializing param=text_model.encoder.layers.10.self_attn.v_proj.weight][A
-Loading weights:  91%|█████████▏| 179/196 [00:00<00:00, 12599.31it/s, Materializing param=text_model.encoder.layers.11.layer_norm1.bias]       [A
-Loading weights:  91%|█████████▏| 179/196 [00:00<00:00, 12582.42it/s, Materializing param=text_model.encoder.layers.11.layer_norm1.bias][A
-Loading weights:  92%|█████████▏| 180/196 [00:00<00:00, 12626.26it/s, Materializing param=text_model.encoder.layers.11.layer_norm1.weight][A
-Loading weights:  92%|█████████▏| 180/196 [00:00<00:00, 12609.39it/s, Materializing param=text_model.encoder.layers.11.layer_norm1.weight][A
-Loading weights:  92%|█████████▏| 181/196 [00:00<00:00, 12653.03it/s, Materializing param=text_model.encoder.layers.11.layer_norm2.bias]  [A
-Loading weights:  92%|█████████▏| 181/196 [00:00<00:00, 12635.97it/s, Materializing param=text_model.encoder.layers.11.layer_norm2.bias][A
-Loading weights:  93%|█████████▎| 182/196 [00:00<00:00, 12677.51it/s, Materializing param=text_model.encoder.layers.11.layer_norm2.weight][A
-Loading weights:  93%|█████████▎| 182/196 [00:00<00:00, 12660.68it/s, Materializing param=text_model.encoder.layers.11.layer_norm2.weight][A
-Loading weights:  93%|█████████▎| 183/196 [00:00<00:00, 12703.91it/s, Materializing param=text_model.encoder.layers.11.mlp.fc1.bias]      [A
-Loading weights:  93%|█████████▎| 183/196 [00:00<00:00, 12687.11it/s, Materializing param=text_model.encoder.layers.11.mlp.fc1.bias][A
-Loading weights:  94%|█████████▍| 184/196 [00:00<00:00, 12730.77it/s, Materializing param=text_model.encoder.layers.11.mlp.fc1.weight][A
-Loading weights:  94%|█████████▍| 184/196 [00:00<00:00, 12715.04it/s, Materializing param=text_model.encoder.layers.11.mlp.fc1.weight][A
-Loading weights:  94%|█████████▍| 185/196 [00:00<00:00, 12753.25it/s, Materializing param=text_model.encoder.layers.11.mlp.fc2.bias]  [A
-Loading weights:  94%|█████████▍| 185/196 [00:00<00:00, 12736.51it/s, Materializing param=text_model.encoder.layers.11.mlp.fc2.bias][A
-Loading weights:  95%|█████████▍| 186/196 [00:00<00:00, 12771.18it/s, Materializing param=text_model.encoder.layers.11.mlp.fc2.weight][A
-Loading weights:  95%|█████████▍| 186/196 [00:00<00:00, 12749.27it/s, Materializing param=text_model.encoder.layers.11.mlp.fc2.weight][A
-Loading weights:  95%|█████████▌| 187/196 [00:00<00:00, 12791.47it/s, Materializing param=text_model.encoder.layers.11.self_attn.k_proj.bias][A
-Loading weights:  95%|█████████▌| 187/196 [00:00<00:00, 12775.02it/s, Materializing param=text_model.encoder.layers.11.self_attn.k_proj.bias][A
-Loading weights:  96%|█████████▌| 188/196 [00:00<00:00, 12814.32it/s, Materializing param=text_model.encoder.layers.11.self_attn.k_proj.weight][A
-Loading weights:  96%|█████████▌| 188/196 [00:00<00:00, 12795.19it/s, Materializing param=text_model.encoder.layers.11.self_attn.k_proj.weight][A
-Loading weights:  96%|█████████▋| 189/196 [00:00<00:00, 12835.34it/s, Materializing param=text_model.encoder.layers.11.self_attn.out_proj.bias][A
-Loading weights:  96%|█████████▋| 189/196 [00:00<00:00, 12815.21it/s, Materializing param=text_model.encoder.layers.11.self_attn.out_proj.bias][A
-Loading weights:  97%|█████████▋| 190/196 [00:00<00:00, 12847.30it/s, Materializing param=text_model.encoder.layers.11.self_attn.out_proj.weight][A
-Loading weights:  97%|█████████▋| 190/196 [00:00<00:00, 12825.59it/s, Materializing param=text_model.encoder.layers.11.self_attn.out_proj.weight][A
-Loading weights:  97%|█████████▋| 191/196 [00:00<00:00, 12858.32it/s, Materializing param=text_model.encoder.layers.11.self_attn.q_proj.bias]    [A
-Loading weights:  97%|█████████▋| 191/196 [00:00<00:00, 12835.25it/s, Materializing param=text_model.encoder.layers.11.self_attn.q_proj.bias][A
-Loading weights:  98%|█████████▊| 192/196 [00:00<00:00, 12870.28it/s, Materializing param=text_model.encoder.layers.11.self_attn.q_proj.weight][A
-Loading weights:  98%|█████████▊| 192/196 [00:00<00:00, 12853.03it/s, Materializing param=text_model.encoder.layers.11.self_attn.q_proj.weight][A
-Loading weights:  98%|█████████▊| 193/196 [00:00<00:00, 12894.24it/s, Materializing param=text_model.encoder.layers.11.self_attn.v_proj.bias]  [A
-Loading weights:  98%|█████████▊| 193/196 [00:00<00:00, 12877.83it/s, Materializing param=text_model.encoder.layers.11.self_attn.v_proj.bias][A
-Loading weights:  99%|█████████▉| 194/196 [00:00<00:00, 12918.66it/s, Materializing param=text_model.encoder.layers.11.self_attn.v_proj.weight][A
-Loading weights:  99%|█████████▉| 194/196 [00:00<00:00, 12902.28it/s, Materializing param=text_model.encoder.layers.11.self_attn.v_proj.weight][A
-Loading weights:  99%|█████████▉| 195/196 [00:00<00:00, 12942.92it/s, Materializing param=text_model.final_layer_norm.bias]                    [A
-Loading weights:  99%|█████████▉| 195/196 [00:00<00:00, 12926.76it/s, Materializing param=text_model.final_layer_norm.bias][A
-Loading weights: 100%|██████████| 196/196 [00:00<00:00, 12968.87it/s, Materializing param=text_model.final_layer_norm.weight][A
-Loading weights: 100%|██████████| 196/196 [00:00<00:00, 12952.52it/s, Materializing param=text_model.final_layer_norm.weight][ALoading weights: 100%|██████████| 196/196 [00:00<00:00, 12915.89it/s, Materializing param=text_model.final_layer_norm.weight]
-
-Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s][A
-Loading checkpoint shards:  33%|███▎      | 1/3 [00:03<00:07,  3.67s/it][A
-Loading checkpoint shards:  67%|██████▋   | 2/3 [00:04<00:01,  1.85s/it][ALoading checkpoint shards: 100%|██████████| 3/3 [00:04<00:00,  1.41s/it]
-Loading pipeline components...:  86%|████████▌ | 6/7 [00:05<00:01,  1.19s/it]Loading pipeline components...: 100%|██████████| 7/7 [00:05<00:00,  1.24it/s]
-Testing multiples of 64...
-
---- Testing 256x192 (w%0, h%0) ---(w%0, h%0)
-Traceback (most recent call last):
-  File "/Users/m3u/METMcloud/METMroot/tools/fmv/mvp/v0.5/test_flux_img2img_dims4.py", line 22, in <module>
-    test_dim(256, 192)
-    ~~~~~~~~^^^^^^^^^^
-  File "/Users/m3u/METMcloud/METMroot/tools/fmv/mvp/v0.5/test_flux_img2img_dims4.py", line 12, in test_dim
-    res = pipe(prompt="test", image=img, strength=0.5, num_inference_steps=2)
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/utils/_contextlib.py", line 120, in decorate_context
-    return func(*args, **kwargs)
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/diffusers/pipelines/flux/pipeline_flux_img2img.py", line 907, in __call__
-    ) = self.encode_prompt(
-        ~~~~~~~~~~~~~~~~~~^
-        prompt=prompt,
-        ^^^^^^^^^^^^^^
-    ...<6 lines>...
-        lora_scale=lora_scale,
-        ^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/diffusers/pipelines/flux/pipeline_flux_img2img.py", line 391, in encode_prompt
-    prompt_embeds = self._get_t5_prompt_embeds(
-        prompt=prompt_2,
-    ...<2 lines>...
-        device=device,
-    )
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/diffusers/pipelines/flux/pipeline_flux_img2img.py", line 275, in _get_t5_prompt_embeds
-    prompt_embeds = self.text_encoder_2(text_input_ids.to(device), output_hidden_states=False)[0]
-                    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
-    return forward_call(*args, **kwargs)
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/transformers/models/t5/modeling_t5.py", line 1242, in forward
-    encoder_outputs = self.encoder(
-        input_ids=input_ids,
-    ...<4 lines>...
-        return_dict=return_dict,
-    )
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
-    return forward_call(*args, **kwargs)
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/transformers/models/t5/modeling_t5.py", line 774, in forward
-    layer_outputs = layer_module(
-        hidden_states,
-    ...<9 lines>...
-        cache_position=cache_position,
-    )
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/transformers/modeling_layers.py", line 94, in __call__
-    return super().__call__(*args, **kwargs)
-           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
-    return forward_call(*args, **kwargs)
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/transformers/models/t5/modeling_t5.py", line 509, in forward
-    hidden_states = self.layer[-1](hidden_states)
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
-    return forward_call(*args, **kwargs)
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/transformers/models/t5/modeling_t5.py", line 155, in forward
-    forwarded_states = self.DenseReluDense(forwarded_states)
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
-    return forward_call(*args, **kwargs)
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/transformers/models/t5/modeling_t5.py", line 124, in forward
-    hidden_linear = self.wi_1(hidden_states)
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
-    return forward_call(*args, **kwargs)
-  File "/Users/m3u/miniconda3/lib/python3.13/site-packages/torch/nn/modules/linear.py", line 134, in forward
-    return F.linear(input, self.weight, self.bias)
-           ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-KeyboardInterrupt
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  2026-02-19 18:09:56.902 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_56-135214476‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:56.906 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_56-539006679‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:56.988 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_56-3753591450‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.040 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-2285067682‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.086 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-3626256167‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.152 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-3154298608‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.193 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-176612059‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.241 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-2492332444‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.289 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-2193525928‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.329 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-3765551008‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.369 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-1000449030‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.405 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-1733434080‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.407 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-2628119289‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.554 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-53055795‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.598 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-3195828241‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.735 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-454376770‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.879 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-6144416‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:57.928 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_57-2293968183‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.024 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-89000779‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.064 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-365577617‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.106 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-1128579798‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.110 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-1086960130‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.114 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-4108995589‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.117 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-749427927‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.169 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-1043246335‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.216 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-3635908715‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.219 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-1096572273‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.265 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-3559426996‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.312 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-4225656766‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.367 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-3393405894‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.408 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-2824863570‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.411 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-2818058974‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.414 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-223730651‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.416 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-1070542067‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.419 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-1802433243‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.421 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-3124901351‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.423 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-1406511940‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.426 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-2339191454‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.428 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-3899412464‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.438 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-1203114324‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.479 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-793940897‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.482 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-4189440256‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.825 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-1410805798‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.871 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-1749912619‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.918 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-2650044145‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.965 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-3232947471‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.969 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-70332168‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.982 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-2284527298‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.986 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-736764598‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.989 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-194291152‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:58.992 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_58-2423629002‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.060 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-1574456160‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.180 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-1194123362‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.227 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-4273899119‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.266 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-2288702146‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.314 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-1448059563‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.363 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-2118306797‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.366 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-3265864401‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.368 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-1364271477‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.370 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-502123435‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.372 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-3195321291‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.374 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-125499058‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.377 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-3850411197‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.381 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-698715160‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.436 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-897905190‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.476 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-68690195‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.518 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-633574146‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.567 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-2924136604‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.616 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-792047543‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.622 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-3867284844‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.625 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-4052813585‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.627 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-1100323447‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.699 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-3550877275‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.702 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-929307171‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.704 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-3866018777‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.707 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-3804893884‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.709 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-1862196139‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.779 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-2496610485‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.781 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-2837957271‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.784 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-387898438‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.786 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-2504731669‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.789 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-422580173‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.792 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-1266874965‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.845 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-19201930‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.848 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-4001749545‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.851 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-2675985388‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.853 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-3812188039‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.856 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-1032319004‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-2026-02-19 18:09:59.861 python3[23564:94847] Error creating directory 
- You don‚Äôt have permission. You don‚Äôt have permission to save the file ‚Äúmpsgraph-23564-2026-02-19_18_09_59-3923119830‚Äù in the folder ‚Äúcom.apple.MetalPerformanceShadersGraph‚Äù.
-  0%|          | 0/1 [10:12<?, ?it/s]
-Traceback (most recent call last):
-  File "/Users/m3u/METMcloud/METMroot/tools/fmv/mvp/v0.5/test_flux_img2img_dims.py", line 20, in <module>
-    res = br.generate_img2img("test", img, width=w, height=h, strength=0.5, steps=1)
-  File "/Users/m3u/METMcloud/METMroot/tools/fmv/mvp/v0.5/flux_bridge.py", line 355, in generate_img2img
-    out_img_obj = self.img2img_pipeline(**kwargs)
-  File "/Users/m3u/miniconda3/envs/xmvp/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
-    return func(*args, **kwargs)
-  File "/Users/m3u/miniconda3/envs/xmvp/lib/python3.10/site-packages/diffusers/pipelines/flux/pipeline_flux_img2img.py", line 1028, in __call__
-    noise_pred = self.transformer(
-  File "/Users/m3u/miniconda3/envs/xmvp/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-  File "/Users/m3u/miniconda3/envs/xmvp/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
-    return forward_call(*args, **kwargs)
-  File "/Users/m3u/miniconda3/envs/xmvp/lib/python3.10/site-packages/accelerate/hooks.py", line 175, in new_forward
-    output = module._old_forward(*args, **kwargs)
-  File "/Users/m3u/miniconda3/envs/xmvp/lib/python3.10/site-packages/diffusers/models/transformers/transformer_flux.py", line 739, in forward
-    encoder_hidden_states, hidden_states = block(
-  File "/Users/m3u/miniconda3/envs/xmvp/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-  File "/Users/m3u/miniconda3/envs/xmvp/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
-    return forward_call(*args, **kwargs)
-  File "/Users/m3u/miniconda3/envs/xmvp/lib/python3.10/site-packages/diffusers/models/transformers/transformer_flux.py", line 453, in forward
-    attention_outputs = self.attn(
-  File "/Users/m3u/miniconda3/envs/xmvp/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-  File "/Users/m3u/miniconda3/envs/xmvp/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
-    return forward_call(*args, **kwargs)
-  File "/Users/m3u/miniconda3/envs/xmvp/lib/python3.10/site-packages/diffusers/models/transformers/transformer_flux.py", line 352, in forward
-    return self.processor(self, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb, **kwargs)
-  File "/Users/m3u/miniconda3/envs/xmvp/lib/python3.10/site-packages/diffusers/models/transformers/transformer_flux.py", line 115, in __call__
-    query = apply_rotary_emb(query, image_rotary_emb, sequence_dim=1)
-  File "/Users/m3u/miniconda3/envs/xmvp/lib/python3.10/site-packages/diffusers/models/embeddings.py", line 1224, in apply_rotary_emb
-    x_rotated = torch.stack([-x_imag, x_real], dim=-1).flatten(3)
-KeyboardInterrupt

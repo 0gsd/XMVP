@@ -1421,7 +1421,18 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                  prompts.append(final_prompt)
              
                  prompts.append(final_prompt)
-             
+    elif args.vpform == "clip-video":
+        # === CLIP VIDEO MODE ===
+        # Delegates to the smart beat-matching montage engine
+        import dispatch_clip_video
+        success = dispatch_clip_video.run_clip_video_pipeline(args)
+        if success:
+            logging.info("✅ Clip Video Pipeline Complete.")
+            return
+        else:
+            logging.error("❌ Clip Video Pipeline Failed.")
+            return
+
     elif args.vpform == "music-visualizer":
         # === MUSIC VISUALIZER MODE ===
         if not args.mu or not os.path.exists(args.mu):
@@ -1807,6 +1818,8 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         fonts = load_multi_font()
         
         import numpy as np
+        import colorsys
+        import random
         
         # 4. Convert each frame to Unicode art
         for i, src_path in enumerate(source_frames):
@@ -1842,17 +1855,31 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                     char_idx = int(brightness * (len(density_chars) - 1))
                     char = density_chars[char_idx]
                     
-                    # Foreground color: brighter version for dark areas, darker for bright
-                    if brightness < 0.5:
-                        # Dark area: lighter overlay to add detail
-                        fg_r = min(255, int(r * 1.6 + 30))
-                        fg_g = min(255, int(g * 1.6 + 30))
-                        fg_b = min(255, int(b * 1.6 + 30))
+                    # Foreground color: intelligent relationship using HSV
+                    h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+                    
+                    # Instead of iridescent or random distinct colors, keep the character
+                    # visually tied to the background but distinct enough to be readable.
+                    
+                    if s < 0.05:
+                        # For grays/blacks/whites, keep it desaturated, just adjust lightness (value)
+                        # If it's very dark, make the character a lighter gray.
+                        # If it's very bright, make the character a darker gray.
+                        v_offset = 0.3 * (1.0 - v) if v < 0.5 else -0.3 * v
+                        v = max(0.0, min(1.0, v + v_offset))
                     else:
-                        # Bright area: darker overlay for contrast  
-                        fg_r = int(r * 0.5)
-                        fg_g = int(g * 0.5)
-                        fg_b = int(b * 0.5)
+                        # For colored pixels, use a smoother, continuous adjustment
+                        # rather than a hard threshold to avoid posterization bands.
+                        # We push value and saturation up slightly for darker colors, 
+                        # and pull value down slightly for very bright colors.
+                        v_offset = 0.3 * (1.0 - v) - 0.2 * v
+                        s_offset = 0.2 * (1.0 - s)
+                        
+                        v = max(0.0, min(1.0, v + v_offset))
+                        s = max(0.0, min(1.0, s + s_offset))
+                            
+                    fg_r_f, fg_g_f, fg_b_f = colorsys.hsv_to_rgb(h, s, v)
+                    fg_r, fg_g, fg_b = int(fg_r_f * 255), int(fg_g_f * 255), int(fg_b_f * 255)
                     
                     line.append((char, fg_r, fg_g, fg_b, bg_r, bg_g, bg_b))
                 grid.append(line)
@@ -2923,6 +2950,7 @@ def main():
     parser.add_argument("--strength", "--str", dest="strength", type=int, default=50, help="Img2Img noise strength 1-99 (Default: 50). Lower = MORE frame coherence. 10-30: very stable. 30-50: balanced. 50-80: creative/different.")
     parser.add_argument("--cloud", action="store_true", help="Enable Cloud Mode (Gemini 2.x)")
     parser.add_argument("--fsync", type=float, default=1.0, help="FPS Sync Multiplier (0.1 - 6.0).")
+    parser.add_argument("--f", type=str, help="Source Folder for Clip Video Mode")
     
     args, unknown = parser.parse_known_args()
 

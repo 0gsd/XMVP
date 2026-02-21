@@ -384,11 +384,18 @@ class FrameUpscaler:
                 
                 # Flux Denoise (Add Detail)
                 # Use Flux 2 Klein for Img2Img
-                flux_root = "/Volumes/XMVPX/mw/flux-root" # Base root, bridge resolves Klein
-                guidance_val = 3.5 # Klein needs guidance
+                # Resolve Flux Path via Definitions (GGUF First)
+                try:
+                    conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-klein")
+                    if not conf:
+                        conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-klein")
+                    flux_root = conf.path if conf else "/Volumes/XMVPX/mw/flux-root/klein-9b"
+                except:
+                    flux_root = "/Volumes/XMVPX/mw/flux-root/klein-9b"
                 
-                logging.info(f"   ✨ using Flux 2 Klein for Upscaling: {flux_root}")
-                # Ensure we ask for the heavy gear
+                guidance_val = 3.5 if "klein" in str(flux_root).lower() else 0.0
+                
+                logging.info(f"   ✨ using Flux for Upscaling: {flux_root}")
                 bridge = get_flux_bridge(flux_root)
                 
                 # Prompt? "High resolution, sharp details, 4k"
@@ -486,10 +493,18 @@ class FrameInterpolator:
                 
                 # 3. Flux Img2Img Tweening
                 # Use Flux 2 Klein
-                flux_root = "/Volumes/XMVPX/mw/flux-root"
-                guidance_val = 3.5
+                # Resolve Flux Path via Definitions (GGUF First)
+                try:
+                    conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-klein")
+                    if not conf:
+                        conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-klein")
+                    flux_root = conf.path if conf else "/Volumes/XMVPX/mw/flux-root/klein-9b"
+                except:
+                    flux_root = "/Volumes/XMVPX/mw/flux-root/klein-9b"
+                    
+                guidance_val = 3.5 if "klein" in str(flux_root).lower() else 0.0
                 
-                logging.info(f"   ✨ using Flux 2 Klein for Tweening: {flux_root}")
+                logging.info(f"   ✨ using Flux for Tweening: {flux_root}")
                 bridge = get_flux_bridge(flux_root)
                 
                 # Interpolation Prompt
@@ -542,7 +557,10 @@ class FrameInterpolator:
             
             response = client.models.generate_content(
                 model=self.model,
-                contents=[img_a, img_b, prompt]
+                contents=[img_a, img_b, prompt],
+                config=types.GenerateContentConfig(
+                    response_modalities=['IMAGE']
+                )
             )
             
             # Extract Image

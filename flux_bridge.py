@@ -10,6 +10,11 @@ try:
 except ImportError:
     InferenceClient = None # Handle optional dependency
 
+try:
+    from stable_diffusion_cpp import StableDiffusion
+except ImportError:
+    StableDiffusion = None
+
 logging.basicConfig(level=logging.INFO)
 
 def _make_multiple_of_16(val: int) -> int:
@@ -23,6 +28,8 @@ class FluxBridge:
         self.device = device
         self.pipeline = None
         self.img2img_pipeline = None
+        self.sdcpp_pipeline = None
+        self.is_gguf = False
         
         # Check availability
         if device == "mps" and not torch.backends.mps.is_available():
@@ -37,11 +44,29 @@ class FluxBridge:
         try:
             # Check if directory or file
             is_diffusers_dir = False
-            if os.path.isdir(model_path):
+            self.is_gguf = False
+            
+            # GGUF DETECTION (Comprehensive check)
+            if model_path.endswith(".gguf") or "flux-gguf" in model_path.lower():
+                if model_path.endswith(".gguf"):
+                    self.is_gguf = True
+                elif os.path.isdir(model_path):
+                     # Look for .gguf files inside
+                     for f in os.listdir(model_path):
+                          if f.endswith(".gguf"):
+                               model_path = os.path.join(model_path, f)
+                               self.is_gguf = True
+                               break
+                else:
+                    # Path contains flux-gguf but is not a dir and doesn't end in .gguf? 
+                    # Probably a file without extension or a symlink.
+                    self.is_gguf = True
+            
+            if not self.is_gguf and os.path.isdir(model_path):
                  if os.path.exists(os.path.join(model_path, "model_index.json")):
                       is_diffusers_dir = True
                  else:
-                      logging.warning(f"   ⚠️ Directory found but no model_index.json. Looking for safetensors in {model_path}...")
+                      logging.warning(f"   ⚠️ Directory found but no GGUF signature or model_index.json. Looking for safetensors in {model_path}...")
                       # Find first .safetensors file
                       for f in os.listdir(model_path):
                            if f.endswith(".safetensors"):
@@ -49,13 +74,64 @@ class FluxBridge:
                                 logging.info(f"      -> Found single file: {f}")
                                 break
 
+            if self.is_gguf:
+                if StableDiffusion is None:
+                    logging.error("   ❌ stable-diffusion-cpp-python not installed. Cannot load GGUF. Falling back to Diffusers...")
+                    self.is_gguf = False # Fall back
+                else:
+                    logging.info(f"   🚀 GGUF Mode Detected. Loading Flux GGUF Engine (SDCPP) from: {model_path}...")
+                    
+                    # We need to find the T5 GGUF and VAE if possible
+                    t5_path = ""
+                    vae_path = ""
+                    clip_path = ""
+                    
+                    # Try to find buddies in same dir
+                    parent_dir = os.path.dirname(model_path)
+                    for f in os.listdir(parent_dir):
+                        f_low = f.lower()
+                        if "t5" in f_low and f.endswith(".gguf") and "t5xxl" not in f_low.replace("-","").replace("_",""):
+                            # Match t5-v1_1-xxl-encoder style names
+                            if not t5_path:  # Don't overwrite if already found
+                                t5_path = os.path.join(parent_dir, f)
+                        elif "t5xxl" in f_low and f.endswith(".gguf"):
+                            # Exact t5xxl match takes highest priority
+                            t5_path = os.path.join(parent_dir, f)
+                        elif (f_low.startswith("t5") or "t5-v1" in f_low) and f.endswith(".gguf"):
+                            # Any T5 variant
+                            if not t5_path:
+                                t5_path = os.path.join(parent_dir, f)
+                        elif ("vae" in f_low or f_low == "ae.safetensors" or f_low == "ae.gguf") and (f.endswith(".safetensors") or f.endswith(".gguf")):
+                            vae_path = os.path.join(parent_dir, f)
+                        elif "clip_l" in f_low and (f.endswith(".safetensors") or f.endswith(".gguf")):
+                            clip_path = os.path.join(parent_dir, f)
+
+                    logging.info(f"      🧩 Components: ENC_2={os.path.basename(t5_path) if t5_path else 'MISSING'}, VAE={os.path.basename(vae_path) if vae_path else 'MISSING'}, CLIP={os.path.basename(clip_path) if clip_path else 'MISSING'}")
+
+                    # Initialize SDCPP
+                    try:
+                        self.sdcpp_pipeline = StableDiffusion(
+                            model_path=model_path,
+                            t5xxl_path=t5_path,
+                            vae_path=vae_path,
+                            clip_l_path=clip_path,
+                            wtype="default", 
+                            n_threads=os.cpu_count() or 4
+                        )
+                        logging.info("   ✅ Flux GGUF Engine Ready.")
+                        return
+                    except Exception as e_gguf:
+                        logging.error(f"   ❌ GGUF Initialization Failed: {e_gguf}. Falling back to Diffusers...")
+                        self.is_gguf = False
+                        # Continue to diffusers fallback
+
             if is_diffusers_dir:
                 # Auto-Load (Generic) for directories (Handles Flux.2 Klein, etc.)
                 # This uses model_index.json to determine the class (e.g. Flux2KleinPipeline)
                 logging.info(f"      ✨ Using Auto-Loader (DiffusionPipeline) for {model_path}...")
                 self.pipeline = DiffusionPipeline.from_pretrained(
                     model_path,
-                    torch_dtype=torch.float16, # Shifted to float16 for MPS stability
+                    torch_dtype=torch.bfloat16, # bfloat16 for MPS stability (float16 causes garbled output on Apple Silicon)
                     trust_remote_code=True # Needed for custom pipelines like Klein
                 )
             else:
@@ -64,25 +140,25 @@ class FluxBridge:
                 try:
                     self.pipeline = FluxPipeline.from_single_file(
                         model_path,
-                        torch_dtype=torch.float16
+                        torch_dtype=torch.bfloat16
                     )
                 except Exception as e:
                     if "CLIPTextModel" in str(e) or "text_encoder" in str(e):
                         logging.warning("   ⚠️ Flux Single File missing Encoders. Loading from Local/Hub...")
                         
                         # 1. CLIP (Standard Hub)
-                        text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=torch.float16)
+                        text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=torch.bfloat16)
                         tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
                         
                         # 2. T5 (Local Preference -> Hub Fallback)
                         t5_local_path = "/Volumes/XMVPX/mw/t5weights-root"
                         if os.path.exists(t5_local_path):
                             logging.info(f"      📚 Loading T5 from Local Cache: {t5_local_path}")
-                            text_encoder_2 = T5EncoderModel.from_pretrained(t5_local_path, torch_dtype=torch.float16)
+                            text_encoder_2 = T5EncoderModel.from_pretrained(t5_local_path, torch_dtype=torch.bfloat16)
                             tokenizer_2 = T5TokenizerFast.from_pretrained(t5_local_path) 
                         else:
                             logging.warning("      ☁️ Local T5 not found. Downloading from Hub (city96/t5-v1_1-xxl-encoder-bf16)...")
-                            text_encoder_2 = T5EncoderModel.from_pretrained("city96/t5-v1_1-xxl-encoder-bf16", torch_dtype=torch.float16)
+                            text_encoder_2 = T5EncoderModel.from_pretrained("city96/t5-v1_1-xxl-encoder-bf16", torch_dtype=torch.bfloat16)
                             tokenizer_2 = T5TokenizerFast.from_pretrained("city96/t5-v1_1-xxl-encoder-bf16")
                         
                         self.pipeline = FluxPipeline.from_single_file(
@@ -91,7 +167,7 @@ class FluxBridge:
                             tokenizer=tokenizer,
                             text_encoder_2=text_encoder_2,
                             tokenizer_2=tokenizer_2,
-                            torch_dtype=torch.float16
+                            torch_dtype=torch.bfloat16
                         )
                     else:
                         raise e
@@ -244,6 +320,32 @@ class FluxBridge:
         If 'image' is provided, performs Img2Img.
         Otherwise, performs Text2Image.
         """
+        if self.is_gguf and self.sdcpp_pipeline:
+            logging.info(f"   🎨 Flux GGUF (SDCPP) Generating: {prompt[:40]}... ({width}x{height}, {steps} steps)")
+            
+            # SDCPP uses generate_image() for both txt2img and img2img
+            # If image is provided, pass as init_image for img2img
+            init_img = None
+            img_strength = 0.75
+            if image is not None:
+                init_img = image if isinstance(image, Image.Image) else Image.open(image).convert("RGB")
+                img_strength = strength
+            
+            results = self.sdcpp_pipeline.generate_image(
+                prompt=prompt,
+                width=width,
+                height=height,
+                sample_steps=steps,
+                seed=seed if seed is not None else -1,
+                guidance=guidance_scale,
+                init_image=init_img,
+                strength=img_strength
+            )
+            
+            if results and len(results) > 0:
+                return results[0]  # Returns list of PIL Images
+            return None
+
         if image is not None:
              # Route to Img2Img
              if not self.img2img_pipeline:
@@ -486,6 +588,19 @@ class FluxBridge:
              logging.info("   ✅ Stability Protocol (Img2Img) Applied: Cross-Device Wrappers Active.")
              
     def generate_img2img(self, prompt, image, strength=0.5, width=1024, height=1024, steps=4, seed=None, guidance_scale=3.5, denoising_start=None):
+        if self.is_gguf and self.sdcpp_pipeline:
+            logging.info(f"   🎨 Flux GGUF (SDCPP) Img2Img: {prompt[:40]}... (Str: {strength:.2f}, {width}x{height})")
+            return self.sdcpp_pipeline.img2img(
+                init_image=image,
+                prompt=prompt,
+                width=width,
+                height=height,
+                sample_steps=steps,
+                strength=strength,
+                seed=seed if seed is not None else -1,
+                guidance_scale=guidance_scale
+            )
+
         if not self.img2img_pipeline:
             self.load_img2img()
             
@@ -644,35 +759,29 @@ class FluxBridge:
                                         logging.warning(f"   ⚠️ Could not access timesteps[{start_idx}]: {e}. Deriving from sigmas.")
                                         start_timestep = torch.tensor(safe_start_timestep, device=self.device, dtype=torch.float32)
                                     
-                                    # Shape calculations for random noise array
-                                    batch_size = 1
-                                    num_images_per_prompt = kwargs.get("num_images_per_prompt", 1)
-                                    effective_batch = batch_size * num_images_per_prompt
+                                    # Generate matching noise directly from latent shape
+                                    # This is much more robust than calculating it manually
+                                    noise = torch.randn(image_latents.shape, device=self.device, dtype=image_latents.dtype)
                                     
-                                    vae_scale_factor = getattr(self.img2img_pipeline, "vae_scale_factor", 8)
-                                    latent_height = 2 * (int(fixed_height) // (vae_scale_factor * 2))
-                                    latent_width = 2 * (int(fixed_width) // (vae_scale_factor * 2))
-                                    num_channels_latents = self.img2img_pipeline.transformer.config.in_channels // 4
-                                    shape = (effective_batch, num_channels_latents, latent_height, latent_width)
-
-                                    
-                                    # Generate matching noise
-                                    noise = torch.randn(shape, generator=kwargs.get("generator", None), device=self.device, dtype=image_latents.dtype)
+                                    # Derive packing shapes for the Flux transformer
+                                    # image_latents is (B, C, H, W). Index 2=H, 3=W.
+                                    batch_size, num_channels_latents, latent_height, latent_width = image_latents.shape
                                     
                                     # Expand timestep to match batch size
-                                    latent_timestep = start_timestep.expand(effective_batch)
+                                    latent_timestep = start_timestep.expand(batch_size)
                                     
                                     # Scale noise using scheduler's native method
+                                    # CRITICAL: Ensure all tensors are on the compute device before scheduling
+                                    image_latents = image_latents.to(self.device)
+                                    latent_timestep = latent_timestep.to(self.device)
+                                    noise = noise.to(self.device)
+                                    
                                     noised_latents = self.img2img_pipeline.scheduler.scale_noise(image_latents, latent_timestep, noise)
                                     
-                                    # Pack the latents for Flux transformer exactly like _pack_latents does
-                                    packed_latents = noised_latents.view(effective_batch, num_channels_latents, latent_height // 2, 2, latent_width // 2, 2)
-                                    packed_latents = packed_latents.permute(0, 2, 4, 1, 3, 5)
-                                    packed_latents = packed_latents.reshape(effective_batch, (latent_height // 2) * (latent_width // 2), num_channels_latents * 4)
-                                    
-                                    kwargs["latents"] = packed_latents
+                                    # Pass noised latents directly — pipeline handles packing internally
+                                    kwargs["latents"] = noised_latents
                                     kwargs["image"] = None # tell pipeline not to regenerate latents
-                                    logging.info(f"   ✅ Successfully injected patched initial latents manually.")
+                                    logging.info(f"   ✅ Patched initial latents ({latent_height}x{latent_width}) on {self.device}.")
                                     
                                 except Exception as manual_latent_exc:
                                     import traceback; logging.warning(f"   ⚠️ Manual latent injection failed: {manual_latent_exc}\n{traceback.format_exc()}. Falling back to default noise.")
@@ -714,6 +823,11 @@ class FluxBridge:
 
     def unload(self):
         """Unload Flux pipelines."""
+        if self.sdcpp_pipeline:
+            logging.info("   🗑️  Unloading Flux GGUF Engine...")
+            del self.sdcpp_pipeline
+            self.sdcpp_pipeline = None
+
         if self.pipeline:
              logging.info("   🗑️  Unloading Flux Engine...")
              del self.pipeline
@@ -730,15 +844,22 @@ class FluxBridge:
         logging.info("   ✅ Flux Engine Unloaded.")
 
 
-# Singleton Pattern for specific use cases
-_BRIDGE = None
+# Multi-Bridge Registry to prevent redundant loading but allow path switching
+_BRIDGES = {}
 def get_flux_bridge(path):
-    global _BRIDGE
-    if _BRIDGE is None:
-        _BRIDGE = FluxBridge(path)
-    return _BRIDGE
-
-    return _BRIDGE
+    global _BRIDGES
+    # Resolve Path for consistency
+    res_path = os.path.abspath(path)
+    if res_path not in _BRIDGES:
+        logging.info(f"   🏗️  Initializing new Flux Bridge for: {res_path}")
+        # Optimization: If we switch, unload old bridges to free VRAM/MPS memory
+        for old_p in list(_BRIDGES.keys()):
+            logging.info(f"   🧹 Unloading old bridge: {old_p}")
+            _BRIDGES[old_p].unload()
+            del _BRIDGES[old_p]
+            
+        _BRIDGES[res_path] = FluxBridge(res_path)
+    return _BRIDGES[res_path]
 
 def generate_via_hf_endpoint(prompt, width=1024, height=1024, steps=28, guidance=3.5, seed=None, api_key=None, endpoint_url=None, image=None, strength=0.5):
     """

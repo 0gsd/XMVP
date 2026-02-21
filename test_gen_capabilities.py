@@ -65,7 +65,10 @@ def test_gemini_model(model_name):
         
         response = client.models.generate_content(
             model=model_name,
-            contents=ar_prompt
+            contents=ar_prompt,
+            config=types.GenerateContentConfig(
+                response_modalities=['IMAGE']
+            )
         )
         
         if response.candidates:

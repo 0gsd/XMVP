@@ -127,7 +127,10 @@ class TruthSafety:
                 
                 response = self.client.models.generate_content(
                     model=self.image_model,
-                    contents=ar_prompt
+                    contents=ar_prompt,
+                    config=types.GenerateContentConfig(
+                        response_modalities=['IMAGE']
+                    )
                 )
                 
                 # Check for inline data

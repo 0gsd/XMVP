@@ -1,5 +1,6 @@
 import re
 import os
+import io
 import json
 import time
 import math
@@ -164,7 +165,10 @@ def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration, bpm=No
     # Load Flux Bridge
     try:
         from flux_bridge import get_flux_bridge
-        flux_bridge = get_flux_bridge("/Volumes/XMVPX/mw/flux-root")
+        from definitions import Modality, get_active_model
+        flux_conf = get_active_model(Modality.IMAGE)
+        flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Volumes/XMVPX/mw/flux-root/klein-9b"
+        flux_bridge = get_flux_bridge(flux_path)
         if not flux_bridge: raise ImportError("No Flux Bridge")
     except Exception as e:
         logging.error(f"Failed to load Flux: {e}")
@@ -350,7 +354,7 @@ def find_original_video(video_id_stem, search_dirs):
             cand = folder / f"{video_id_stem}{ext}"
             if cand.exists(): return cand
 
-def analyze_audio(audio_path):
+def analyze_audio(audio_path, fsync=1.0):
     """
     Analyzes audio for BPM and Duration.
     Returns (bpm, duration, beat_frames, suggested_fps)
@@ -371,10 +375,10 @@ def analyze_audio(audio_path):
         # Let's standardize on 4 frames per beat for visualizer smoothness
         frames_per_beat = 4 
         bps = bpm / 60.0
-        fps = bps * frames_per_beat
+        fps = (bps * frames_per_beat) * fsync
         
         logging.info(f"   🎵 Audio Analysis: {bpm:.1f} BPM | {duration:.1f}s")
-        logging.info(f"   🎵 Derived FPS: {fps:.2f} (based on {frames_per_beat} frames/beat)")
+        logging.info(f"   🎵 Derived FPS: {fps:.2f} (based on {frames_per_beat} frames/beat * fsync {fsync})")
         
         return bpm, duration, frames_per_beat, fps
         
@@ -523,7 +527,10 @@ def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration):
     # Load Flux Bridge
     try:
         from flux_bridge import get_flux_bridge
-        flux_bridge = get_flux_bridge("/Volumes/XMVPX/mw/flux-root") # Default local path
+        from definitions import Modality, get_active_model
+        flux_conf = get_active_model(Modality.IMAGE)
+        flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Volumes/XMVPX/mw/flux-root/klein-9b"
+        flux_bridge = get_flux_bridge(flux_path) # Default local path
         if not flux_bridge: raise ImportError("No Flux Bridge")
     except Exception as e:
         logging.error(f"Failed to load Flux for keyframes: {e}")
@@ -825,9 +832,38 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
         logging.info(f"   🧠 Nicotime Context Found: {nico_context[:60]}...")
         prompt += nico_context
 
-    target_path = output_dir / f"frame_{index:04d}.png"
-    if target_path.exists():
-        return True # Skip if already done
+    # --- OUTPUT PATH ---
+    target_path = Path(output_dir) / f"frame_{index:04d}.png"
+
+    # --- ASPECT RATIO CALCULATION (Gemini 2.x/3.x) ---
+    def get_supported_aspect_ratio(w, h):
+        ratio = w / h
+        options = {
+            1.0: "1:1",
+            1.33: "4:3",
+            0.75: "3:4",
+            1.77: "16:9",
+            0.56: "9:16",
+            2.33: "21:9",
+            0.42: "9:21",
+            1.5: "3:2",
+            0.66: "2:3",
+            1.25: "5:4",
+            0.8: "4:5"
+        }
+        best_match = "1:1"
+        min_diff = float('inf')
+        for r, s in options.items():
+            diff = abs(ratio - r)
+            if diff < min_diff:
+                min_diff = diff
+                best_match = s
+        return best_match
+
+    # Override aspect_ratio if width/height are provided and not standard 1:1
+    if width and height and (width != 768 or height != 768):
+        aspect_ratio = get_supported_aspect_ratio(width, height)
+        logging.info(f"   📐 Mapped {width}x{height} to Aspect Ratio: {aspect_ratio}")
 
     # Retry Loop
     max_retries = 5 # User Requested Boost
@@ -858,7 +894,6 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                 # 1. Restore Feedback (Img2Img) for Sequential Consistency
                 if prev_frame_path and prev_frame_path.exists():
                     try:
-                        from PIL import Image
                         img_input = Image.open(prev_frame_path).convert("RGB")
                         logging.info(f"   🔄 Feedback: Using {prev_frame_path.name} as Img2Img input.")
                     except Exception as e:
@@ -875,11 +910,12 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                             ctx = "Previous frame exists. You MUST describe the NEXT sequential frame in a continuous animation."
                             
                         director_instruction = (
-                            f"You are a Lead Animator. {ctx}\n"
+                            f"You are a Lead Animator directing frame-by-frame animation. {ctx}\n"
                             f"Action: '{prompt}'.\n"
-                            "Task: Output a dense, 20-30 word visual description for the renderer. "
-                            "Focus on lighting, composition, and style. \n"
-                            "CRITICAL: If the action is similar to previous, describe MINOR changes only (flipbook consistency). NO FILLER."
+                            "Task: Output a dense, 20-40 word visual description for the renderer. "
+                            "Focus on character poses, lighting, composition, and motion. "
+                            "Show PROGRESSIVE MOVEMENT and action — each frame should advance the scene. "
+                            "Describe what is HAPPENING right now, not a static pose. NO FILLER."
                         )
                         # Quick generation
                         visual_desc = te.generate(director_instruction, temperature=0.7)
@@ -923,7 +959,7 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                     img.save(target_path)
                     return True
                 else:
-                    logging.warning("Flux returned None.")
+                    logging.warning(f"   ⚠️ Flux returned None for frame {index}.")
                     continue
                     
             except Exception as e:
@@ -1000,12 +1036,19 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                         
                         if director_response.text:
                             raw_desc = director_response.text
-                            logging.info(f"   🎬 Director's Direction: {raw_desc[:100]}...")
+                            logging.info(f"   🎬 Director's Raw Output: {raw_desc}")
                             
                             # 1.5 Truth & Safety Enforce
                             # Ensure the Director's output isn't crazy
                             ts = TruthSafety() # Uses Text Keys for verification
                             refined_prompt = ts.refine_prompt(raw_desc, context_dict={"Role": "Director Output"}, pg_mode=pg_mode)
+                            logging.info(f"      ✨ Refined Prompt: {refined_prompt}")
+                            
+                            # REFUSAL FALLBACK: If Director returns a "black void" or "sorry" type message, use the original prompt.
+                            refusal_patterns = ["sorry", "cannot", "can't", "policy", "black void", "black scene"]
+                            if any(p in refined_prompt.lower() for p in refusal_patterns):
+                                logging.warning(f"      ⚠️ Director/Safety check triggered a refusal. Falling back to original prompt.")
+                                refined_prompt = prompt 
                             
                             # BREATHING ROOM (User Request)
                             # Prevent "Double Tap" spamming the API (Director -> Renderer instant hit)
@@ -1018,34 +1061,155 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                             
                             logging.info(f"      🎨 Render Prompt: {render_prompt[:50]}...")
                             
-                            img_response = client.models.generate_images(
-                                model=render_model,
-                                prompt=render_prompt,
-                                config=types.GenerateImagesConfig(
-                                    number_of_images=1,
-                                    aspect_ratio=aspect_ratio
+                            # Gemini Image Models (Nano Banana etc) use generate_content
+                            if render_model.startswith("gemini-"):
+                                # Polyglot Suffix Injection
+                                render_prompt_rich = f"{render_prompt} --aspect_ratio {aspect_ratio}"
+                                
+                                # BUILD MULTIMODAL CONTENTS (Image + Text) for coherence
+                                render_contents = []
+                                if prev_frame_path and prev_frame_path.exists():
+                                    try:
+                                        # Compress to small JPEG thumbnail to avoid API timeout
+                                        prev_img = Image.open(prev_frame_path).convert("RGB")
+                                        prev_img.thumbnail((512, 512))
+                                        thumb_buf = io.BytesIO()
+                                        prev_img.save(thumb_buf, format="JPEG", quality=70)
+                                        thumb_bytes = thumb_buf.getvalue()
+                                        prev_img_part = types.Part.from_bytes(data=thumb_bytes, mime_type="image/jpeg")
+                                        render_contents.append(prev_img_part)
+                                        # Strength-aware coherence: lower strength = tighter follow
+                                        coherence_pct = int(strength * 100)
+                                        render_prompt_rich = (
+                                            f"The attached image is the PREVIOUS frame in an animation sequence. "
+                                            f"Generate the NEXT frame. Keep the same art style and color palette. "
+                                            f"Animation change level: {coherence_pct}% — "
+                                            f"{'make subtle incremental changes (flipbook animation)' if coherence_pct < 40 else 'show clear progressive motion and action changes'}.\n\n"
+                                            f"{render_prompt_rich}"
+                                        )
+                                        logging.info(f"      🔗 Coherence: Attached {prev_frame_path.name} ({len(thumb_bytes)//1024}KB, strength={coherence_pct}%)")
+                                    except Exception as ex:
+                                        logging.warning(f"      ⚠️ Failed to attach prev frame for coherence: {ex}")
+                                render_contents.append(render_prompt_rich)
+                                
+                                img_response = client.models.generate_content(
+                                    model=render_model,
+                                    contents=render_contents,
+                                    config=types.GenerateContentConfig(
+                                        response_modalities=['IMAGE'],
+                                        image_config=types.ImageConfig(
+                                            aspect_ratio=aspect_ratio,
+                                            image_size="1K"
+                                        )
+                                    )
+                                )
+                                # Response structure for generate_content is slightly different
+                                # but the SDK should wrap it similarly or we check parts.
+                                for part in img_response.parts:
+                                    # Use Bytes directly for ultimate robustness across SDK versions
+                                    if part.inline_data:
+                                        image = Image.open(io.BytesIO(part.inline_data.data)).convert("RGB")
+                                        # RESIZE ENFORCEMENT for arbitrary sizes
+                                        if image.size != (width, height):
+                                            logging.info(f"      📐 Resizing Gemini Output: {image.size} -> {width}x{height}")
+                                            image = image.resize((width, height), Image.Resampling.LANCZOS)
+                                        image.save(target_path)
+                                        return True
+                                    elif image_wrapper := part.as_image():
+                                        # Fallback to as_image if inline_data missing
+                                        image = getattr(image_wrapper, 'image', image_wrapper)
+                                        if image.size != (width, height):
+                                            logging.info(f"      📐 Resizing Gemini Output: {image.size} -> {width}x{height}")
+                                            image = image.resize((width, height), Image.Resampling.LANCZOS)
+                                        image.save(target_path)
+                                        return True
+                            else:
+                                # Imagen models use generate_images
+                                img_response = client.models.generate_images(
+                                    model=render_model,
+                                    prompt=render_prompt,
+                                    config=types.GenerateImagesConfig(
+                                        number_of_images=1,
+                                        aspect_ratio=aspect_ratio
+                                    )
+                                )
+                                if img_response.generated_images:
+                                    image = img_response.generated_images[0]
+                                    if image.image:
+                                        image.image.save(target_path)
+                                        return True
+                    else:
+                        # Direct Call
+                        if model.startswith("gemini-"):
+                            # Polyglot Suffix Injection
+                            prompt_rich = f"{prompt} --aspect_ratio {aspect_ratio}"
+                            
+                            # BUILD MULTIMODAL CONTENTS for coherence
+                            direct_contents = []
+                            if prev_frame_path and prev_frame_path.exists():
+                                try:
+                                    prev_img = Image.open(prev_frame_path).convert("RGB")
+                                    prev_img.thumbnail((512, 512))
+                                    thumb_buf = io.BytesIO()
+                                    prev_img.save(thumb_buf, format="JPEG", quality=70)
+                                    thumb_bytes = thumb_buf.getvalue()
+                                    prev_img_part = types.Part.from_bytes(data=thumb_bytes, mime_type="image/jpeg")
+                                    direct_contents.append(prev_img_part)
+                                    coherence_pct = int(strength * 100)
+                                    prompt_rich = (
+                                        f"The attached image is the PREVIOUS frame in an animation sequence. "
+                                        f"Generate the NEXT frame. Keep the same art style and color palette. "
+                                        f"Animation change level: {coherence_pct}% — "
+                                        f"{'make subtle incremental changes (flipbook animation)' if coherence_pct < 40 else 'show clear progressive motion and action changes'}.\n\n"
+                                        f"{prompt_rich}"
+                                    )
+                                    logging.info(f"      🔗 Coherence: Attached {prev_frame_path.name} ({len(thumb_bytes)//1024}KB, strength={coherence_pct}%)")
+                                except Exception as ex:
+                                    logging.warning(f"      ⚠️ Failed to attach prev frame for coherence: {ex}")
+                            direct_contents.append(prompt_rich)
+                            
+                            response = client.models.generate_content(
+                                model=model,
+                                contents=direct_contents,
+                                config=types.GenerateContentConfig(
+                                    response_modalities=['IMAGE'],
+                                    image_config=types.ImageConfig(
+                                        aspect_ratio=aspect_ratio,
+                                        image_size="1K"
+                                    )
                                 )
                             )
-                            if img_response.generated_images:
-                                image = img_response.generated_images[0]
+                            for part in response.parts:
+                                if part.inline_data:
+                                    image = Image.open(io.BytesIO(part.inline_data.data)).convert("RGB")
+                                    if image.size != (width, height):
+                                        logging.info(f"      📐 Resizing Gemini Output: {image.size} -> {width}x{height}")
+                                        image = image.resize((width, height), Image.Resampling.LANCZOS)
+                                    image.save(target_path)
+                                    return True
+                                elif image_wrapper := part.as_image():
+                                    image = getattr(image_wrapper, 'image', image_wrapper)
+                                    # RESIZE ENFORCEMENT for arbitrary sizes
+                                    if image.size != (width, height):
+                                        logging.info(f"      📐 Resizing Gemini Output: {image.size} -> {width}x{height}")
+                                        image = image.resize((width, height), Image.Resampling.LANCZOS)
+                                    image.save(target_path)
+                                    return True
+                        else:
+                            # Imagen
+                            response = client.models.generate_images(
+                                model=model, 
+                                prompt=prompt,
+                                config=types.GenerateImagesConfig(
+                                    number_of_images=1,
+                                    aspect_ratio=aspect_ratio, 
+                                )
+                            )
+                            if response.generated_images:
+                                image = response.generated_images[0]
                                 if image.image:
                                     image.image.save(target_path)
                                     return True
-                    else:
-                        # Direct Call (Legacy Gemini)
-                        response = client.models.generate_images(
-                            model=model, 
-                            prompt=prompt,
-                            config=types.GenerateImagesConfig(
-                                number_of_images=1,
-                                aspect_ratio=aspect_ratio, 
-                            )
-                        )
-                        if response.generated_images:
-                            image = response.generated_images[0]
-                            if image.image:
-                                image.image.save(target_path)
-                                return True
                                 
             except Exception as e:
                 if "429" in str(e) or "ResourceExhausted" in str(e):
@@ -1115,8 +1279,8 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
     logging.info(f"▶️ Processing Project: {project_name}")
     
     # Resolution Setup
-    target_w = args.w if (args.local and args.w) else args.kid
-    target_h = args.h if (args.local and args.h) else args.kid
+    target_w = args.w if args.w else args.kid
+    target_h = args.h if args.h else args.kid
     logging.info(f"   📐 Target Resolution: {target_w}x{target_h}")
     
     analysis_file = project_dir / "analysis.json"
@@ -1279,13 +1443,15 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                  duration = 60.0
              
              # Calculate derived metrics
-             logging.info(f"   🎹 BPM Override: {bpm}")
              frames_per_beat = 4
              bps = bpm / 60.0
-             fps = bps * frames_per_beat
+             fps = (bps * frames_per_beat) * getattr(args, 'fsync', 1.0)
+             
+             logging.info(f"   🎹 BPM Override: {bpm}")
+             logging.info(f"   🎵 Derived FPS: {fps:.2f} (based on {frames_per_beat} frames/beat * fsync {getattr(args, 'fsync', 1.0)})")
              
         else:
-             bpm, duration, fpb, fps = analyze_audio(args.mu)
+             bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=getattr(args, 'fsync', 1.0))
              
         target_frames = int(duration * fps)
         project_fps = fps
@@ -1307,6 +1473,9 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         style_prefix = base_style
         
         # Visualizer Loop
+        # Incorporate user prompt as the visual CONCEPT
+        prompt_concept = args.prompt if args.prompt else "A single continuous abstract form"
+        
         for i in range(target_frames):
              progress = i / target_frames
              # Evolve description
@@ -1314,11 +1483,11 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
              # Phase 2: 0.3-0.7 (Chaos)
              # Phase 3: 0.7-1.0 (Resolution)
              
-             phase = "forming patterns"
-             if progress > 0.3: phase = "melting into chaotic fractals"
-             if progress > 0.7: phase = "crystallizing into pure light"
+             phase = "forming patterns, emerging from void"
+             if progress > 0.3: phase = "in full motion, melting and warping with energy"
+             if progress > 0.7: phase = "reaching peak intensity, crystallizing into pure light"
              
-             raw_desc = f"Visualizer Beat {i}. A single continuous abstract form {phase}. Progress: {int(progress*100)}%."
+             raw_desc = f"{prompt_concept} — {phase}. Beat {i}, progress {int(progress*100)}%."
              prompts.append(f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames})")
 
     elif args.vpform == "music-video":
@@ -1342,7 +1511,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                  duration = 60.0
              frames_per_beat = 4
              bps = bpm / 60.0
-             fps = bps * frames_per_beat
+             fps = (bps * frames_per_beat) * getattr(args, 'fsync', 1.0)
              
              # VSPEED Override
              if args.vspeed and args.vspeed != 8.0:
@@ -1350,7 +1519,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                  logging.info(f"   🏎️  VSpeed Override: {args.vspeed} FPS (Default 8.0)")
                  fps = args.vspeed
         else:
-             bpm, duration, fpb, fps = analyze_audio(args.mu)
+             bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=getattr(args, 'fsync', 1.0))
              # VSPEED Override (even for auto-detected)
              if args.vspeed and args.vspeed != 8.0:
                   logging.info(f"   🏎️  VSpeed Override: {args.vspeed} FPS (Detected {fps:.2f})")
@@ -1472,10 +1641,9 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                      
                      is_cut = (f == 0) # First frame of shot is a CUT
                      
-                     # Style Injection
-                     # Use the specific shot style if available, else global
-                     # Actually cartoon mode uses global style usually.
-                     full_prompt = f"Style: {style_prefix}. Action: {story_beat}"
+                     # Add sub-frame progression for animation variety
+                     beat_progress = f" (beat start)" if f == 0 else f" (beat progress {f+1}/{shot_frames})"
+                     full_prompt = f"Style: {style_prefix}. Action: {story_beat}{beat_progress}"
                      
                      timeline.append({
                          'prompt': full_prompt,
@@ -1547,7 +1715,20 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                   prev_beat_idx = int((i-1) / frames_per_beat) if i > 0 else -1
                   is_cut = (beat_idx != prev_beat_idx)
                   
-                  full_prompt = f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames})"
+                  # Add sub-frame progression within the beat
+                  local_frame = i - int(beat_idx * frames_per_beat)
+                  total_in_beat = max(1, int(frames_per_beat))
+                  beat_pct = local_frame / total_in_beat
+                  if beat_pct < 0.25:
+                      phase = "beginning"
+                  elif beat_pct < 0.5:
+                      phase = "building"
+                  elif beat_pct < 0.75:
+                      phase = "climax"
+                  else:
+                      phase = "resolving"
+                  
+                  full_prompt = f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames}, beat {phase})"
                   
                   timeline.append({
                       'prompt': full_prompt,
@@ -1558,139 +1739,135 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
 
 
     elif args.vpform == "cartoon-video":
-        # CARTOON VIDEO (Img2Img Video Redraw)
+        # CARTOON VIDEO — Repaint each video frame as Unicode art
+        # Converts every frame to colored Unicode characters, re-renders to image
         if not args.mu or not os.path.exists(args.mu):
              logging.error("❌ cartoon-video requires input video (pass as arg or --mu)")
              return
 
-        # 1. Setup
-        project_fps = args.fps # Default 4
-        logging.info(f"   🎞️  Cartoon Video: Redrawing {Path(args.mu).name} @ {project_fps} FPS...")
+        logging.info(f"   🎞️  Cartoon Video: Repainting {Path(args.mu).name} as Unicode art...")
         
+        # Import unicode_visualizer rendering functions
+        import sys
+        from unicode_visualizer import (
+            grid_to_image, load_multi_font, CharacterPool, 
+            CELL_W, CELL_H
+        )
+        
+        # Probe input video dimensions for aspect ratio
+        try:
+            probe_cmd = ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                         '-show_entries', 'stream=width,height', '-of', 'csv=p=0', args.mu]
+            probe_out = subprocess.check_output(probe_cmd, text=True).strip()
+            vid_w, vid_h = [int(x) for x in probe_out.split(',')]
+            logging.info(f"   📐 Input video: {vid_w}×{vid_h}")
+        except:
+            vid_w, vid_h = 720, 480  # Fallback
+            logging.warning(f"   ⚠️ Could not probe video. Assuming {vid_w}×{vid_h}")
+        
+        # Character grid dimensions from --w, height preserves aspect ratio
+        char_w = args.w if args.w else 120
+        if args.h:
+            char_h = args.h
+        else:
+            # Preserve input video aspect ratio, accounting for non-square char cells
+            # Char cells are CELL_W×CELL_H pixels (10×18), so chars are taller than wide
+            aspect = vid_h / vid_w
+            char_h = max(20, int(char_w * aspect * (CELL_W / CELL_H)))
+        
+        logging.info(f"   📐 Unicode Canvas: {char_w}×{char_h} chars → {char_w * CELL_W}×{char_h * CELL_H}px output")
+        
+        # Setup dirs
         frames_dir = project_dir / "frames"
+        source_dir = project_dir / "source_frames"
         ensure_dir(frames_dir)
+        ensure_dir(source_dir)
         
-        # 2. Extract Audio
+        # 1. Extract audio
         audio_path = project_dir / "extracted_audio.wav"
-        cmd_a = ['ffmpeg', '-y', '-i', args.mu, '-vn', '-acodec', 'pcm_s16le', '-ar', '44100', '-ac', '2', str(audio_path)]
-        subprocess.run(cmd_a, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if not audio_path.exists():
+            logging.info("   🔊 Extracting audio...")
+            cmd_a = ['ffmpeg', '-y', '-i', args.mu, '-vn', '-acodec', 'pcm_s16le', '-ar', '44100', '-ac', '2', str(audio_path)]
+            subprocess.run(cmd_a, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-        # 3. Extract Frames
-        # Calculate vspeed step or just let ffmpeg handle fps
-        logging.info("   🎞️  Extracting Source Frames...")
-        cmd_f = ['ffmpeg', '-y', '-i', args.mu, '-vf', f'fps={project_fps}', str(frames_dir / 'source_%04d.png')]
+        # 2. Extract source frames
+        project_fps = args.fps
+        logging.info(f"   🎞️  Extracting source frames @ {project_fps} FPS...")
+        cmd_f = ['ffmpeg', '-y', '-i', args.mu, '-vf', f'fps={project_fps}', str(source_dir / 'source_%04d.png')]
         subprocess.run(cmd_f, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-        source_frames = sorted(list(frames_dir.glob("source_*.png")))
-        logging.info(f"   found {len(source_frames)} source frames.")
+        source_frames = sorted(list(source_dir.glob("source_*.png")))
+        logging.info(f"   Found {len(source_frames)} source frames.")
         
-        # 4. Img2Img Loop
-        from flux_bridge import get_flux_bridge
-        # Robust Flux Loading
-        try:
-             flux_path = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE]["flux-schnell"].path
-        except:
-             flux_path = "/Volumes/XMVPX/mw/flux-root"
-        bridge = get_flux_bridge(flux_path)
+        # 3. Setup Unicode rendering
+        # Density gradient for overlay shading (sparse → dense)
+        density_chars = " ·.,:;!|{}[]()#@█"
         
-        prompt = "exactly precise reproduction of this image in terms of content and image/scene structure, but improved to a different asethetic style and standard, like an uncanny Octane Render Unreal Engine 3D real-life photorealistic artistic reimagining. 8k, highly detailed."
-        if args.prompt: prompt = args.prompt
+        # Load fonts for rendering
+        fonts = load_multi_font()
         
-        # --- MEMORY OPTIMIZATION ---
-        # Ensure Img2Img is loaded, then dump Txt2Img if it's a separate (redundant) model
-        # This prevents holding 2x Model Weights in RAM, which causes severe thrashing (30m per frame)
-        bridge.load_img2img()
-        if bridge.pipeline and bridge.img2img_pipeline and bridge.pipeline is not bridge.img2img_pipeline:
-            logging.info("   📉 Optimizing Memory: Unloading duplicate Txt2Img pipeline to make room for Img2Img...")
-            del bridge.pipeline
-            bridge.pipeline = None
-            import gc
-            gc.collect()
-            if torch.backends.mps.is_available():
-                torch.mps.empty_cache()
-        # ---------------------------
+        import numpy as np
         
-        # from PIL import Image
-        
-        # Scaling Logic (50% Default)
-        target_w = args.w
-        target_h = args.h
-        
-        if not target_w and source_frames:
-             try:
-                 with Image.open(source_frames[0]) as probe:
-                     w, h = probe.size
-                     # Default to 50% scale
-                     target_w = int(w * 0.5)
-                     target_h = int(h * 0.5)
-                     logging.info(f"   📉 Auto-Scaling: {w}x{h} -> {target_w}x{target_h} (50%)")
-             except Exception as e:
-                 logging.warning(f"   ⚠️ Could not probe first frame: {e}")
-                 target_w = 1024
-                 target_h = 576
-        
-        # Enforce 16-pixel alignment (Crucial for Flux VAE)
-        if target_w and target_h:
-            orig_w, orig_h = target_w, target_h
-            target_w = (target_w // 16) * 16
-            target_h = (target_h // 16) * 16
-            if target_w != orig_w or target_h != orig_h:
-                 logging.warning(f"   ⚠️ Snapping resolution to 16px grid: {orig_w}x{orig_h} -> {target_w}x{target_h}")
-
-        # 4. Img2Img Loop
-        last_output_img = None
-        
-        for i, src in enumerate(source_frames):
+        # 4. Convert each frame to Unicode art
+        for i, src_path in enumerate(source_frames):
             idx = i + 1
             dst = frames_dir / f"frame_{idx:04d}.png"
             
-            if dst.exists(): 
-                # If existing, load it into memory for next frame's blending
-                try: 
-                    last_output_img = Image.open(dst).convert("RGB")
-                    # Ensure size match for blending later
-                    if last_output_img.size != (target_w, target_h):
-                        last_output_img = last_output_img.resize((target_w, target_h), Image.LANCZOS)
-                except:
-                    pass
+            if dst.exists():
                 continue
-                
-            logging.info(f"   🎨 Redrawing Frame {idx}/{len(source_frames)}...")
-            try:
-                src_img = Image.open(src).convert("RGB")
-                
-                # Resize src to target if needed (to match last_output/target)
-                if src_img.size != (target_w, target_h):
-                    src_img = src_img.resize((target_w, target_h), Image.LANCZOS)
-                
-                # TEMPORAL BLENDING (Stability Hack)
-                # Blend 30% of previous output into current source
-                input_img = src_img
-                if last_output_img:
-                    # alpha=0.3 means 30% image2 (last_output), 70% image1 (src)
-                    logging.info(f"      🌀 Blending 30% of Frame {idx-1} for stability...")
-                    input_img = Image.blend(src_img, last_output_img, alpha=0.3)
-                
-                out_img = bridge.generate_img2img(
-                    prompt=prompt,
-                    image=input_img,
-                    strength=getattr(args, "strength", 50) / 100.0, 
-                    width=target_w,
-                    height=target_h,
-                    seed=42 + i
-                )
-                
-                if out_img:
-                    out_img.save(dst)
-                    last_output_img = out_img
-            except Exception as e:
-                logging.error(f"Frame {idx} fail: {e}")
-                
-        # 5. Stitch
+            
+            # Load source frame as numpy array for fast access
+            src_img = Image.open(src_path).convert("RGB")
+            src_arr = np.array(src_img)
+            src_h_px, src_w_px = src_arr.shape[:2]
+            
+            # Precompute sample coordinates for each cell
+            col_px = np.clip(((np.arange(char_w) + 0.5) * src_w_px / char_w).astype(int), 0, src_w_px - 1)
+            row_px = np.clip(((np.arange(char_h) + 0.5) * src_h_px / char_h).astype(int), 0, src_h_px - 1)
+            
+            # Build character grid
+            grid = []
+            for row in range(char_h):
+                line = []
+                py = row_px[row]
+                for col in range(char_w):
+                    px = col_px[col]
+                    r, g, b = int(src_arr[py, px, 0]), int(src_arr[py, px, 1]), int(src_arr[py, px, 2])
+                    
+                    # BACKGROUND = source pixel color (full "pixel" block)
+                    bg_r, bg_g, bg_b = r, g, b
+                    
+                    # FOREGROUND = shading character to add texture
+                    brightness = (r + g + b) / (3.0 * 255.0)
+                    char_idx = int(brightness * (len(density_chars) - 1))
+                    char = density_chars[char_idx]
+                    
+                    # Foreground color: brighter version for dark areas, darker for bright
+                    if brightness < 0.5:
+                        # Dark area: lighter overlay to add detail
+                        fg_r = min(255, int(r * 1.6 + 30))
+                        fg_g = min(255, int(g * 1.6 + 30))
+                        fg_b = min(255, int(b * 1.6 + 30))
+                    else:
+                        # Bright area: darker overlay for contrast  
+                        fg_r = int(r * 0.5)
+                        fg_g = int(g * 0.5)
+                        fg_b = int(b * 0.5)
+                    
+                    line.append((char, fg_r, fg_g, fg_b, bg_r, bg_g, bg_b))
+                grid.append(line)
+            
+            # Render grid to image
+            out_img = grid_to_image(grid, char_w, char_h, fonts)
+            out_img.save(dst)
+            
+            if idx % 20 == 0 or idx == 1 or idx == len(source_frames):
+                pct = idx / len(source_frames) * 100
+                logging.info(f"   🎨 Repainted {idx}/{len(source_frames)} ({pct:.0f}%)")
+        
+        # 5. Stitch video
         logging.info("   🧵 Stitching...")
         out_vid = project_dir / "final_output.mp4"
-        # use existing stitch logic or ffmpeg direct
-        # Pattern frame_%04d.png
         cmd_s = [
             'ffmpeg', '-y', '-framerate', str(project_fps),
             '-i', str(frames_dir / 'frame_%04d.png'),
@@ -1742,7 +1919,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                  return
                  
             # 1. Analyze Audio
-            bpm, duration, fpb, fps = analyze_audio(args.mu)
+            bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=getattr(args, 'fsync', 1.0))
             target_frames = int(duration * fps)
             project_fps = fps
             target_duration = duration
@@ -1758,15 +1935,17 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             
             style_prefix = base_style
             
-            # Visualizer Loop
+            # Visualizer Loop — incorporate user prompt as the visual CONCEPT
+            prompt_concept = args.prompt if args.prompt else "A single continuous abstract form"
+            
             for i in range(target_frames):
                  progress = i / target_frames
                  # Evolve description
-                 phase = "forming patterns"
-                 if progress > 0.3: phase = "melting into chaotic fractals"
-                 if progress > 0.7: phase = "crystallizing into pure light"
+                 phase = "forming patterns, emerging from void"
+                 if progress > 0.3: phase = "in full motion, melting and warping with energy"
+                 if progress > 0.7: phase = "reaching peak intensity, crystallizing into pure light"
                  
-                 raw_desc = f"Visualizer Beat {i}. A single continuous abstract form {phase}. Progress: {int(progress*100)}%."
+                 raw_desc = f"{prompt_concept} — {phase}. Beat {i}, progress {int(progress*100)}%."
                  prompts.append(f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames})")
                  
             # Set source_content to something not empty so we skip the default loop
@@ -2271,8 +2450,8 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 model=model_to_use,
                 prev_frame_path=prev_frame,
                 pg_mode=args.pg,
-                width=args.w if (args.local and args.w) else args.kid,
-                height=args.h if (args.local and args.h) else args.kid,
+                width=args.w if args.w else (args.kid if not args.local else 768),
+                height=args.h if args.h else (args.kid if not args.local else 768),
                 force_local=args.local,
                 strength=getattr(args, "strength", 50) / 100.0
             )
@@ -2742,6 +2921,8 @@ def main():
     parser.add_argument("--w", type=int, help="Override width (Local Only, e.g. 1920)")
     parser.add_argument("--h", type=int, help="Override height (Local Only, e.g. 1080)")
     parser.add_argument("--strength", "--str", dest="strength", type=int, default=50, help="Img2Img noise strength 1-99 (Default: 50). Lower = MORE frame coherence. 10-30: very stable. 30-50: balanced. 50-80: creative/different.")
+    parser.add_argument("--cloud", action="store_true", help="Enable Cloud Mode (Gemini 2.x)")
+    parser.add_argument("--fsync", type=float, default=1.0, help="FPS Sync Multiplier (0.1 - 6.0).")
     
     args, unknown = parser.parse_known_args()
 
@@ -2843,27 +3024,24 @@ def main():
     if args.local:
         logging.info("🔌 Local Mode Requested. Switching Registry to Local Models...")
         try:
-            # Switch Text -> Gemma (Use 4-bit Quantized by default for Safety)
+            # Switch Text -> Gemma
             definitions.set_active_model(Modality.TEXT, "gemma-2-9b-it")
             os.environ["TEXT_ENGINE"] = "local_gemma"
-            
-            # Resolve Gemma Path Dynamically
-            gemma_conf = definitions.MODAL_REGISTRY[Modality.TEXT].get("gemma-2-9b-it")
-            if gemma_conf and gemma_conf.path:
-                # Force the 4-bit safe path if the registry points to raw
-                # Or trust TextEngine's default? 
-                # TextEngine default is "mlx-community/gemma-2-9b-it-4bit"
-                # But here we are setting env var override. 
-                # Let's set it to the safe default explicitly to fail-safe.
-                os.environ["LOCAL_MODEL_PATH"] = "mlx-community/gemma-2-9b-it-4bit"
-                logging.info(f"   📍 Text Model Path: {os.environ['LOCAL_MODEL_PATH']}")
-                
-            # Switch Image -> Flux (Upgrade to Klein for Quality)
-            definitions.set_active_model(Modality.IMAGE, "flux-klein")
-            # Switch Video -> LTX (Future proofing)
+            os.environ["LOCAL_MODEL_PATH"] = "mlx-community/gemma-2-9b-it-4bit"
+            # Switch Image -> Flux
+            definitions.set_active_model(Modality.IMAGE, "flux-klein", local=True)
+            # Switch Video -> LTX
             definitions.set_active_model(Modality.VIDEO, "ltx-video")
         except Exception as e:
             logging.error(f"❌ Failed to switch to Local Mode: {e}")
+    elif args.cloud:
+        logging.info("☁️  Cloud Mode Requested. Ensuring Cloud Models are active...")
+        try:
+            # Force Registry to Cloud defaults
+            definitions.set_active_model(Modality.TEXT, "gemini-2.0-flash")
+            definitions.set_active_model(Modality.IMAGE, "gemini-2.5-flash-image")
+        except Exception as e:
+            logging.error(f"❌ Failed to switch to Cloud Mode: {e}")
             
     # Initialize Engines
     # ----------------
@@ -2881,7 +3059,7 @@ def main():
     
     # 1. Model Selection (Registry Aware)
     # Start with the active model (which might have been set to Flux by --local block above)
-    model = get_active_model(Modality.IMAGE).name
+    model = get_active_model(Modality.IMAGE, local=args.local).name
     
     if args.vpform == "fbf-cartoon":
          # Force Image Model? Or respect Registry?

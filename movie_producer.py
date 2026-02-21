@@ -773,7 +773,10 @@ def main():
         # Resolve Flux Path
         import definitions
         flux_conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
-        flux_path = flux_conf.path if flux_conf else "/Volumes/XMVPX/mw/flux-root"
+        if not flux_conf:
+            flux_conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
+            
+        flux_path = flux_conf.path if flux_conf else "/Volumes/XMVPX/mw/flux-root/klein-9b"
         
         success = dispatch_animatic.run_animatic(
             manifest_path=p_manifest,

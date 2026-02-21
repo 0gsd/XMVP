@@ -338,17 +338,15 @@ def main():
     # 3. Init Bridge
     print("    🌊 Initializing Flux Bridge...")
     
-    # Priority 1: Flux.2 [klein] 9B
-    klein_path = "/Volumes/XMVPX/mw/flux-root/klein-9b"
-    flux_path = klein_path
-    
-    # Priority 2: Standard Flux Schnell Root (Symlink?)
-    if not os.path.exists(flux_path):
-        flux_path = "/Volumes/XMVPX/mw/flux-root"
-        
-    # Priority 3: Old Safetensors fallback
-    if not os.path.exists(flux_path):
-        flux_path = "/Volumes/XMVPX/mw/flux-schnell.safetensors"
+    # Resolve Flux Path via Definitions (GGUF First)
+    try:
+        import definitions
+        conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
+        if not conf:
+            conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
+        flux_path = conf.path if conf else "/Volumes/XMVPX/mw/flux-root/klein-9b"
+    except:
+        flux_path = "/Volumes/XMVPX/mw/flux-root/klein-9b"
         
     print(f"       Target Model: {flux_path}")
     bridge = get_flux_bridge(flux_path)

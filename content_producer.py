@@ -84,24 +84,17 @@ OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "z_test-out
 TRIPLETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../z_podcast_triplets"))
 MW_ROOT = "/Volumes/XMVPX/mw" # Standard mount point
 
-# Local Model Paths (Hardcoded standards for XMVP)
-# Prioritize Flux 2 Klein (Superior Quality)
-klein_candidate = os.path.join(MW_ROOT, "flux-root/klein-9b")
-if os.path.exists(klein_candidate):
-    FLUX_MODEL_PATH = klein_candidate
-    print(f"    [🎨] Visual Engine: Flux 2 Klein (Confirmed @ {FLUX_MODEL_PATH})")
-else:
-    FLUX_MODEL_PATH = os.path.join(MW_ROOT, "flux-root")
-    print(f"    [🎨] Visual Engine: Standard Flux (Fallback @ {FLUX_MODEL_PATH})")
-    
-if not os.path.exists(FLUX_MODEL_PATH):
-    # Fallback to safetensors if user moved it manually, but default populate is flux-root
-    # Try to resolve via definitions first
-    try:
-        import definitions
-        FLUX_MODEL_PATH = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE]["flux-klein"].path
-    except:
-        FLUX_MODEL_PATH = os.path.join(MW_ROOT, "flux-root/klein-9b")
+# Resolve Flux Path via Definitions (GGUF First)
+try:
+    import definitions
+    conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
+    if not conf:
+        conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
+    FLUX_MODEL_PATH = conf.path if conf else os.path.join(MW_ROOT, "flux-root", "klein-9b")
+except:
+    FLUX_MODEL_PATH = os.path.join(MW_ROOT, "flux-root", "klein-9b")
+
+print(f"    [🎨] Visual Engine: Flux GGUF-Ready (Path: {FLUX_MODEL_PATH})")
 
 # --- GLOBAL STATE ---
 LOCAL_MODE = False

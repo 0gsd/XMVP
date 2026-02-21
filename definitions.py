@@ -70,6 +70,7 @@ MODAL_REGISTRY: Dict[Modality, Dict[str, ModelConfig]] = {
         "imagen-3": ModelConfig("imagen-3.0-generate-001", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
         "flux-schnell": ModelConfig("flux-schnell", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root"),
         "flux-klein": ModelConfig("flux-klein", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root/klein-9b"),
+        "flux-gguf": ModelConfig("flux-gguf", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-gguf-root"),
         "flux-2-klein-hf": ModelConfig("flux-2-klein-hf", BackendType.CLOUD, Modality.IMAGE, endpoint="env:FLUX_KLEIN_ENDPOINT", api_key_env="HF_TOKEN")
     },
     Modality.VIDEO: {
@@ -100,7 +101,15 @@ if not ACTIVE_PROFILE_PATH.exists():
     if PARENT_PATH.exists():
         ACTIVE_PROFILE_PATH = PARENT_PATH
 
-ACTIVE_PROFILE = DEFAULT_PROFILE.copy()
+ACTIVE_PROFILE = {
+    "cloud": DEFAULT_PROFILE.copy(),
+    "local": {
+        Modality.TEXT: "gemma-2-9b-it",
+        Modality.IMAGE: "flux-klein",
+        Modality.VIDEO: "ltx-video",
+        Modality.SPOKEN_TTS: "kokoro-v1"
+    }
+}
 
 def load_active_profile():
     global ACTIVE_PROFILE
@@ -108,44 +117,71 @@ def load_active_profile():
         try:
             with open(ACTIVE_PROFILE_PATH, 'r') as f:
                 saved = json.load(f)
-                # Merge
-                for mod_str, model_id in saved.items():
-                    # Convert str key back to Modality enum
-                    try:
-                        mod_enum = Modality(mod_str)
-                        if mod_enum in MODAL_REGISTRY and model_id in MODAL_REGISTRY[mod_enum]:
-                            ACTIVE_PROFILE[mod_enum] = model_id
-                    except ValueError:
-                        pass
+                
+                # Detect format: new nested (has "cloud"/"local" keys) vs old flat
+                if "cloud" in saved or "local" in saved:
+                    # NEW FORMAT: { "cloud": {...}, "local": {...} }
+                    for section in ["cloud", "local"]:
+                        section_data = saved.get(section, {})
+                        for mod_str, model_id in section_data.items():
+                            try:
+                                mod_enum = Modality(mod_str)
+                                if mod_enum in MODAL_REGISTRY and model_id in MODAL_REGISTRY[mod_enum]:
+                                    ACTIVE_PROFILE[section][mod_enum] = model_id
+                            except ValueError:
+                                pass
+                else:
+                    # OLD FLAT FORMAT: { "text": "...", "image": "..." }
+                    # Apply to cloud profile only (backward compat)
+                    for mod_str, model_id in saved.items():
+                        try:
+                            mod_enum = Modality(mod_str)
+                            if mod_enum in MODAL_REGISTRY and model_id in MODAL_REGISTRY[mod_enum]:
+                                ACTIVE_PROFILE["cloud"][mod_enum] = model_id
+                        except ValueError:
+                            pass
         except Exception as e:
             print(f"⚠️ Failed to load active_models.json: {e}")
 
 # Initial Load
 load_active_profile()
 
-def get_active_model(modality: Modality) -> ModelConfig:
-    """Returns the ModelConfig for the currently active model in the given modality."""
-    model_id = ACTIVE_PROFILE.get(modality)
+def get_active_model(modality: Modality, local: bool = False) -> ModelConfig:
+    """Returns the ModelConfig for the currently active model in the given modality.
+    
+    Args:
+        modality: Which modality (TEXT, IMAGE, VIDEO, SPOKEN_TTS)
+        local: If True, returns the local default. If False, returns the cloud default.
+    """
+    section = "local" if local else "cloud"
+    model_id = ACTIVE_PROFILE.get(section, {}).get(modality)
+    
     if not model_id:
-        # Fallback to first available?
+        # Fallback to cloud, then to first available
+        model_id = ACTIVE_PROFILE.get("cloud", {}).get(modality)
+    if not model_id:
         if modality in MODAL_REGISTRY:
              model_id = next(iter(MODAL_REGISTRY[modality]))
     
     return MODAL_REGISTRY[modality][model_id]
 
-def set_active_model(modality: Modality, model_id: str):
-    """Updates the active model and persists to disk."""
+def set_active_model(modality: Modality, model_id: str, local: bool = False):
+    """Updates the active model for a given section and persists to disk."""
     if modality not in MODAL_REGISTRY:
         raise ValueError(f"Unknown modality: {modality}")
     if model_id not in MODAL_REGISTRY[modality]:
          raise ValueError(f"Unknown model ID {model_id} for {modality}")
-         
-    ACTIVE_PROFILE[modality] = model_id
+    
+    section = "local" if local else "cloud"
+    ACTIVE_PROFILE[section][modality] = model_id
     
     # Persist
-    save_data = {k.value: v for k, v in ACTIVE_PROFILE.items()}
+    save_data = {}
+    for sec_name in ["cloud", "local"]:
+        save_data[sec_name] = {k.value: v for k, v in ACTIVE_PROFILE.get(sec_name, {}).items()}
     with open(ACTIVE_PROFILE_PATH, 'w') as f:
         json.dump(save_data, f, indent=2)
+
 
 # -----------------------------------------------------------------------------
 # VP FORM REGISTRY (Unified)

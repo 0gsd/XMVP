@@ -32,3 +32,7 @@ easydict
 kornia
 ftfy
 
+# Diffusion (GGUF)
+# Note: On macOS (Metal), install with: CMAKE_ARGS="-DSD_METAL=ON" pip install stable-diffusion-cpp-python
+stable-diffusion-cpp-python
+

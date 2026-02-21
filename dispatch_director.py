@@ -38,8 +38,17 @@ os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
 # --- Configuration ---
 import definitions
 # Retrieve Config from Registry
-FLUX_CACHE = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE]["flux-klein"].path
-FLUX_REPO = "black-forest-labs/FLUX.2-klein-9B"
+def get_flux_cache_path():
+    try:
+        conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
+        if not conf:
+            conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
+        return conf.path if conf else "/Volumes/XMVPX/mw/flux-root/klein-9b"
+    except:
+        return "/Volumes/XMVPX/mw/flux-root/klein-9b"
+
+FLUX_CACHE = get_flux_cache_path()
+FLUX_REPO = "black-forest-labs/FLUX.1-schnell" # Updated repo for cloud fallback
 
 # --- VEO DIRECTOR (Inlined from action.py) ---
 

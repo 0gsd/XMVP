@@ -43,6 +43,8 @@ MODELS = {
         "type": "snapshot",
         "target": MW_ROOT / "flux-root" / "klein-9b"
     },
+    # GGUF entries removed — stable-diffusion-cpp doesn't support Flux 2 Klein.
+    # Use Diffusers Klein at flux-root/klein-9b instead.
     "IndexTTS": {
         "repo": "IndexTeam/IndexTTS-2",
         "type": "snapshot",
@@ -200,27 +202,31 @@ def main():
     print(f"   Cache: {HF_CACHE}")
     
     ensure_library()
-    from huggingface_hub import hf_hub_download, snapshot_download, login
+    from huggingface_hub import hf_hub_download, snapshot_download, login, get_token
     
     # AUTH CHECK
     print("\n🔐 Checking Hugging Face Authentication...")
     # Check if token exists in env or cache
     token = os.environ.get("HF_TOKEN")
-    if token:
-        print("   -> Found HF_TOKEN in environment. Logging in...")
-        login(token=token)
-    else:
-        # Try to see if we are already logged in via cached token
-        # There isn't a simple public API to check 'is_logged_in' without side effects, 
-        # but running a simple whoami check via shell or just trying download works.
-        # We'll just prompt if we suspect it might fail, or better, always give user a chance to login if they want.
-        print("   -> No HF_TOKEN env var found. If you hit 401 errors, you need to login.")
-        print("      To login now, enter your User Access Token (Text) below. Press Enter to skip.")
-        user_token = input("      HF Token > ").strip()
-        if user_token:
-            login(token=user_token)
+    if not token:
+        # Try to find cached token using modern utility
+        try:
+            token = get_token()
+        except:
+            token = None
+            
+        if token:
+            print("   -> Found cached HF token.")
         else:
-            print("      Skipping login (assuming cached credentials).")
+            print("   -> No HF_TOKEN env var or cached token found. If you hit 401 errors, you need to login.")
+            print("      To login now, enter your User Access Token (Text) below. Press Enter to skip.")
+            token = input("      HF Token > ").strip()
+            if token: 
+                login(token=token)
+                print("   ✅ Logged in.")
+            else:
+                token = None
+                print("   ⚠️ Proceeding without explicit token (Public only).")
 
     # 1. ComfyUI & Wan2.1 Source
     git_clone_comfy()
@@ -243,17 +249,19 @@ def main():
             if conf['type'] == 'snapshot':
                 snapshot_download(
                     repo_id=conf['repo'],
-                    revision=conf.get('revision', None), # Add revision
+                    revision=conf.get('revision', None),
                     local_dir=str(conf['target']),
-                    local_dir_use_symlinks=False
+                    local_dir_use_symlinks=False,
+                    token=token
                 )
             elif conf['type'] == 'file':
                 hf_hub_download(
                     repo_id=conf['repo'],
                     filename=conf['filename'],
-                    revision=conf.get('revision', None), # Add revision
+                    revision=conf.get('revision', None),
                     local_dir=str(conf['target']),
-                    local_dir_use_symlinks=False
+                    local_dir_use_symlinks=False,
+                    token=token
                 )
             elif conf['type'] == 'files':
                 for fname in conf['filenames']:
@@ -261,9 +269,10 @@ def main():
                     hf_hub_download(
                         repo_id=conf['repo'],
                         filename=fname,
-                        revision=conf.get('revision', None), # Add revision
+                        revision=conf.get('revision', None),
                         local_dir=str(conf['target']),
-                        local_dir_use_symlinks=False
+                        local_dir_use_symlinks=False,
+                        token=token
                     )
             elif conf['type'] == 'git_clone':
                 target_dir = conf['target']

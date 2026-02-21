@@ -336,7 +336,10 @@ def main():
     
     import definitions
     flux_conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
-    fallback_path = flux_conf.path if flux_conf else "/Volumes/XMVPX/mw/flux-root"
+    if not flux_conf:
+        flux_conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
+        
+    fallback_path = flux_conf.path if flux_conf else "/Volumes/XMVPX/mw/flux-root/klein-9b"
     
     parser.add_argument("--flux_path", default=fallback_path)
     

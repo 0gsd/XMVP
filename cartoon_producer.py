@@ -305,7 +305,8 @@ def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration, bpm=No
         logging.info(f"✅ COMPLETE: {final_video}")
 
 # Default Paths (Can be overridden by args)
-DEFAULT_TF = Path("/Users/0gs/METMcloud/METMroot/tools/fmv/fbf_data")
+# Legacy FBF transcript folder — only used by fbf-cartoon mode
+DEFAULT_TF = Path(os.environ.get("FBF_DATA", "."))
 DEFAULT_VF = Path("/Volumes/XMVPX/fmv_corpus")
 
 # Model Configuration
@@ -3036,8 +3037,6 @@ def main():
     logging.info("🎬 Cartoon Producer Initialized.")
     logging.info(f"   Mode: {args.vpform}")
     logging.info(f"   Key Pool Size: {len(keys)}")
-    logging.info(f"   Transcript Folder: {args.tf}")
-    logging.info(f"   Video Folder: {args.vf}")
     
     # 0. Load Keys (Already done at startup)
     
@@ -3103,6 +3102,17 @@ def main():
             logging.info(f"   🎨 {args.vpform}: Using Local Pipeline (Gemma Director -> Flux Renderer).")
         
     logging.info(f"   Model: {model}")
+    
+    # === SPECIAL ROUTING: CLIP VIDEO (Short-circuit before project scanning) ===
+    if args.vpform == "clip-video":
+        import dispatch_clip_video
+        success = dispatch_clip_video.run_clip_video_pipeline(args)
+        if success:
+            logging.info("✅ Clip Video Pipeline Complete.")
+        else:
+            logging.error("❌ Clip Video Pipeline Failed.")
+        return
+    # ==========================================================================
     
     # Scan (Only needed for legacy FBF/Transcript mode)
     if args.vpform in ["creative-agency", "music-visualizer", "music-agency", "music-video", "full-movie", "cartoon-video"] or args.xb:

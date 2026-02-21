@@ -134,7 +134,7 @@ def run_clip_video_pipeline(args):
         return False
         
     # 1. Setup Output
-    out_dir = Path(args.out) if args.out else Path("z_test-outputs/clip_video")
+    out_dir = Path(getattr(args, 'out', None) or "z_test-outputs/clip_video")
     out_dir.mkdir(parents=True, exist_ok=True)
     
     # 2. Analyze Audio

@@ -339,6 +339,12 @@ FORM_REGISTRY = {
         default_args={"fps": 4, "w": 120, "h": 80, "local": True},
         description="ANSI Frame Redraw. LLM redraws each video frame as block character art."
     ),
+    "clip-video": VPFormConfig(
+        key="clip-video",
+        aliases=["clip", "montage", "cuts"],
+        default_args={"local": True},
+        description="Smart Beat-Matched Montage. Scans a video folder (--f), cuts clips to audio energy (--mu)."
+    ),
 }
 
 def resolve_vpform(input_string: str) -> Optional[VPFormConfig]:

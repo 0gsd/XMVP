@@ -1,609 +1,374 @@
 # XMVP: The Modular Vision Pipeline
 
-**Make movies from prompts. Run locally. Own your creative pipeline.**
+**Frame-by-frame animation, beat-synced visualizers, and audio for your scripts — all from a single command, locally or via the cloud. Own your creative pipeline.**
 
-XMVP is an open-source "film studio in a box" that decomposes video production into specialist modules—Producers, Writers, Directors, Editors—that can run in the cloud, entirely on your Mac, or any combination you choose.
+XMVP is an open-source creative production toolkit that turns text prompts into animated shorts, music videos, audio-reactive visualizations, and multi-character spoken-word content. Everything runs on your Mac, with optional cloud acceleration. No subscriptions, no per-generation fees, no content filters (unless you want them).
 
 ---
 
-## What Can XMVP Do?
+## Why XMVP?
 
-- **Generate full video sequences** from a single text prompt
-- **Create music videos** synced to any audio track
-- **Animate frame-by-frame** with consistent style
-- **Run 100% locally** on Apple Silicon (M1/M2/M3/M4) for privacy and uncensored creativity
-- **Export everything** to the open XMVP XML format for editing, re-rendering, or sharing
-- **Auto-expand titles** into rich visual concepts with the SASSPRILLA Carbonator
-- **Generate spoken word content** with cloned voices (Thax Douglas model included!)
+Generative video models are getting good at producing short clips of photorealistic footage. XMVP does something different: it builds *structured productions* where an LLM directs every frame, scene, and cut. The pipeline decomposes creative work into specialist stages — a Vision Producer writes the brief, a Writers Room breaks it into scenes, a Director calls the shots, and a Post house stitches the result — so you get narrative coherence instead of a single incoherent clip.
+
+Version 3.00 focuses the toolkit around three production modes:
+
+**Cartoons** — Frame-by-frame image generation guided by GemmaW (a fine-tuned Gemma director model with included adapter weights), with beat-synced shot planning, Flux/Gemini rendering, img2img coherence, and Wan 2.1 keyframe animation. This is the core of XMVP: structured, LLM-directed animation from prompt to final cut.
+
+**Visualizers** — Two flavors. The *procedural* path (ANSI and Unicode visualizers) uses Demucs stem separation to drive per-instrument character animations at 24–30 FPS with no AI inference at all — pure math on the audio signal. The *LLM-directed* path has the model "draw" each frame in block characters or Unicode art, then renders to video. Both sync to music.
+
+**Content** — Multi-character podcast and spoken-word generation with Kokoro TTS (local) or Google Journey (cloud), optional RVC voice cloning, generative foley via Hunyuan, and a per-line visual illustration mode. Formats include 4-person improv comedy, historical radio drama, road-trip narratives, Thax Douglas spoken word (with his voice model, shared with permission), and Element 47 audio plays.
 
 ---
 
 ## Quick Start (Cloud Mode)
 
-If you just want to try XMVP with cloud APIs:
-
 ```bash
-# 1. Clone the repo
-git clone https://github.com/0gsd/xmvp.git
-cd xmvp
-
-# 2. Install dependencies
+# 1. Clone and install
+git clone https://github.com/0gsd/xmvp.git && cd xmvp
 pip install -r requirements.txt
 
-# 3. Create your config
+# 2. Configure
 cp env_vars.example.yaml env_vars.yaml
-# Edit env_vars.yaml and add your Gemini API key(s)
+# Edit env_vars.yaml — add your Gemini API key(s)
 
-# 4. Make a movie!
-python3 movie_producer.py "A cyberpunk detective story" --seg 4 --vm K
+# 3. Make a cartoon
+python3 cartoon_producer.py --prompt "A melancholy astronaut drifts through a neon city" --style "Pixel Art"
 ```
 
-Your video will appear in `z_test-outputs/movies/finalcuts/`.
+Output lands in `z_test-outputs/cartoons/`.
 
 ---
 
 ## The "Local First" Setup
 
-This is where XMVP really shines. With the right hardware and a big external drive, you can run the entire pipeline offline—no API keys, no per-generation costs, no content filters (unless you want them).
+With the right hardware and a big external drive, you can run the entire pipeline offline — no API keys, no per-generation costs, no content filters.
 
 ### What You'll Need
 
-- **Mac with Apple Silicon** (M1/M2/M3/M4 with 16GB+ RAM recommended)
-- **External SSD** (1TB+ recommended, named `XMVPX`)
-- **About 100GB** of disk space for model weights
-- **Python 3.10+** with Miniconda/Miniforge
+- **Mac with Apple Silicon** (M1/M2/M3/M4, 16GB+ RAM recommended)
+- **External SSD** (1TB+, named `XMVPX`)
+- **~100GB** disk space for model weights
+- **Python 3.10+** with Miniforge
 
 ### Step 1: Prepare Your External Drive
 
-Format an external SSD and name it **`XMVPX`**. This is the standard mount point XMVP expects.
-
-Create the model weights directory:
+Format an external SSD and name it **`XMVPX`**. Create the weights directory:
 
 ```bash
 mkdir -p /Volumes/XMVPX/mw
 ```
 
-The `mw/` folder will contain all local model weights. Here's what the final structure should look like:
+Final structure:
 
 ```
-/Volumes/XMVPX/
-└── mw/
-    ├── flux-root/           # Flux.1-schnell (Image generation)
-    ├── LT2X-root/           # LTX-Video (Video generation)
-    ├── gemma-root/          # Gemma 3 (Text generation)
-    ├── t5weights-root/      # T5 encoder for Flux
-    ├── kokoro-root/         # Kokoro TTS (Speech)
-    ├── hunyuan-foley/       # Hunyuan Foley (Sound effects)
-    ├── wan-root/            # Wan 2.1 (Speech-to-video, optional)
-    ├── comfyui-root/        # ComfyUI (optional, for advanced workflows)
-    ├── indextts-root/       # IndexTTS (optional, for cloned voices)
-    └── rvc-root/            # RVC base assets (optional)
+/Volumes/XMVPX/mw/
+├── flux-root/           # Flux.1-schnell + Klein 9B (image generation)
+├── gemma-root/          # Gemma 3 (text/direction)
+├── t5weights-root/      # T5 encoder for Flux
+├── kokoro-root/         # Kokoro TTS (speech)
+├── hunyuan-foley/       # Hunyuan Foley (sound effects)
+├── LT2X-root/           # LTX-Video (video clips, optional)
+├── wan-root/            # Wan 2.1 (keyframe animation, optional)
+├── skyreels-root/       # SkyReels A2V (audio-to-video, optional)
+├── flux-gguf-root/      # Flux GGUF quantized (low-memory option)
+└── rvc-root/            # RVC base assets (voice cloning, optional)
 ```
 
-### Step 2: Set Up Your Python Environment
-
-We recommend using Miniforge (conda for Apple Silicon):
+### Step 2: Set Up Python
 
 ```bash
-# Install Miniforge if you haven't
 brew install miniforge
-
-# Create the XMVP environment
 conda create -n xmvp python=3.10
 conda activate xmvp
 
-# Install PyTorch with MPS support
 pip install torch torchvision torchaudio
-
-# Install core dependencies
 pip install -r requirements.txt
-
-# Install local inference packages
-pip install mlx mlx-lm                    # For Gemma (text)
-pip install diffusers transformers        # For Flux & LTX
-pip install kokoro-onnx soundfile         # For Kokoro TTS
-pip install librosa pyloudnorm            # For audio analysis
+pip install mlx mlx-lm                    # Gemma (text)
+pip install diffusers transformers        # Flux & LTX
+pip install kokoro-onnx soundfile         # Kokoro TTS
+pip install librosa pyloudnorm demucs     # Audio analysis + stem splitting
 ```
 
-### Step 3: Download Model Weights
-
-XMVP includes a helper script that downloads everything you need:
+### Step 3: Download Models
 
 ```bash
 conda activate xmvp
 python3 populate_models_xmvp.py
 ```
 
-This will:
-1. Prompt you for a HuggingFace token (needed for gated models like Gemma)
-2. Download all models to `/Volumes/XMVPX/mw/`
-3. Clone ComfyUI for advanced workflows
+This prompts for a HuggingFace token and downloads everything to `/Volumes/XMVPX/mw/`. Expect ~400GB.
 
-**⚠️ This downloads ~400GB of model weights. Go get coffee.**
-
-If you prefer to download models manually or already have some:
+Manual download reference:
 
 | Model | HuggingFace Repo | Target Folder |
 |-------|------------------|---------------|
 | Flux Schnell | `black-forest-labs/FLUX.1-schnell` | `flux-root/` |
-| LTX-Video | `Lightricks/LTX-Video` | `LT2X-root/` |
+| Flux 2 Klein 9B | (via populate script) | `flux-root/klein-9b/` |
 | Gemma 3 | `google/gemma-3-27b-it` | `gemma-root/` |
 | T5 Encoder | `city96/t5-v1_1-xxl-encoder-bf16` | `t5weights-root/` |
 | Kokoro TTS | `Kijai/Kokoro-82M-ONNX` | `kokoro-root/` |
 
-### Step 4: Test Your Setup
+### Step 4: Verify
 
 ```bash
-# Check model registry status
 python3 model_scout.py --status
-
-# Run a local test
-python3 movie_producer.py "A robot painting a sunset" --local --seg 2
 ```
-
-If everything is configured correctly, you'll see:
-```
-🏠 Local Mode Enabled: Switching models to Local Gemma (Text) and LTX (Video).
-   📍 Local Text Model Path: /Volumes/XMVPX/mw/gemma-root
-   🛡️ Safety Filters: OFF (Uncensored)
-   ✨ Quality Refinement: ON (Hyper-Detailed Fattening)
-```
-
-For **Long-Form** content (e.g. `full-movie`), XMVP now uses **Wan 2.1** and **Micro-Batching**:
-
-```bash
-python3 movie_producer.py "The Odyssey" --vpform full-movie --local --slength 600
-```
-
-This will trigger the iterative writer, generating scenes in 180s chunks until the 600s target is reached.
 
 ---
 
 ## The Three Producers
 
-XMVP has three main entry points, each suited to different workflows:
-
-### 🎬 `movie_producer.py` — The Showrunner
-
-Creates structured video content (ads, trailers, music videos) from prompts.
-
-```bash
-# Cloud mode (Veo 3.1 + Gemini)
-python3 movie_producer.py "A noir detective story" --seg 6 --vm K
-
-# Local mode (LTX + Gemma) — uncensored!
-python3 movie_producer.py "Underground rave documentary" --local --seg 8
-
-# Music video synced to a track
-python3 movie_producer.py "Abstract visuals" --vpform music-video --mu song.mp3
-
-# Long-form movie (Micro-Batching enabled!)
-# Generates 50 minutes of content in 3-minute iterative batches
-python3 movie_producer.py "Epic Space Opera" --vpform full-movie --local --slength 3000
-
-# Auto-carbonation: just give it a title!
-python3 movie_producer.py "Midnight Train To Georgia"
-
-# Using VPForm aliases
-python3 movie_producer.py tech-movie "AI Awakening"
-python3 movie_producer.py draft-animatic "Space Opera Epic"
-```
-
 ### 🎨 `cartoon_producer.py` — The Animator
 
-Frame-by-frame animation and audio-reactive visuals.
+The primary creative engine. Generates frame-by-frame animation from prompts using an LLM director (GemmaW locally, Gemini in the cloud) to write per-frame image prompts, then renders with Flux or Gemini image generation.
 
 ```bash
-# Creative agency mode (prompt → story → animation)
-python3 cartoon_producer.py --prompt "A melancholy astronaut" --style "Pixel Art"
+# Prompt-driven animation (creative agency mode)
+python3 cartoon_producer.py --prompt "A sad robot finds purpose" --style "Pixel Art"
 
 # Music video with beat-synced narrative
-python3 cartoon_producer.py --vpform music-agency --mu track.mp3 --prompt "Cyberpunk chase"
+python3 cartoon_producer.py --vpform music-video --mu song.mp3 --prompt "Neon dreams"
 
-# Abstract visualizer
+# Beat-synced procedural visualizer (no AI, pure signal processing)
 python3 cartoon_producer.py --vpform music-visualizer --mu ambient.wav
+
+# Frame-by-frame video restyling (img2img)
+python3 cartoon_producer.py --vpform cartoon-video --mu input.mp4 --style "Oil painting"
+
+# Full-length feature animatic
+python3 cartoon_producer.py --vpform full-movie --prompt "The Odyssey" --local --slength 600
+
+# Wan 2.1 keyframe animation (local only)
+python3 cartoon_producer.py --prompt "Dancing in the rain" --wan --local
+
+# Beat-matched clip montage from a video folder
+python3 cartoon_producer.py --vpform clip-video --mu track.mp3 --f /path/to/clips/
 ```
 
 ### 🎙️ `content_producer.py` — The Podcast Factory
 
-Generates improv comedy and spoken word content.
+Generates scripted or improvised multi-character audio content with per-line visual illustration.
 
 ```bash
-# 24-minute 4-person improv special
-python3 content_producer.py --vpform 24-podcast
+# 24-minute 4-person improv comedy
+python3 content_producer.py --vpform 24-podcast --local
 
-# Thax Douglas spoken word (uses included voice model!)
+# Great Moments in History (dramatized radio format)
+python3 content_producer.py --vpform gahd-podcast --ep 207 --local --location "The Colosseum"
+
+# 6-person road trip narrative (66 minutes)
+python3 content_producer.py --vpform route66-podcast --rvc --local --slength 3960
+
+# Thax Douglas spoken word (included voice model)
 python3 content_producer.py --vpform thax-douglas
 
-# Local mode with Kokoro TTS
-python3 content_producer.py --vpform 24-podcast --local
+# Element 47 audio play (from Fountain script)
+python3 content_producer.py --vpform element-47 --xb script.fountain --local
+
+# Full-movie slideshow (XMVP XML → frame+audio)
+python3 content_producer.py --vpform fullmovie-still --xb manifest.xml
+
+# Audio-only play (MP3 output)
+python3 content_producer.py --vpform audio-play --xb script.xml --local
+
+# Audio-to-video (SkyReels A2V)
+python3 content_producer.py --vpform audio-movie --xb manifest.xml --mu master.wav --local
 ```
 
 ### 🎞️ `post_production.py` — The Editor
 
-Upscaling, interpolation, and audio stitching.
+Upscaling, frame interpolation, retiming, and audio stitching.
 
 ```bash
-# 2x upscale with Flux
-python3 post_production.py video.mp4 --local --scale 2.0
+# 2x upscale with Flux img2img
+python3 post_production.py video.mp4 --scale 2.0
 
-# Frame interpolation (2x smoother)
-python3 post_production.py video.mp4 --local -x 2
+# Frame interpolation (2x smoother via AI tweening)
+python3 post_production.py video.mp4 -x 2
 
 # Sync video to audio duration
 python3 post_production.py video.mp4 --mu soundtrack.mp3 --stitch-audio
+
+# Retime to specific framerate
+python3 post_production.py video.mp4 --framerate 24.0
+
+# VDJ blend mode (two video layers + audio)
+python3 post_production.py --vvaudio --bottomvideo base.mp4 --topvideo overlay.mp4 --mu mix.mp3
+```
+
+---
+
+## Standalone Visualizers
+
+These run independently of the producer pipeline — point them at an audio file and get a video.
+
+### `ansi_visualizer.py` — Procedural ANSI Animation
+
+Splits audio into four stems via Demucs (drums, bass, keys, other), generates per-track ASCII animations driven by loudness and spectral character, composites the layers with opacity blending, and muxes synced audio into a final MP4.
+
+```bash
+python3 ansi_visualizer.py --mu song.mp3 --fps 24
+python3 ansi_visualizer.py --mu song.wav --fps 30 --width 120 --height 40
+```
+
+### `unicode_visualizer.py` — Extended Unicode Animation
+
+Same stem-splitting pipeline with 140K+ Unicode characters, themed character pools (Matrix, Emoji, Braille, Geometric, etc.), and per-section theme randomization.
+
+```bash
+python3 unicode_visualizer.py --mu song.mp3 --fps 24 --theme matrix
+python3 unicode_visualizer.py --mu song.wav --theme emoji
+python3 unicode_visualizer.py --mu song.mp3 --theme random
 ```
 
 ---
 
 ## Understanding the Pipeline
 
-When you run `movie_producer.py`, it orchestrates this sequence:
+When you run `cartoon_producer.py` in creative-agency mode, the internal sequence is:
 
 ```
 1. VISION PRODUCER    → Creates the "Bible" (concept, style, constraints)
-2. STUB REIFICATION   → Expands into a full Story (characters, arc)
+2. STUB REIFICATION   → Expands into a Story (characters, arc, theme)
 3. WRITERS ROOM       → Breaks into timed Portions (scenes)
 4. PORTION CONTROL    → Calculates frame ranges
-5. DISPATCH DIRECTOR  → Generates video/image assets
-6. POST PRODUCTION    → Stitches and finalizes
-7. XMVP EXPORT        → Saves everything to XML
+5. SHOT PLANNING      → Beat-synced cut points (if music provided)
+6. DISPATCH DIRECTOR  → Generates image/video assets per frame
+7. POST PRODUCTION    → Stitches, interpolates, and finalizes
+8. XMVP EXPORT       → Saves everything to XML
 ```
 
-Each module can be run independently for debugging or custom workflows:
+Each module can run independently for debugging or custom workflows:
 
 ```bash
-# Generate just the "Bible"
-python3 vision_producer.py --vpform tech-movie --prompt "AI rebellion" --out bible.json
-
-# Expand to story
+python3 vision_producer.py --vpform creative-agency --prompt "AI rebellion" --out bible.json
 python3 stub_reification.py --bible bible.json --out story.json
-
-# Continue the chain...
+python3 writers_room.py --bible bible.json --story story.json --out portions.json
+python3 portion_control.py --bible bible.json --portions portions.json --out manifest.json
 ```
 
 ---
 
-## New in v2.80
+## VP Forms Reference
 
-### 🫧 SASSPRILLA Carbonator
-Auto-expands title-style prompts into dense, genre-appropriate visual concepts:
-```bash
-python3 sassprilla_carbonator.py "Purple Rain" --artist "Prince"
-```
-
-### 🎤 Thax Douglas Voice Model
-Included in `z_training_data/thax_voice/` — a trained RVC model of Chicago poet Thax Douglas, shared with his blessing. Use with:
-```bash
-python3 content_producer.py --vpform thax-douglas
-```
-
-### 🎭 Dialogue Critic (Gemma Wittgenstein)
-Refines generated dialogue against a corpus of professional screenplays for more natural, cinematic lines.
-
-### 📹 Wan 2.1 Bridge
-New local video generation option using Wan 2.1 14B with keyframe chaining.
-
-### 🎬 Dispatch Animatic
-High-speed storyboard generation using Gemma + Flux for rapid visualization.
-
-### 📋 VP Form Registry
-Unified form system with aliases — use `tech-movie` or `tm`, `music-video` or `mv`:
-```bash
-python3 movie_producer.py mv "Neon Dreams"
-```
-
----
-
-## Configuration
-
-### env_vars.yaml
-
-Copy `env_vars.example.yaml` to `env_vars.yaml` and configure:
-
-```yaml
-# Engine Selection
-TEXT_ENGINE: "gemini_api"      # "gemini_api" or "local_gemma"
-LOCAL_MODEL_PATH: ""           # Only needed if using non-standard path
-
-# API Keys (for cloud mode)
-GEMINI_API_KEY: "YOUR_KEY_HERE"
-ACTION_KEYS_LIST: "key1,key2,key3"   # For video generation (rotated)
-TEXT_KEYS_LIST: "key4,key5"          # For text operations (fallback)
-```
-
-**Pro tip:** Use multiple API keys in `ACTION_KEYS_LIST` to avoid rate limits during batch generation.
-
-### Model Switching
-
-Use `model_scout.py` to manage which models are active:
-
-```bash
-# See current config
-python3 model_scout.py --status
-
-# Switch to local Flux for images
-python3 model_scout.py --switch image flux-schnell
-
-# Switch to cloud Veo for video
-python3 model_scout.py --switch video veo-3.1-fast
-```
+| Form | Aliases | Producer | Description |
+|------|---------|----------|-------------|
+| `creative-agency` | `ca`, `commercial`, `ad`, `agency` | cartoon | LLM-directed animation from prompt |
+| `music-video` | `mv`, `music-agency` | cartoon | Beat-synced narrative animation to audio |
+| `music-visualizer` | `viz`, `visualizer`, `audio-reactive` | cartoon | Procedural stem-reactive visualizer |
+| `cartoon-video` | `cv`, `vid2vid`, `rotoscope` | cartoon | Frame-by-frame video restyling |
+| `clip-video` | (via `--f` flag) | cartoon | Beat-matched clip montage |
+| `full-movie` | `feature`, `movie` | cartoon | Full-length feature animatic |
+| `tech-movie` | `tech`, `tm` | cartoon | Tech/code themed animation |
+| `draft-animatic` | `animatic`, `draft`, `storyboard` | cartoon | Static storyboard mode |
+| `3d-movie` | `3d`, `blender`, `cgi` | cartoon | 3D via Blender/bpy |
+| `ansi-video` | `ansi`, `ascii`, `pixel-art`, `blocks` | (registered) | LLM-drawn ANSI block animation |
+| `ansi-redraw` | `ansi-trace`, `ascii-redraw`, `block-trace` | (registered) | LLM redraws video as block art |
+| `24-podcast` | `24`, `news` | content | 4-person improv comedy (24 min) |
+| `10-podcast` | `10`, `tech-news` | content | Topical tech podcast (10 min) |
+| `route66-podcast` | `r66`, `route66` | content | 6-person road trip narrative (66 min) |
+| `gahd-podcast` | `gahd`, `god`, `history` | content | Great Moments in History |
+| `thax-douglas` | `thax`, `td` | content | Spoken word (included voice model) |
+| `element-47` | `e47`, `element47` | content | Element 47 audio play |
+| `fullmovie-still` | `fms`, `slideshow` | content | Frame+audio slideshow from XML |
+| `audio-play` | `ap`, `audioplay`, `play` | content | Audio-only play (MP3) |
+| `audio-movie` | `am`, `a2v`, `audiomovie` | content | Audio-to-video via SkyReels |
+| `black-box` | `bb`, `theater`, `stage`, `min` | content | Minimalist theater mode |
+| `parody-movie` | `pm`, `spoof`, `parody` | (legacy) | Direct parody/spoof |
+| `parody-video` | `pv`, `music-parody` | (legacy) | Music-synced parody |
+| `movies-movie` | `mm`, `remake`, `blockbuster` | (legacy) | Condensed blockbuster remake |
 
 ---
 
-## The XMVP Format
+## Cloud vs Local
 
-Every run exports to the open XMVP XML format:
+| Feature | Cloud | Local |
+|---------|-------|-------|
+| Text / Direction | Gemini 2.0 Flash | Gemma 3 27B (MLX) |
+| Image Rendering | Gemini Flash / Imagen 3 | Flux Schnell / Klein 9B |
+| Video Clips | (not used in v3) | LTX-Video / Wan 2.1 |
+| Speech | Google Journey TTS | Kokoro ONNX |
+| Sound Effects | — | Hunyuan Foley / SFX Bridge |
+| Cost | Per-generation API fees | Free after setup |
+| Content Filters | Google safety filters | None (unless `--pg`) |
+
+### PG Mode
+
+When `--pg` is enabled: children are replaced with adults in prompts, celebrities become "impersonator performing as [Name]", violence/gore/nudity removed. Works in both cloud and local modes.
+
+Without `--pg` in local mode: no filters. Full artistic freedom.
+
+---
+
+## XMVP XML Format
+
+Every production exports to an open XML format that captures the full creative state:
 
 ```xml
 <?xml version='1.0' encoding='utf-8'?>
-<XMVP version="2.80">
+<XMVP version="3.00">
   <Bible>{"constraints": {...}, "scenario": "...", "situation": "...", "vision": "..."}</Bible>
   <Story>{"title": "...", "synopsis": "...", "characters": [...]}</Story>
   <Manifest>{"segs": [...], "files": {...}}</Manifest>
 </XMVP>
 ```
 
-You can re-render any XMVP file:
+Re-render any XMVP file with different settings:
 
 ```bash
-# Re-render with different settings
-python3 movie_producer.py --xb previous_run.xml --vm K --local
+python3 cartoon_producer.py --xb previous_run.xml --local
 ```
 
 ---
 
-## Modes Explained
+## Included Adapters & Training Data
 
-### Cloud vs Local
+XMVP ships with fine-tuned adapter weights and training data:
 
-| Feature | Cloud | Local |
-|---------|-------|-------|
-| Text Generation | Gemini 2.0 Flash | Gemma 3 27B |
-| Image Generation | Gemini Flash / Imagen 3 | Flux.1-schnell |
-| Video Generation | Veo 3.1 | Wan 2.1 (full-movie) / LTX-Video (clips) |
-| Speech | Google Journey TTS | Kokoro ONNX |
-| Cost | Per-generation API fees | Free after setup |
-| Content Filters | Google's safety filters | None (unless `--pg`) |
-| Speed | Fast (cloud GPUs) | Depends on your Mac |
-
-### PG Mode
-
-When `--pg` is enabled:
-- Children are replaced with adults in prompts
-- Celebrities become "impersonator performing as [Name]"
-- Violence/gore/nudity removed
-- Works in both cloud and local modes
-
-Without `--pg` in local mode: **No filters applied.** Full artistic freedom.
-
-### Video Model Tiers
-
-| Tier | Model | Use Case |
-|------|-------|----------|
-| `K` | veo-3.1-generate-preview | Cinematic 4K (highest quality) |
-| `J` | veo-3.1-fast-generate-preview | Balanced speed/quality |
-| `L` | veo-2.0-generate-001 | Light/fast |
-| `D` | veo-2.0-generate-001 | Legacy Veo 2.0 |
+- **GemmaW Director** (`adapters/director_v1/`) — Gemma adapter trained to write cinematic frame prompts
+- **Movie-Level LoRA Templates** (`adapters/movies/`) — Pre-trained Flux LoRA templates for consistent style
+- **Thax Douglas Voice** (`z_training_data/thax_voice/`) — RVC model, shared with permission
+- **Element 47 Voices** (`z_training_data/e47_voices/`) — 4-character voice reference audio
+- **NICOTIME Index** (`z_training_data/nicotime/`) — Noospheric entity research documents
+- **Example Parodies** (`z_training_data/example_parodies/`) — Reference scripts
 
 ---
 
 ## Troubleshooting
 
-### "No API Keys found"
-→ Make sure `env_vars.yaml` exists and has valid keys
+**"No API Keys found"** → Ensure `env_vars.yaml` exists with valid keys.
 
-### "Local model not found"
-→ Check that `/Volumes/XMVPX/mw/` exists and contains model folders
-→ Run `python3 model_scout.py --status` to verify paths
+**"Local model not found"** → Verify `/Volumes/XMVPX/mw/` contains model folders. Run `python3 model_scout.py --status`.
 
-### "MPS not available"
-→ You need macOS 12.3+ and an Apple Silicon Mac
-→ Falls back to CPU (very slow)
+**"MPS not available"** → Requires macOS 12.3+ on Apple Silicon. Falls back to CPU (slow).
 
-### "Out of memory"
-→ Close other apps, especially browsers
-→ Try smaller `--seg` count
-→ Local models are memory-hungry; 16GB+ recommended
+**"Out of memory"** → Close other apps, try smaller `--slength`, 16GB+ recommended.
 
-### Rate limits (429 errors)
-→ Add more keys to `ACTION_KEYS_LIST`
-→ Use `--fast` for cheaper model tiers
-→ Switch to `--local` mode
+**Rate limits (429)** → Add more keys to `ACTION_KEYS_LIST`, use `--local`, or increase `--delay`.
 
-### "RVC conversion failed" (Thax mode)
-→ Set up RVC environment: `conda create -n rvc_env python=3.10 && pip install rvc-python`
-→ Check `RVC_PYTHON_BIN` environment variable points to correct Python
+**"RVC conversion failed"** → Set up RVC environment: `conda create -n rvc_env python=3.10 && pip install rvc-python`.
 
 ---
 
-## Training Data & Voice Models
+## Tips
 
-XMVP v2.80 includes:
-
-- **Thax Douglas Voice Model** (`z_training_data/thax_voice/`) — RVC model for the Chicago poet, shared with his permission
-- **Screenplay Corpus** (`z_training_data/parsed_scripts/`) — Parsed scripts for dialogue refinement (not included in public repo)
-
-To use the Thax voice:
-1. Ensure files are in `z_training_data/thax_voice/model/`
-2. Set up RVC environment
-3. Run `python3 content_producer.py --vpform thax-douglas`
+1. **Start small**: `--slength 30` or `--limit 10` for quick tests
+2. **Check models**: `python3 model_scout.py --status`
+3. **Local = uncensored**: `--local` has no content filters unless you add `--pg`
+4. **Output locations**: Cartoons in `z_test-outputs/cartoons/`, content in `z_test-outputs/`
+5. **Auto-Carbonation**: Short, title-case prompts get auto-expanded by SASSPRILLA into rich visual concepts
+6. **Chaos Seeds**: `--cs 2` injects random Wikipedia concepts for creative serendipity
 
 ---
 
 ## Contributing
 
-XMVP is a personal project that I'm sharing because I think the "modular vision pipeline" concept is useful. Issues and PRs welcome, but no promises on response time.
-
----
+XMVP is a personal project shared because the "modular vision pipeline" concept is useful. Issues and PRs welcome, but no promises on response time.
 
 ## License
 
-Free and open for use by all. You'll need your own API keys for cloud mode, or your own hardware for local mode.
-
-The included Thax Douglas voice model is shared with permission for creative use.
+Free and open for use by all. You'll need your own API keys for cloud mode, or your own hardware for local mode. The included Thax Douglas voice model is shared with permission for creative use.
 
 ---
 
-## Getting Started
-
-Once you have XMVP installed, your external drive (`/Volumes/XMVPX/mw/`) populated with model weights, and your `env_vars.yaml` configured with API keys (16 `ACTION_KEYS_LIST` for video/image generation, 8 `TEXT_KEYS_LIST` for text operations), you're ready to start creating.
-
-Below are example commands for common workflows. Replace paths and parameters as needed for your setup.
-
----
-
-### Converting Text to Video
-
-**To create a parody movie from a text file you already have:**
-
-```bash
-python3 xmvp_converter.py /Volumes/XMVPX/mw/your-project/processed_text/Your_Script.txt \
-    --vpform parody-movie \
-    --slength 5820
-```
-
-This converts a pre-processed text file into a ~97-minute parody-format video.
-
----
-
-### Post-Production: Stitching Audio to Video
-
-**To add music or narration to an existing video sequence (folder of segments):**
-
-```bash
-python3 post_production.py \
-    --input /path/to/your/video-segments-folder \
-    --mu /path/to/your/audio/soundtrack.aif \
-    --stitch-audio
-```
-
-The `--stitch-audio` flag syncs and combines your audio track with the video output.
-
-**To process a single video file:**
-
-```bash
-python3 post_production.py video.mp4 --mu soundtrack.mp3 --stitch-audio
-```
-
-**To process a folder of numbered frame images:**
-
-```bash
-python3 post_production.py /path/to/frames/ --mu audio.aif --stitch-audio
-```
-
----
-
-### Cloud Mode: Quick Movie from a Prompt
-
-**To create a segmented movie using cloud APIs (Gemini + Veo):**
-
-```bash
-python3 movie_producer.py "Your Movie Title (Year)" \
-    --vpform parody-movie \
-    --pg \
-    --vm L \
-    --seg 12
-```
-
-- `--pg` enables PG-safe content filtering
-- `--vm L` selects the "Light/Fast" video model tier
-- `--seg 12` creates 12 segments
-
----
-
-### Local Mode: Full-Length Movie (Uncensored)
-
-**To create a full-length movie running entirely on your Mac:**
-
-```bash
-python3 movie_producer.py "Your Creative Movie Title" \
-    --vpform full-movie \
-    --local \
-    --slength 3000
-```
-
-- `--local` uses Gemma for text and Wan 2.1/LTX for video (no API costs, no content filters)
-- `--slength 3000` targets a 50-minute runtime
-
----
-
-### Podcast Content: Route 66 Format
-
-**To create a Route 66-style podcast episode with RVC voice conversion:**
-
-```bash
-python3 content_producer.py \
-    --vpform route66-podcast \
-    --rvc \
-    --local \
-    --slength 3960 \
-    --ep 301 \
-    --location "The Roadside Diner"
-```
-
-- `--rvc` enables Real Voice Cloning
-- `--ep 301` sets episode number (Season 3, Episode 1)
-- `--location` sets the narrative location
-
----
-
-### Podcast Content: GAHD Format
-
-**To create a Great Moments in History podcast episode:**
-
-```bash
-python3 content_producer.py \
-    --vpform gahd-podcast \
-    --slength 3200 \
-    --ep 207 \
-    --local \
-    --location "The Colosseum at Dawn"
-```
-
-Replace the location with your preferred setting.
-
----
-
-### Podcast Content: 24-Minute Improv Special
-
-**To create a 24-minute 4-person improv podcast:**
-
-```bash
-python3 content_producer.py \
-    --vpform 24-podcast \
-    --local \
-    --slength 1440
-```
-
-The `--slength 1440` sets the target duration to 24 minutes (1440 seconds).
-
----
-
-### Quick Reference: VP Forms
-
-| Form | Alias | Description |
-|------|-------|-------------|
-| `parody-movie` | `pm` | Parody-style movie content |
-| `full-movie` | `fm`, `feature`, `movie` | Full-length feature (uses micro-batching) |
-| `music-video` | `mv`, `music-agency` | Music video synced to audio |
-| `tech-movie` | `tm`, `tech` | Technology-themed content |
-| `route66-podcast` | `r66`, `route66` | Route 66 travel podcast format |
-| `gahd-podcast` | `gahd`, `god`, `history` | Great Moments in History podcast |
-| `24-podcast` | `24`, `news` | 24-minute improv special |
-| `thax-douglas` | `thax`, `td` | Thax Douglas spoken word |
-| `draft-animatic` | `animatic`, `draft` | Static storyboard mode |
-
----
-
-### Tips for New Users
-
-1. **Start small**: Try `--seg 2` or `--slength 120` for quick test runs
-2. **Check model status**: Run `python3 model_scout.py --status` to verify your local models are configured
-3. **Watch your keys**: Rotate through `ACTION_KEYS_LIST` keys to avoid rate limits on cloud mode
-4. **Local = uncensored**: `--local` mode has no content filters unless you add `--pg`
-5. **Output location**: Videos appear in `z_test-outputs/movies/finalcuts/` by default
-
----
-
-*"A reasoning, bureaucratic chain of simulated movie and video production specialists."*
+*"A reasoning, bureaucratic chain of simulated production specialists."*

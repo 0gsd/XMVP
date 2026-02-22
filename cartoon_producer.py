@@ -1457,13 +1457,13 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
              # Calculate derived metrics
              frames_per_beat = 4
              bps = bpm / 60.0
-             fps = (bps * frames_per_beat) * getattr(args, 'fsync', 1.0)
+             fps = (bps * frames_per_beat) * (getattr(args, 'fsync', None) or 1.0)
              
              logging.info(f"   🎹 BPM Override: {bpm}")
-             logging.info(f"   🎵 Derived FPS: {fps:.2f} (based on {frames_per_beat} frames/beat * fsync {getattr(args, 'fsync', 1.0)})")
+             logging.info(f"   🎵 Derived FPS: {fps:.2f} (based on {frames_per_beat} frames/beat * fsync {getattr(args, 'fsync', None) or 1.0})")
              
         else:
-             bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=getattr(args, 'fsync', 1.0))
+             bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=(getattr(args, 'fsync', None) or 1.0))
              
         target_frames = int(duration * fps)
         project_fps = fps
@@ -1523,7 +1523,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                  duration = 60.0
              frames_per_beat = 4
              bps = bpm / 60.0
-             fps = (bps * frames_per_beat) * getattr(args, 'fsync', 1.0)
+             fps = (bps * frames_per_beat) * (getattr(args, 'fsync', None) or 1.0)
              
              # VSPEED Override
              if args.vspeed and args.vspeed != 8.0:
@@ -1531,7 +1531,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                  logging.info(f"   🏎️  VSpeed Override: {args.vspeed} FPS (Default 8.0)")
                  fps = args.vspeed
         else:
-             bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=getattr(args, 'fsync', 1.0))
+             bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=(getattr(args, 'fsync', None) or 1.0))
              # VSPEED Override (even for auto-detected)
              if args.vspeed and args.vspeed != 8.0:
                   logging.info(f"   🏎️  VSpeed Override: {args.vspeed} FPS (Detected {fps:.2f})")
@@ -1803,9 +1803,31 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             subprocess.run(cmd_a, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         # 2. Extract source frames
-        project_fps = args.fps
-        logging.info(f"   🎞️  Extracting source frames @ {project_fps} FPS...")
-        cmd_f = ['ffmpeg', '-y', '-i', args.mu, '-vf', f'fps={project_fps}', str(source_dir / 'source_%04d.png')]
+        fsync_val = getattr(args, 'fsync', None)
+        
+        if fsync_val is not None:
+            # --fsync was explicitly passed: do BPM-based FPS calculation
+            logging.info(f"   🎵 fsync={fsync_val} provided — calculating BPM-synced frame rate...")
+            bpm, aud_duration, fpb, calculated_fps = analyze_audio(args.mu, fsync=fsync_val)
+            project_fps = calculated_fps
+            logging.info(f"   🎵 BPM: {bpm:.1f} → {project_fps:.2f} FPS (fsync={fsync_val})")
+            logging.info(f"   🎞️  Extracting source frames @ {project_fps:.2f} FPS...")
+            cmd_f = ['ffmpeg', '-y', '-i', args.mu, '-vf', f'fps={project_fps}', str(source_dir / 'source_%04d.png')]
+        else:
+            # No --fsync: extract EVERY frame from source video at native FPS
+            try:
+                fps_probe = ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                             '-show_entries', 'stream=r_frame_rate', '-of', 'csv=p=0', args.mu]
+                fps_out = subprocess.check_output(fps_probe, text=True).strip()
+                num, den = fps_out.split('/')
+                project_fps = float(num) / float(den)
+            except:
+                project_fps = 24.0
+                logging.warning(f"   ⚠️ Could not probe native FPS. Assuming {project_fps}")
+            logging.info(f"   🎞️  Extracting ALL source frames (native {project_fps:.2f} FPS)...")
+            # No fps filter — extract every frame as-is
+            cmd_f = ['ffmpeg', '-y', '-i', args.mu, str(source_dir / 'source_%04d.png')]
+        
         subprocess.run(cmd_f, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         source_frames = sorted(list(source_dir.glob("source_*.png")))
@@ -1947,7 +1969,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                  return
                  
             # 1. Analyze Audio
-            bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=getattr(args, 'fsync', 1.0))
+            bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=(getattr(args, 'fsync', None) or 1.0))
             target_frames = int(duration * fps)
             project_fps = fps
             target_duration = duration
@@ -2950,7 +2972,7 @@ def main():
     parser.add_argument("--h", type=int, help="Override height (Local Only, e.g. 1080)")
     parser.add_argument("--strength", "--str", dest="strength", type=int, default=50, help="Img2Img noise strength 1-99 (Default: 50). Lower = MORE frame coherence. 10-30: very stable. 30-50: balanced. 50-80: creative/different.")
     parser.add_argument("--cloud", action="store_true", help="Enable Cloud Mode (Gemini 2.x)")
-    parser.add_argument("--fsync", type=float, default=1.0, help="FPS Sync Multiplier (0.1 - 6.0).")
+    parser.add_argument("--fsync", type=float, default=None, help="FPS Sync Multiplier (0.1 - 6.0). If provided for cartoon-video, calculates FPS from BPM. If omitted, uses native source FPS.")
     parser.add_argument("--f", type=str, help="Source Folder for Clip Video Mode")
     
     args, unknown = parser.parse_known_args()

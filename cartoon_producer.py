@@ -804,7 +804,7 @@ def blend_videos(base_video, overlay_video, output_path, opacity=0.33):
         
     return None
 
-def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=None, prev_frame_path=None, pg_mode=False, force_local=False, strength=0.65):
+def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=None, prev_frame_path=None, pg_mode=False, force_local=False, strength=0.65, use_director=True, seed=None, source_img_path=None):
     """
     Worker function using Universal Backend (Flux Local or Gemini/Imagen Cloud).
     """
@@ -901,49 +901,74 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                         logging.warning(f"   ⚠️ Failed to load previous frame for feedback: {e}")
 
                 # 2. Director Mode (Gemma)
-                try:
-                    from text_engine import get_engine
-                    te = get_engine()
-                    if te:
-                        # Context-Aware Directing
-                        ctx = "This is the FIRST frame."
-                        if img_input:
-                            ctx = "Previous frame exists. You MUST describe the NEXT sequential frame in a continuous animation."
+                coherence_pct = int(strength * 100)
+                if use_director:
+                    try:
+                        from text_engine import get_engine
+                        te = get_engine()
+                        if te:
+                            # Context-Aware Directing
+                            ctx = "This is the FIRST frame."
                             
-                        director_instruction = (
-                            f"You are a Lead Animator directing frame-by-frame animation. {ctx}\n"
-                            f"Action: '{prompt}'.\n"
-                            "Task: Output a dense, 20-40 word visual description for the renderer. "
-                            "Focus on character poses, lighting, composition, and motion. "
-                            "Show PROGRESSIVE MOVEMENT and action — each frame should advance the scene. "
-                            "Describe what is HAPPENING right now, not a static pose. NO FILLER."
-                        )
-                        # Quick generation
-                        visual_desc = te.generate(director_instruction, temperature=0.7)
-                        
-                        # CLEANUP: Handle JSON output if Director decides to be structured
-                        if visual_desc and visual_desc.strip().startswith("{"):
-                             try:
-                                 import json
-                                 # Try to find the first { and last }
-                                 start = visual_desc.find("{")
-                                 end = visual_desc.rfind("}")
-                                 if start != -1 and end != -1:
-                                     json_str = visual_desc[start:end+1]
-                                     data = json.loads(json_str)
-                                     # Extract best key
-                                     for key in ["description", "Description", "action", "Action", "visual", "Visuals"]:
-                                          if key in data:
-                                              visual_desc = data[key]
-                                              break
-                             except:
-                                 pass # Fallback to raw text
-                        
-                        if visual_desc and len(visual_desc) > 10:
-                            logging.info(f"   🎬 Local Director: {visual_desc[:60]}...")
-                            final_prompt = visual_desc
-                except Exception as e_dir:
-                    logging.warning(f"   ⚠️ Local Director failed: {e_dir}. Using raw prompt.")
+                            if img_input:
+                                ctx = (
+                                    f"Previous frame exists. You MUST describe the NEXT sequential frame in a continuous animation. "
+                                    f"CRITICAL: You must preserve the exact same art style, characters, and color palette. "
+                                    f"Animation change level is {coherence_pct}%. "
+                                )
+                                if coherence_pct < 40:
+                                    ctx += "Describe subtle, incremental flipbook-style motion. "
+                                else:
+                                    ctx += "Describe clear progressive motion and action changes. "
+                                    
+                            director_instruction = (
+                                f"You are a Lead Animator directing frame-by-frame animation. {ctx}\n"
+                                f"Action: '{prompt}'.\n"
+                                "Task: Output a dense, 20-40 word visual description for the renderer. "
+                                "Focus on character poses, lighting, composition, and motion. "
+                                "Show PROGRESSIVE MOVEMENT and action — each frame should advance the scene. "
+                                "Describe what is HAPPENING right now, not a static pose. NO FILLER."
+                            )
+                            # Quick generation
+                            visual_desc = te.generate(director_instruction, temperature=0.7)
+                            
+                            # CLEANUP: Handle JSON output if Director decides to be structured
+                            if visual_desc and visual_desc.strip().startswith("{"):
+                                  try:
+                                      pass # Local import of json removed to avoid UnboundLocalError
+                                      # Try to find the first { and last }
+                                      start = visual_desc.find("{")
+                                      end = visual_desc.rfind("}")
+                                      if start != -1 and end != -1:
+                                          json_str = visual_desc[start:end+1]
+                                          data = json.loads(json_str)
+                                          # Extract best key
+                                          for key in ["description", "Description", "action", "Action", "visual", "Visuals"]:
+                                              if key in data:
+                                                  visual_desc = data[key]
+                                                  break
+                                  except:
+                                      pass # Fallback to raw text
+                            
+                            if visual_desc and len(visual_desc) > 10:
+                                logging.info(f"   🎬 Local Director: {visual_desc[:60]}...")
+                                final_prompt = visual_desc
+                                
+                    except Exception as e_dir:
+                        logging.warning(f"   ⚠️ Local Director failed: {e_dir}. Using raw prompt.")
+                    else:
+                        if not use_director:
+                            final_prompt = prompt # Fallback/Guard
+                
+                # --- CONTINUITY ANCHORS (Universal for Local Mode) ---
+                # Even if we skip the director (e.g. music-visualizer), we still apply anchors 
+                # if performing Img2Img in a sequence.
+                if img_input and coherence_pct < 80:
+                    # Append anchors if not already there
+                    anchors = " -- subtle motion, exact same art style, consistent color palette, flipbook animation sequence"
+                    if anchors not in final_prompt:
+                        final_prompt += anchors
+                        logging.info(f"      🔗 Coherence: Injected stylistic anchors for Flux ({coherence_pct}% strength)")
 
                 # Generate
                 # Flux Klein typically benefits from more steps than Schnell (4). 8 is a good balance, 12 is better.
@@ -952,8 +977,11 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                 # If img_input is None (First Frame), it acts as Txt2Img.
                 logging.info(f"   🚀 Flux Generating with Image Input: {img_input is not None}")
                 
+                # Use passed seed or derive from index
+                frame_seed = seed if seed is not None else (42 + index)
+                
                 # Use passed strength argument (default 0.65 from signature)
-                img = bridge.generate(prompt=final_prompt, width=width, height=height, steps=12, image=img_input, strength=strength)
+                img = bridge.generate(prompt=final_prompt, width=width, height=height, steps=12, image=img_input, strength=strength, seed=frame_seed)
                 
                 if img:
                     # Save (No resize needed if generated at target)
@@ -978,28 +1006,15 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
             
             try:
                 
-                # MODE SWITCH
-                if "imagen" in model.lower():
-                    # Method A: Imagen (generate_images)
-                    response = client.models.generate_images(
-                        model=model, 
-                        prompt=prompt,
-                        config=types.GenerateImagesConfig(
-                            number_of_images=1,
-                            aspect_ratio=aspect_ratio, 
-                        )
-                    )
-                    if response.generated_images:
-                        image = response.generated_images[0]
-                        if image.image:
-                            image.image.save(target_path)
-                            return True
-                else:
-                    # Method B: Gemini Flash (generate_content)
-                    
-                    # --- DIRECTOR MODE (Gemini 2.0 Flash) ---
-                    # If model is 2.0 Flash, we use it to DESCRIBE the next frame, then use 2.5 Image to RENDER it.
-                    if model == "gemini-2.0-flash":
+                # --- CLOUD BACKEND (Gemini / Imagen) ---
+                is_gemini = model.startswith("gemini-")
+                is_imagen = "imagen" in model.lower() or model.startswith("imagen")
+                
+                if is_gemini:
+                    # --- GEMINI PASS (generate_content) ---
+                    # 1. Dynamic Directing (If 2.0 Flash is used as a Director)
+                    refined_prompt = prompt
+                    if model == "gemini-2.0-flash" and use_director:
                         director_prompt = f"""
                         You are a Lead Animator. 
                         Goal: Describe the EXACT VISUALS for the next frame in this animation sequence.
@@ -1010,207 +1025,112 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                         1. Maintain the STYLE described in the prompt exactly.
                         2. If the 'Action' is similar to the previous frame, describe INCREMENTAL MOTION (flipbook style). Do not change camera angles or character designs unless explicitly told to.
                         3. If the 'Action' is a new beat, describe the new scene but KEEP THE VISUAL STYLE CONSISTENT.
-                        4. ABSOLUTELY NO TEXT DESCRIPTIONS IN THE IMAGE. Do not ask for "Frame 1" text.
+                        4. ABSOLUTELY NO TEXT DESCRIPTIONS IN THE IMAGE. 
 
                         Output: A dense, visual description of the image to generate. No conversational filler.
                         """
-                        
                         director_contents = []
-                        
-                        # Attach context if available (Put Image FIRST for better attention)
                         if prev_frame_path and prev_frame_path.exists():
                             try:
                                 img_bytes = prev_frame_path.read_bytes()
-                                img_part = types.Part.from_bytes(data=img_bytes, mime_type="image/png")
-                                director_contents.append(img_part)
+                                director_contents.append(types.Part.from_bytes(data=img_bytes, mime_type="image/png"))
                                 director_prompt += "\n(Refer to the image above as the PREVIOUS FRAME to maintain continuity from.)"
-                            except Exception as ex:
-                                logging.warning(f"   ⚠️ Failed to attach context image: {ex}")
-                                
+                            except: pass
                         director_contents.append(director_prompt)
                         
-                        # 1. Ask Director for Description
-                        director_response = client.models.generate_content(
-                            model="gemini-2.0-flash",
-                            contents=director_contents
-                        )
-                        
+                        director_response = client.models.generate_content(model="gemini-2.0-flash", contents=director_contents)
                         if director_response.text:
-                            raw_desc = director_response.text
-                            logging.info(f"   🎬 Director's Raw Output: {raw_desc}")
-                            
-                            # 1.5 Truth & Safety Enforce
-                            # Ensure the Director's output isn't crazy
-                            ts = TruthSafety() # Uses Text Keys for verification
-                            refined_prompt = ts.refine_prompt(raw_desc, context_dict={"Role": "Director Output"}, pg_mode=pg_mode)
-                            logging.info(f"      ✨ Refined Prompt: {refined_prompt}")
-                            
-                            # REFUSAL FALLBACK: If Director returns a "black void" or "sorry" type message, use the original prompt.
-                            refusal_patterns = ["sorry", "cannot", "can't", "policy", "black void", "black scene"]
+                            # Truth & Safety
+                            ts = TruthSafety()
+                            refined_prompt = ts.refine_prompt(director_response.text, context_dict={"Role": "Director Output"}, pg_mode=pg_mode)
+                            refusal_patterns = ["sorry", "cannot", "can't", "policy", "black void"]
                             if any(p in refined_prompt.lower() for p in refusal_patterns):
-                                logging.warning(f"      ⚠️ Director/Safety check triggered a refusal. Falling back to original prompt.")
-                                refined_prompt = prompt 
-                            
-                            # BREATHING ROOM (User Request)
-                            # Prevent "Double Tap" spamming the API (Director -> Renderer instant hit)
+                                refined_prompt = prompt
                             time.sleep(0.5)
 
-                            # 2. Use Renderer
-                            render_model = "gemini-2.5-flash-image"
-                            # Force "Generate an image of" prefix AND explicit size
-                            render_prompt = f"Generate an image of: {refined_prompt}"
+                    # 2. Rendering (Final Image Pass)
+                    render_model = model
+                    if model == "gemini-2.0-flash":
+                        render_model = "gemini-2.5-flash-image"
+                    
+                    # BUILD MULTIMODAL CONTENTS
+                    render_contents = []
+                    # Unified Coherence/Redraw Logic
+                    context_img = source_img_path if (source_img_path and source_img_path.exists()) else prev_frame_path
+                    is_redraw = (source_img_path is not None and source_img_path.exists())
+                    
+                    if context_img and context_img.exists():
+                        try:
+                            # Compress for API efficiency
+                            c_img = Image.open(context_img).convert("RGB")
+                            c_img.thumbnail((768, 768)) # Matches 1K model limits better
+                            buf = io.BytesIO()
+                            c_img.save(buf, format="JPEG", quality=75)
+                            render_contents.append(types.Part.from_bytes(data=buf.getvalue(), mime_type="image/jpeg"))
                             
-                            logging.info(f"      🎨 Render Prompt: {render_prompt[:50]}...")
-                            
-                            # Gemini Image Models (Nano Banana etc) use generate_content
-                            if render_model.startswith("gemini-"):
-                                # Polyglot Suffix Injection
-                                render_prompt_rich = f"{render_prompt} --aspect_ratio {aspect_ratio}"
-                                
-                                # BUILD MULTIMODAL CONTENTS (Image + Text) for coherence
-                                render_contents = []
-                                if prev_frame_path and prev_frame_path.exists():
-                                    try:
-                                        # Compress to small JPEG thumbnail to avoid API timeout
-                                        prev_img = Image.open(prev_frame_path).convert("RGB")
-                                        prev_img.thumbnail((512, 512))
-                                        thumb_buf = io.BytesIO()
-                                        prev_img.save(thumb_buf, format="JPEG", quality=70)
-                                        thumb_bytes = thumb_buf.getvalue()
-                                        prev_img_part = types.Part.from_bytes(data=thumb_bytes, mime_type="image/jpeg")
-                                        render_contents.append(prev_img_part)
-                                        # Strength-aware coherence: lower strength = tighter follow
-                                        coherence_pct = int(strength * 100)
-                                        render_prompt_rich = (
-                                            f"The attached image is the PREVIOUS frame in an animation sequence. "
-                                            f"Generate the NEXT frame. Keep the same art style and color palette. "
-                                            f"Animation change level: {coherence_pct}% — "
-                                            f"{'make subtle incremental changes (flipbook animation)' if coherence_pct < 40 else 'show clear progressive motion and action changes'}.\n\n"
-                                            f"{render_prompt_rich}"
-                                        )
-                                        logging.info(f"      🔗 Coherence: Attached {prev_frame_path.name} ({len(thumb_bytes)//1024}KB, strength={coherence_pct}%)")
-                                    except Exception as ex:
-                                        logging.warning(f"      ⚠️ Failed to attach prev frame for coherence: {ex}")
-                                render_contents.append(render_prompt_rich)
-                                
-                                img_response = client.models.generate_content(
-                                    model=render_model,
-                                    contents=render_contents,
-                                    config=types.GenerateContentConfig(
-                                        response_modalities=['IMAGE'],
-                                        image_config=types.ImageConfig(
-                                            aspect_ratio=aspect_ratio,
-                                            image_size="1K"
-                                        )
-                                    )
+                            coherence_pct = int(strength * 100)
+                            if is_redraw:
+                                final_instruction = (
+                                    f"SOURCE: The attached image is the frame to be redrawn.\n"
+                                    f"TASK: Redraw this EXACT frame with absolute precision in layout and character. "
+                                    f"Apply this style: {refined_prompt}. Visual fidelity: {coherence_pct}%."
                                 )
-                                # Response structure for generate_content is slightly different
-                                # but the SDK should wrap it similarly or we check parts.
-                                for part in img_response.parts:
-                                    # Use Bytes directly for ultimate robustness across SDK versions
-                                    if part.inline_data:
-                                        image = Image.open(io.BytesIO(part.inline_data.data)).convert("RGB")
-                                        # RESIZE ENFORCEMENT for arbitrary sizes
-                                        if image.size != (width, height):
-                                            logging.info(f"      📐 Resizing Gemini Output: {image.size} -> {width}x{height}")
-                                            image = image.resize((width, height), Image.Resampling.LANCZOS)
-                                        image.save(target_path)
-                                        return True
-                                    elif image_wrapper := part.as_image():
-                                        # Fallback to as_image if inline_data missing
-                                        image = getattr(image_wrapper, 'image', image_wrapper)
-                                        if image.size != (width, height):
-                                            logging.info(f"      📐 Resizing Gemini Output: {image.size} -> {width}x{height}")
-                                            image = image.resize((width, height), Image.Resampling.LANCZOS)
-                                        image.save(target_path)
-                                        return True
                             else:
-                                # Imagen models use generate_images
-                                img_response = client.models.generate_images(
-                                    model=render_model,
-                                    prompt=render_prompt,
-                                    config=types.GenerateImagesConfig(
-                                        number_of_images=1,
-                                        aspect_ratio=aspect_ratio
-                                    )
+                                final_instruction = (
+                                    f"PREVIOUS: The attached image is the PREVIOUS frame in this animation.\n"
+                                    f"TASK: Generate the NEXT frame. Keep style/colors exact. "
+                                    f"Change Level: {coherence_pct}% ({'Subtle flipbook' if coherence_pct < 40 else 'Clear motion'}).\n"
+                                    f"Visual: {refined_prompt}"
                                 )
-                                if img_response.generated_images:
-                                    image = img_response.generated_images[0]
-                                    if image.image:
-                                        image.image.save(target_path)
-                                        return True
+                            render_contents.append(final_instruction)
+                        except Exception as e_ctx:
+                            logging.warning(f"   ⚠️ Context attachment failed: {e_ctx}")
+                            render_contents.append(f"Generate an image of: {refined_prompt} --aspect_ratio {aspect_ratio}")
                     else:
-                        # Direct Call
-                        if model.startswith("gemini-"):
-                            # Polyglot Suffix Injection
-                            prompt_rich = f"{prompt} --aspect_ratio {aspect_ratio}"
-                            
-                            # BUILD MULTIMODAL CONTENTS for coherence
-                            direct_contents = []
-                            if prev_frame_path and prev_frame_path.exists():
-                                try:
-                                    prev_img = Image.open(prev_frame_path).convert("RGB")
-                                    prev_img.thumbnail((512, 512))
-                                    thumb_buf = io.BytesIO()
-                                    prev_img.save(thumb_buf, format="JPEG", quality=70)
-                                    thumb_bytes = thumb_buf.getvalue()
-                                    prev_img_part = types.Part.from_bytes(data=thumb_bytes, mime_type="image/jpeg")
-                                    direct_contents.append(prev_img_part)
-                                    coherence_pct = int(strength * 100)
-                                    prompt_rich = (
-                                        f"The attached image is the PREVIOUS frame in an animation sequence. "
-                                        f"Generate the NEXT frame. Keep the same art style and color palette. "
-                                        f"Animation change level: {coherence_pct}% — "
-                                        f"{'make subtle incremental changes (flipbook animation)' if coherence_pct < 40 else 'show clear progressive motion and action changes'}.\n\n"
-                                        f"{prompt_rich}"
-                                    )
-                                    logging.info(f"      🔗 Coherence: Attached {prev_frame_path.name} ({len(thumb_bytes)//1024}KB, strength={coherence_pct}%)")
-                                except Exception as ex:
-                                    logging.warning(f"      ⚠️ Failed to attach prev frame for coherence: {ex}")
-                            direct_contents.append(prompt_rich)
-                            
-                            response = client.models.generate_content(
-                                model=model,
-                                contents=direct_contents,
-                                config=types.GenerateContentConfig(
-                                    response_modalities=['IMAGE'],
-                                    image_config=types.ImageConfig(
-                                        aspect_ratio=aspect_ratio,
-                                        image_size="1K"
-                                    )
-                                )
-                            )
-                            for part in response.parts:
-                                if part.inline_data:
-                                    image = Image.open(io.BytesIO(part.inline_data.data)).convert("RGB")
-                                    if image.size != (width, height):
-                                        logging.info(f"      📐 Resizing Gemini Output: {image.size} -> {width}x{height}")
-                                        image = image.resize((width, height), Image.Resampling.LANCZOS)
-                                    image.save(target_path)
-                                    return True
-                                elif image_wrapper := part.as_image():
-                                    image = getattr(image_wrapper, 'image', image_wrapper)
-                                    # RESIZE ENFORCEMENT for arbitrary sizes
-                                    if image.size != (width, height):
-                                        logging.info(f"      📐 Resizing Gemini Output: {image.size} -> {width}x{height}")
-                                        image = image.resize((width, height), Image.Resampling.LANCZOS)
-                                    image.save(target_path)
-                                    return True
-                        else:
-                            # Imagen
-                            response = client.models.generate_images(
-                                model=model, 
-                                prompt=prompt,
-                                config=types.GenerateImagesConfig(
-                                    number_of_images=1,
-                                    aspect_ratio=aspect_ratio, 
-                                )
-                            )
-                            if response.generated_images:
-                                image = response.generated_images[0]
-                                if image.image:
-                                    image.image.save(target_path)
-                                    return True
+                        render_contents.append(f"Generate an image of: {refined_prompt} --aspect_ratio {aspect_ratio}")
+                    
+                    logging.info(f"      🎨 Rendering via {render_model} (Redraw={is_redraw})...")
+                    img_response = client.models.generate_content(
+                        model=render_model,
+                        contents=render_contents,
+                        config=types.GenerateContentConfig(
+                            response_modalities=['IMAGE'],
+                            image_config=types.ImageConfig(aspect_ratio=aspect_ratio, image_size="1K")
+                        )
+                    )
+                    
+                    for part in img_response.parts:
+                        image_data = None
+                        if part.inline_data:
+                            image_data = part.inline_data.data
+                        elif image_wrapper := part.as_image():
+                            # Depending on SDK version, part.as_image() might return an image or a wrapper
+                            image_data = getattr(image_wrapper, 'data', None)
+                        
+                        if image_data:
+                            image = Image.open(io.BytesIO(image_data)).convert("RGB")
+                            if image.size != (width, height):
+                                image = image.resize((width, height), Image.Resampling.LANCZOS)
+                            image.save(target_path)
+                            return True
+                    
+                elif is_imagen:
+                    # --- IMAGEN PASS (generate_images) ---
+                    logging.info(f"      🎨 Rendering via Imagen ({model})...")
+                    resp = client.models.generate_images(
+                        model=model, 
+                        prompt=prompt,
+                        config=types.GenerateImagesConfig(number_of_images=1, aspect_ratio=aspect_ratio)
+                    )
+                    if resp.generated_images:
+                        image = resp.generated_images[0]
+                        if image.image:
+                            image.image.save(target_path)
+                            return True
+                
+                else:
+                    logging.error(f"❌ Unknown Cloud Model Type: {model}")
+                    return False
                                 
             except Exception as e:
                 if "429" in str(e) or "ResourceExhausted" in str(e):
@@ -1293,7 +1213,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
     # Bypass for Creative Agency / XB
     # Bypass for Creative Agency / XB / Music Visualizer / Music Agency
     # Bypass for Creative Agency / XB / Music Visualizer / Music Agency
-    if args.vpform in ["creative-agency", "music-visualizer", "music-video", "cartoon-video"] or args.xb:
+    if args.vpform in ["music-visualizer", "music-video", "cartoon-video", "cartoon-color"] or args.xb:
         # Check if we have an explicit XML to load
         if args.xb and os.path.exists(args.xb):
              try:
@@ -1844,8 +1764,53 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         import colorsys
         import random
         
-        # 4. Convert each frame to Unicode art
+        # 4. Convert each frame (Unicode Local or Gemini Cloud)
+        is_cloud = getattr(args, 'cloud', False)
+        if is_cloud:
+             logging.info(f"   ☁️  Cloud Mode: Redrawing {len(source_frames)} frames via Gemini Cloud API...")
+             model_to_use = getattr(args, 'model', None)
+             if not model_to_use:
+                 from definitions import Modality, get_active_model
+                 model_to_use = get_active_model(Modality.IMAGE).name
+             
+             # Dimensions: Respect --w/--h or use native video size
+             target_w = args.w if args.w else vid_w
+             if args.h:
+                 target_h = args.h
+             else:
+                 target_h = int(target_w * (vid_h / vid_w))
+             
+             logging.info(f"   📐 Cloud Config: Model={model_to_use}, Redrawing @ {target_w}x{target_h}")
+
         for i, src_path in enumerate(source_frames):
+            idx = i + 1
+            dst = frames_dir / f"frame_{idx:04d}.png"
+            
+            if dst.exists():
+                continue
+            
+            if is_cloud:
+                # Cloud Generation Path (using gemini-2.5-flash-image)
+                success = generate_frame_universal(
+                    index=idx,
+                    prompt=args.prompt if args.prompt else "Redraw this frame with absolute precision in a premium cinematic art style.",
+                    output_dir=frames_dir,
+                    key_cycle=key_cycle,
+                    model=model_to_use,
+                    source_img_path=src_path,
+                    width=target_w,
+                    height=target_h,
+                    force_local=False,
+                    strength=getattr(args, 'strength', 50) / 100.0,
+                    use_director=False # Direct redraw usually doesn't need a separate director pass
+                )
+                if success:
+                    print(".", end="", flush=True)
+                else:
+                    print("x", end="", flush=True)
+                continue
+            
+            # LOCAL UNICODE PATH (Original logic)
             idx = i + 1
             dst = frames_dir / f"frame_{idx:04d}.png"
             
@@ -1931,7 +1896,347 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         logging.info(f"   ✅ Done: {out_vid}")
         return
 
-    elif args.vpform == "creative-agency" or args.xb:
+    elif args.vpform == "cartoon-color":
+        # CARTOON COLOR — Intelligent Colorization of B&W or Low-Color Video
+        # Redraws each frame as colored Unicode art using brightness-to-palette mapping
+        if not args.mu or not os.path.exists(args.mu):
+             logging.error("❌ cartoon-color requires input video (pass as arg or --mu)")
+             return
+
+        logging.info(f"   🎨 Cartoon Color: Colorizing {Path(args.mu).name} as Unicode art...")
+
+        from unicode_visualizer import grid_to_image, load_multi_font, CELL_W, CELL_H
+
+        # Probe input video dimensions for aspect ratio
+        try:
+            probe_cmd = ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                         '-show_entries', 'stream=width,height', '-of', 'csv=p=0', args.mu]
+            probe_out = subprocess.check_output(probe_cmd, text=True).strip()
+            vid_w, vid_h = [int(x) for x in probe_out.split(',')]
+            logging.info(f"   📐 Input video: {vid_w}×{vid_h}")
+        except:
+            vid_w, vid_h = 720, 480  # Fallback
+            logging.warning(f"   ⚠️ Could not probe video. Assuming {vid_w}×{vid_h}")
+
+        # Character grid dimensions from --w, height preserves aspect ratio
+        char_w = args.w if args.w else 120
+        if args.h:
+            char_h = args.h
+        else:
+            # Preserve input video aspect ratio, accounting for non-square char cells
+            aspect = vid_h / vid_w
+            char_h = max(20, int(char_w * aspect * (CELL_W / CELL_H)))
+        
+        logging.info(f"   📐 Unicode Canvas: {char_w}×{char_h} chars → {char_w * CELL_W}×{char_h * CELL_H}px output")
+
+        # Setup dirs
+        project_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "z_test-outputs" / "cartoons"
+        project_name = Path(args.mu).stem
+        project_dir = project_dir / f"{project_name}_ColorVideo"
+        frames_dir = project_dir / "frames"
+        source_dir = project_dir / "source_frames"
+        ensure_dir(frames_dir)
+        ensure_dir(source_dir)
+
+        # 1. Extract audio
+        audio_path = project_dir / "extracted_audio.wav"
+        if not audio_path.exists():
+            logging.info("   🔊 Extracting audio...")
+            cmd_a = ['ffmpeg', '-y', '-i', args.mu, '-vn', '-acodec', 'pcm_s16le', '-ar', '44100', '-ac', '2', str(audio_path)]
+            subprocess.run(cmd_a, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        # 2. Extract source frames (same logic as cartoon-video)
+        fsync_val = getattr(args, 'fsync', None)
+        
+        if fsync_val is not None:
+            logging.info(f"   🎵 fsync={fsync_val} provided — calculating BPM-synced frame rate...")
+            bpm, aud_duration, fpb, calculated_fps = analyze_audio(args.mu, fsync=fsync_val)
+            project_fps = calculated_fps
+            logging.info(f"   🎵 BPM: {bpm:.1f} → {project_fps:.2f} FPS (fsync={fsync_val})")
+            logging.info(f"   🎞️  Extracting source frames @ {project_fps:.2f} FPS...")
+            cmd_f = ['ffmpeg', '-y', '-i', args.mu, '-vf', f'fps={project_fps}', str(source_dir / 'source_%04d.png')]
+        else:
+            try:
+                fps_probe = ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                             '-show_entries', 'stream=r_frame_rate', '-of', 'csv=p=0', args.mu]
+                fps_out = subprocess.check_output(fps_probe, text=True).strip()
+                num, den = fps_out.split('/')
+                project_fps = float(num) / float(den)
+            except:
+                project_fps = 24.0
+                logging.warning(f"   ⚠️ Could not probe native FPS. Assuming {project_fps}")
+            logging.info(f"   🎞️  Extracting ALL source frames (native {project_fps:.2f} FPS)...")
+            cmd_f = ['ffmpeg', '-y', '-i', args.mu, str(source_dir / 'source_%04d.png')]
+
+        subprocess.run(cmd_f, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        source_frames = sorted(list(source_dir.glob("source_*.png")))
+        logging.info(f"   Found {len(source_frames)} source frames.")
+
+        # 3. Setup Unicode rendering
+        density_chars = " ·.,:;!|{}[]()#@█"
+        fonts = load_multi_font()
+        
+        import numpy as np
+        import colorsys
+
+        # ── Cinematic Brightness-to-HSV Palette ──
+        # Each entry: (brightness_midpoint, H, S, V)
+        # Smooth interpolation between adjacent bands.
+        PALETTE = [
+            (0.000, 0.65, 0.50, 0.12),  # Very dark  → deep navy/indigo
+            (0.150, 0.08, 0.55, 0.25),  # Dark       → warm brown/amber
+            (0.300, 0.28, 0.45, 0.40),  # Mid-dark   → olive/forest green
+            (0.450, 0.12, 0.50, 0.55),  # Mid        → warm gold/ochre
+            (0.600, 0.55, 0.40, 0.65),  # Mid-bright → sky blue/teal
+            (0.750, 0.05, 0.30, 0.80),  # Bright     → soft peach/cream
+            (1.000, 0.08, 0.10, 0.95),  # Very bright→ near-white warm tint
+        ]
+
+        # ── TCM Vintage Film Palette (Realistic) ──
+        # Designed specifically for actual vintage film. Sepias, earthy skin tones, cool charcoal shadows.
+        VINTAGE_PALETTE = [
+            (0.000, 0.65, 0.20, 0.10),  # Very dark  → cool charcoal/faint navy
+            (0.150, 0.05, 0.30, 0.25),  # Dark       → cool deep brown
+            (0.300, 0.07, 0.25, 0.40),  # Mid-dark   → muted sepia brown
+            (0.450, 0.06, 0.35, 0.55),  # Mid        → warm earthy skin tone
+            (0.600, 0.08, 0.30, 0.65),  # Mid-bright → golden warm light
+            (0.750, 0.10, 0.15, 0.85),  # Bright     → warm cream
+            (1.000, 0.08, 0.05, 0.95),  # Very bright→ soft off-white/warm
+        ]
+
+        # ── Specialized Categorical Palettes ──
+        VEGETATION_PALETTE = [
+            (0.000, 0.35, 0.30, 0.10),  # Deep forest shadow
+            (0.200, 0.30, 0.50, 0.25),  # Mossy dark green
+            (0.400, 0.32, 0.65, 0.45),  # Vibrant foliage green
+            (0.600, 0.28, 0.55, 0.65),  # Sunny leaf green
+            (0.800, 0.20, 0.40, 0.80),  # Pale highlight green
+            (1.000, 0.15, 0.20, 0.95),  # Warm highlight
+        ]
+
+        SKIN_PALETTE = [
+            (0.000, 0.05, 0.30, 0.12),  # Deep cocoa shadow
+            (0.250, 0.06, 0.35, 0.35),  # Rich tan/brown
+            (0.500, 0.07, 0.40, 0.60),  # Warm natural skin
+            (0.750, 0.08, 0.35, 0.80),  # Healthy pinkish flush
+            (1.000, 0.08, 0.15, 0.95),  # Bright highlight
+        ]
+
+        SKY_PALETTE = [
+            (0.000, 0.60, 0.40, 0.15),  # Deep twilight
+            (0.300, 0.58, 0.50, 0.45),  # Midday blue
+            (0.600, 0.55, 0.35, 0.70),  # Azure sky
+            (0.800, 0.52, 0.20, 0.85),  # Bright haze
+            (1.000, 0.50, 0.10, 0.98),  # Warm white sky
+        ]
+
+        NEON_PALETTE = [
+            (0.000, 0.80, 0.80, 0.15),  # Deep magenta shadow
+            (0.300, 0.85, 0.90, 0.50),  # Electric pink
+            (0.600, 0.50, 0.90, 0.75),  # Cyan neon
+            (0.900, 0.15, 0.95, 0.95),  # High-glow yellow/white
+            (1.000, 0.10, 0.10, 1.00),  # Pure core glow
+        ]
+
+        CATEGORIES = {
+            "nature": VEGETATION_PALETTE,
+            "skin": SKIN_PALETTE,
+            "sky": SKY_PALETTE,
+            "neon": NEON_PALETTE,
+            "default": VINTAGE_PALETTE
+        }
+
+        def palette_lookup(brightness, category="default"):
+            """Interpolate HSV from the categorical or default palettes."""
+            active_palette = CATEGORIES.get(category, CATEGORIES["default"])
+            # Find bounding bands
+            for i in range(len(active_palette) - 1):
+                b0, h0, s0, v0 = active_palette[i]
+                b1, h1, s1, v1 = active_palette[i + 1]
+                if brightness <= b1:
+                    t = (brightness - b0) / (b1 - b0) if b1 != b0 else 0.0
+                    h = h0 + t * (h1 - h0)
+                    s = s0 + t * (s1 - s0)
+                    v = v0 + t * (v1 - v0)
+                    return h, s, v
+            return active_palette[-1][1], active_palette[-1][2], active_palette[-1][3]
+
+        # ── Auto-detect B&W & Vintage Film ──
+        # Sample first frame to determine if input is monochrome, and if it's vintage
+        is_bw = False
+        is_vintage = False
+        if source_frames:
+            sample_img = Image.open(source_frames[0]).convert("RGB")
+            sample_arr = np.array(sample_img)
+            # Sample ~200 random pixels for saturation, calculate global std dev for contrast/grain
+            h_s, w_s = sample_arr.shape[:2]
+            sat_samples = []
+            
+            # Fast global standard deviation of grayscale intensities to detect textured/vintage vs flat
+            gray_arr = np.mean(sample_arr, axis=2)
+            std_dev = np.std(gray_arr)
+            
+            for _ in range(200):
+                sy = np.random.randint(0, h_s)
+                sx = np.random.randint(0, w_s)
+                sr, sg, sb = int(sample_arr[sy, sx, 0]), int(sample_arr[sy, sx, 1]), int(sample_arr[sy, sx, 2])
+                _, sat, _ = colorsys.rgb_to_hsv(sr / 255.0, sg / 255.0, sb / 255.0)
+                sat_samples.append(sat)
+            avg_sat = sum(sat_samples) / len(sat_samples)
+            is_bw = avg_sat < 0.08
+            
+            if is_bw:
+                if std_dev > 40:
+                    is_vintage = True
+                    logging.info(f"   🎞️ Input detected as VINTAGE B&W (Sat: {avg_sat:.3f}, StdDev: {std_dev:.1f}). Using realistic TCM Palette.")
+                else:
+                    logging.info(f"   🔲 Input detected as MODERN B&W (Sat: {avg_sat:.3f}, StdDev: {std_dev:.1f}). Using stylized Graphic Novel Palette.")
+            else:
+                logging.info(f"   🌈 Input detected as COLOR (Sat: {avg_sat:.3f}, StdDev: {std_dev:.1f}). Blend mode: 40% palette / 60% original.")
+
+        # ── Colorization Pass (Texture-Spectrum) ──
+        # Randomized hue offset per execution for variety
+        start_hue = np.random.random()
+        logging.info(f"   🌀 Run Hue Offset: {start_hue:.3f}")
+
+        # 4. Convert each frame to colorized Unicode art
+        for i, src_path in enumerate(source_frames):
+            idx = i + 1
+            dst = frames_dir / f"frame_{idx:04d}.png"
+
+            if dst.exists():
+                continue
+
+            src_img = Image.open(src_path).convert("RGB")
+            src_arr = np.array(src_img)
+            src_h_px, src_w_px = src_arr.shape[:2]
+
+            col_px = np.clip(((np.arange(char_w) + 0.5) * src_w_px / char_w).astype(int), 0, src_w_px - 1)
+            row_px = np.clip(((np.arange(char_h) + 0.5) * src_h_px / char_h).astype(int), 0, src_h_px - 1)
+
+            grid = []
+            for row in range(char_h):
+                line = []
+                py = row_px[row]
+                for col in range(char_w):
+                    px = col_px[col]
+                    r, g, b = int(src_arr[py, px, 0]), int(src_arr[py, px, 1]), int(src_arr[py, px, 2])
+
+                    brightness = (r + g + b) / (3.0 * 255.0)
+
+                    # ── TEXTURE-TO-HUE SPECTRUM ENGINE ──
+                    pal_h, pal_s, pal_v = 0.0, 0.0, brightness
+                    
+                    if is_vintage:
+                        # Sample a local 8x8 patch for texture/grain analysis
+                        p_size = 4 # Patch radius
+                        p_ymin, p_ymax = max(0, py - p_size), min(src_h_px - 1, py + p_size)
+                        p_xmin, p_xmax = max(0, px - p_size), min(src_w_px - 1, px + p_size)
+                        
+                        patch = src_arr[p_ymin:p_ymax, p_xmin:p_xmax]
+                        if patch.size > 0:
+                            patch_gray = np.mean(patch, axis=2)
+                            local_std = np.std(patch_gray)
+                            
+                            # ── Neon Override ──
+                            if brightness > 0.95:
+                                # High energy highlights (Neon/Electric)
+                                pal_h = start_hue # Start color
+                                pal_s = 0.9 # High saturation
+                                pal_v = 1.0 # Max vibrance
+                            else:
+                                # ── Texture Spectrum Mapping ──
+                                # Map crunchiness (local_std) to a hue range (e.g., 0.0 to 0.7)
+                                # crunchy (high std) -> Red-ish (0.0)
+                                # smooth (low std) -> Violet-ish (0.8)
+                                t_val = np.clip(local_std / 35.0, 0, 1) # Normalize crunch 0-1
+                                texture_hue = (1.0 - t_val) * 0.8 # smooth=0.8, crunchy=0.0
+                                
+                                # Global offset + local texture hue
+                                pal_h = (start_hue + texture_hue) % 1.0
+                                
+                                # Saturation/Vibrance follows brightness + local contrast boost
+                                pal_s = np.clip(brightness * 1.5, 0.2, 0.8)
+                                pal_v = np.clip(brightness * 1.2, 0.1, 0.95)
+
+                    # 2. Look up fallback if not vintage or use spectrum
+                    if is_bw:
+                        if not is_vintage:
+                            pal_h, pal_s, pal_v = palette_lookup(brightness, category="default")
+                    else:
+                        # Blend logic uses default palette for suggestion
+                        pal_h, pal_s, pal_v = palette_lookup(brightness, category="default")
+
+                    # Spatial coherence jitter (subtle hue drift so it doesn't look stamped)
+                    jitter = (row * 0.003 + col * 0.005) % 0.04 - 0.02
+                    # Halve the jitter for vintage film to preserve realistic tones
+                    if is_vintage: jitter *= 0.5
+                    
+                    pal_h = (pal_h + jitter) % 1.0
+
+                    if is_bw:
+                        # Full palette colorization
+                        bg_r_f, bg_g_f, bg_b_f = colorsys.hsv_to_rgb(pal_h, pal_s, pal_v)
+                        bg_r, bg_g, bg_b = int(bg_r_f * 255), int(bg_g_f * 255), int(bg_b_f * 255)
+                    else:
+                        # Blend mode: 40% palette suggestion, 60% original, boost saturation
+                        pal_r_f, pal_g_f, pal_b_f = colorsys.hsv_to_rgb(pal_h, pal_s, pal_v)
+                        blend_r = int(0.4 * pal_r_f * 255 + 0.6 * r)
+                        blend_g = int(0.4 * pal_g_f * 255 + 0.6 * g)
+                        blend_b = int(0.4 * pal_b_f * 255 + 0.6 * b)
+                        # Boost saturation by 20%
+                        bh, bs, bv = colorsys.rgb_to_hsv(blend_r / 255.0, blend_g / 255.0, blend_b / 255.0)
+                        bs = min(1.0, bs * 1.2)
+                        final_r, final_g, final_b = colorsys.hsv_to_rgb(bh, bs, bv)
+                        bg_r, bg_g, bg_b = int(final_r * 255), int(final_g * 255), int(final_b * 255)
+
+                    # FOREGROUND = shading character
+                    char_idx = int(brightness * (len(density_chars) - 1))
+                    char = density_chars[char_idx]
+
+                    # Foreground color: same smooth HSV contrast as cartoon-video
+                    fg_h, fg_s, fg_v = colorsys.rgb_to_hsv(bg_r / 255.0, bg_g / 255.0, bg_b / 255.0)
+                    if fg_s < 0.05:
+                        v_offset = 0.3 * (1.0 - fg_v) if fg_v < 0.5 else -0.3 * fg_v
+                        fg_v = max(0.0, min(1.0, fg_v + v_offset))
+                    else:
+                        v_offset = 0.3 * (1.0 - fg_v) - 0.2 * fg_v
+                        s_offset = 0.2 * (1.0 - fg_s)
+                        fg_v = max(0.0, min(1.0, fg_v + v_offset))
+                        fg_s = max(0.0, min(1.0, fg_s + s_offset))
+
+                    fg_r_f, fg_g_f, fg_b_f = colorsys.hsv_to_rgb(fg_h, fg_s, fg_v)
+                    fg_r, fg_g, fg_b = int(fg_r_f * 255), int(fg_g_f * 255), int(fg_b_f * 255)
+
+                    line.append((char, fg_r, fg_g, fg_b, bg_r, bg_g, bg_b))
+                grid.append(line)
+
+            # Render grid to image
+            out_img = grid_to_image(grid, char_w, char_h, fonts)
+            out_img.save(dst)
+
+            if idx % 20 == 0 or idx == 1 or idx == len(source_frames):
+                pct = idx / len(source_frames) * 100
+                logging.info(f"   🎨 Colorized {idx}/{len(source_frames)} ({pct:.0f}%)")
+
+        # 5. Stitch video
+        logging.info("   🧵 Stitching...")
+        out_vid = project_dir / "final_output.mp4"
+        cmd_s = [
+            'ffmpeg', '-y', '-framerate', str(project_fps),
+            '-i', str(frames_dir / 'frame_%04d.png'),
+            '-i', str(audio_path),
+            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18',
+            '-c:a', 'aac', '-b:a', '192k',
+            '-shortest',
+            str(out_vid)
+        ]
+        subprocess.run(cmd_s, check=True)
+        logging.info(f"   ✅ Done: {out_vid}")
+        return
+
+    elif args.xb:
         # CREATIVE AGENCY MODE / RE-RENDER MODE
         
         # 2a. Determine Duration
@@ -2313,7 +2618,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
     if 'timeline' in locals() and timeline:
         pass # We will use timeline in loop
     else:
-        # Fallback for modes that didn't generate a timeline (e.g. fbf-cartoon, creative-agency, legacy interpolation)
+        # Fallback for modes that didn't generate a timeline (e.g. fbf-cartoon, xb re-render, legacy interpolation)
         # We wrap the 'prompts' list into a basic timeline
         timeline = []
         for i, p in enumerate(prompts):
@@ -2491,7 +2796,14 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 
             continue # Skip standard gen
         else:
+            # Seed Consistency
+            project_seed = args.seed if hasattr(args, "seed") and args.seed is not None else 42
+            frame_seed = project_seed + i
+
             # STANDARD GENERATION (Gemini/Imagen/Universal)
+            # Skip Director for Music/Agency modes to preserve pre-formatted styles
+            force_raw = (getattr(args, "vpform", "") in ["music-visualizer", "music-video", "agency-video"])
+            
             success = generate_frame_universal(
                 index=index,
                 prompt=p,
@@ -2503,7 +2815,9 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 width=args.w if args.w else (args.kid if not args.local else 768),
                 height=args.h if args.h else (args.kid if not args.local else 768),
                 force_local=args.local,
-                strength=getattr(args, "strength", 50) / 100.0
+                strength=getattr(args, "strength", 50) / 100.0,
+                use_director=not force_raw,
+                seed=frame_seed
             )
             
             if success:
@@ -2934,7 +3248,7 @@ def main():
     # CLI Polish: Positional Args for Aliases
     definitions.add_global_vpform_args(parser)
 
-    parser.add_argument("--vpform", type=str, default=None, help="VP Form (default: creative-agency)") # Default via logic
+    parser.add_argument("--vpform", type=str, default=None, help="VP Form (default: cartoon-video)") # Default via logic
     parser.add_argument("--tf", type=Path, default=DEFAULT_TF, help="Transcript Folder (Source)")
     parser.add_argument("--vf", type=Path, default=DEFAULT_VF, help="Video Folder (Corpus)")
     parser.add_argument("--fps", type=int, default=4, help="Expansion Factor (FBF) or Output FPS (Legacy). Default: 1")
@@ -2994,7 +3308,7 @@ def main():
     
     # CLI Polish: Handle Aliases via Global Registry
     # This automatically resolves 'music-agency', 'mv', 'viz' -> 'music-video'
-    args.vpform = definitions.parse_global_vpform(args, current_default="creative-agency")
+    args.vpform = definitions.parse_global_vpform(args, current_default="cartoon-video")
     
     logging.info(f"   CLI: Resolved VPForm: {args.vpform}")
 
@@ -3084,10 +3398,13 @@ def main():
         except Exception as e:
             logging.error(f"❌ Failed to switch to Local Mode: {e}")
     elif args.cloud:
-        logging.info("☁️  Cloud Mode Requested. Ensuring Cloud Models are active...")
+        logging.info("☁️  Cloud Mode Requested. Images → Cloud, Text → Local Gemma...")
         try:
-            # Force Registry to Cloud defaults
-            definitions.set_active_model(Modality.TEXT, "gemini-2.0-flash")
+            # TEXT stays LOCAL (Gemma) — avoids burning Gemini text quotas
+            definitions.set_active_model(Modality.TEXT, "gemma-2-9b-it")
+            os.environ["TEXT_ENGINE"] = "local_gemma"
+            os.environ["LOCAL_MODEL_PATH"] = "mlx-community/gemma-2-9b-it-4bit"
+            # IMAGE goes to Cloud (Gemini)
             definitions.set_active_model(Modality.IMAGE, "gemini-2.5-flash-image")
         except Exception as e:
             logging.error(f"❌ Failed to switch to Cloud Mode: {e}")
@@ -3097,9 +3414,9 @@ def main():
     # Text Engine (Global Singleton)
     text_engine = TextEngine(config_path="env_vars.yaml")
     
-    # Re-verify local status if requested
-    if args.local and text_engine.backend != "local_gemma":
-        logging.warning("⚠️ Local Mode requested but TextEngine didn't switch? Forcing...")
+    # Re-verify local status if requested (--local or --cloud both use local text)
+    if (args.local or args.cloud) and text_engine.backend != "local_gemma":
+        logging.warning("⚠️ Local Text requested but TextEngine didn't switch? Forcing...")
         text_engine.backend = "local_gemma"
         text_engine._init_local_model()
 
@@ -3114,7 +3431,7 @@ def main():
          # Force Image Model? Or respect Registry?
          # Legacy behavior was specific. Let's stick to Registry unless overridden.
          pass
-    elif args.vpform in ["creative-agency", "music-visualizer", "music-agency", "music-video", "full-movie"]:
+    elif args.vpform in ["music-visualizer", "music-video", "full-movie"]:
         # Only switch to Gemini 2.0 (Director Mode) if NOT local.
         # Local mode uses Flux directly.
         if not args.local:
@@ -3137,7 +3454,7 @@ def main():
     # ==========================================================================
     
     # Scan (Only needed for legacy FBF/Transcript mode)
-    if args.vpform in ["creative-agency", "music-visualizer", "music-agency", "music-video", "full-movie", "cartoon-video"] or args.xb:
+    if args.vpform in ["music-visualizer", "music-video", "full-movie", "cartoon-video", "cartoon-color"] or args.xb:
         # Virtual Project
         try:
              args.model = model

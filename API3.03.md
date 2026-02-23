@@ -1,4 +1,4 @@
-# XMVP API Reference v3.02
+# XMVP API Reference v3.03
 ## Complete Command-Line Interface Documentation
 
 ---

@@ -646,7 +646,7 @@ class FluxBridge:
                 "prompt": prompt,
                 "image": image,
                 "num_inference_steps": steps,
-                "guidance_scale": guidance_scale,
+                "guidance_scale": guidance_scale if guidance_scale != 3.5 else 2.5, # Lower default guidance for Img2Img to preserve continuity
             }
             
             if seed is not None:
@@ -654,23 +654,20 @@ class FluxBridge:
             
             # Strength / Denoising Control
             # denoising_start overrides strength when provided (per diffusers API).
-            if denoising_start is not None and "denoising_start" in available_args:
-                kwargs["denoising_start"] = denoising_start
-                logging.info(f"   🎛️  Using denoising_start={denoising_start:.2f} (strength ignored)")
-            elif "strength" in available_args:
-                kwargs["strength"] = strength
-            elif "denoising_start" in available_args:
-                # Map strength → denoising_start (inverse relationship)
-                kwargs["denoising_start"] = 1.0 - strength
-                logging.info(f"   🎛️  Mapped strength {strength:.2f} → denoising_start={1.0 - strength:.2f}")
+            # We explicitly want to bypass native diffusers "strength" handling because of the MPS melting bug.
+            # If "sigmas" is available we calculate our own noise and pass latents directly.
+            
+            # Map strength to start index
+            mapped_strength = strength
+            
+            if denoising_start is not None:
+                mapped_strength = 1.0 - denoising_start
+                logging.info(f"   🎛️  Using denoising_start={denoising_start:.2f} (mapped strength {mapped_strength:.2f})")
             else:
-                # Last resort: pass strength anyway (some custom pipelines accept **kwargs)
-                logging.warning(f"   ⚠️ Pipeline lacks 'strength' and 'denoising_start'. Force-passing strength={strength:.2f}.")
-                logging.info(f"   🤞 Force-passing 'strength={strength}' to pipeline (Hope it takes it)...")
-                kwargs["strength"] = strength
-                
-                # Check for 'sigmas' support to manually control denoising schedule
-                if "sigmas" in available_args:
+                logging.info(f"   🎛️  Using explicit strength {mapped_strength:.2f}")
+
+            # Check for 'sigmas' support to manually control denoising schedule (THE FIX FOR MELTING)
+            if "sigmas" in available_args:
                     logging.info(f"   ✨ Pipeline uses 'sigmas'. Calculating noise schedule for strength {strength}...")
                     try:
                         from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
@@ -749,7 +746,12 @@ class FluxBridge:
                                         image_latents = init_image
                                         
                                     image_latents = image_latents.to(dtype=self.img2img_pipeline.transformer.dtype)
-                                        
+                                    
+                                    # LOGGING FOR MELTING INVESTIGATION
+                                    vae_scale = getattr(self.img2img_pipeline.vae.config, "scaling_factor", 1.0)
+                                    vae_shift = getattr(self.img2img_pipeline.vae.config, "shift_factor", 0.0)
+                                    logging.info(f"   🧪 [DEBUG] VAE Scaling: {vae_scale:.4f}, Shift: {vae_shift:.4f}")
+                                    logging.info(f"   🧪 [DEBUG] Latents Mean: {image_latents.mean():.4f}, Std: {image_latents.std():.4f}")
                                     # 3. Add noise
                                     # We need the appropriate timestep for the start index
                                     # start_idx corresponds to the first sigma in our filtered_sigmas list
@@ -759,40 +761,65 @@ class FluxBridge:
                                         logging.warning(f"   ⚠️ Could not access timesteps[{start_idx}]: {e}. Deriving from sigmas.")
                                         start_timestep = torch.tensor(safe_start_timestep, device=self.device, dtype=torch.float32)
                                     
-                                    # Generate matching noise directly from latent shape
-                                    # This is much more robust than calculating it manually
-                                    noise = torch.randn(image_latents.shape, device=self.device, dtype=image_latents.dtype)
+                                    # Generate matching noise — CRITICAL: must use the generator for temporal consistency!
+                                    gen = kwargs.get("generator")
+                                    if gen:
+                                        # Note: Generator/Device mismatch fix. 
+                                        # Generate on generator's device then move to target.
+                                        noise = torch.randn(image_latents.shape, generator=gen, device=gen.device).to(device=self.device, dtype=image_latents.dtype)
+                                    else:
+                                        noise = torch.randn(image_latents.shape, device=self.device, dtype=image_latents.dtype)
                                     
                                     # Derive packing shapes for the Flux transformer
-                                    # image_latents is (B, C, H, W). Index 2=H, 3=W.
                                     batch_size, num_channels_latents, latent_height, latent_width = image_latents.shape
                                     
                                     # Expand timestep to match batch size
-                                    latent_timestep = start_timestep.expand(batch_size)
+                                    latent_timestep = start_timestep.expand(batch_size).to(self.device)
                                     
-                                    # Scale noise using scheduler's native method
-                                    # CRITICAL: Ensure all tensors are on the compute device before scheduling
-                                    image_latents = image_latents.to(self.device)
-                                    latent_timestep = latent_timestep.to(self.device)
-                                    noise = noise.to(self.device)
+                                    # Flux uses Flow Matching: x_t = (1-t)*x_0 + t*x_1
+                                    # x_0 = image_latents, x_1 = noise, t = normalized_timestep (0-1)
+                                    t = latent_timestep.view(-1, 1, 1, 1)
                                     
-                                    noised_latents = self.img2img_pipeline.scheduler.scale_noise(image_latents, latent_timestep, noise)
+                                    # CRITICAL: Normalize t to [0, 1] if it's 1000-based (diffusers standard)
+                                    if t.max() > 1.1:
+                                        t = t / 1000.0
+                                        
+                                    logging.info(f"   🧪 [DEBUG] Normalized Noise Step t: {t.mean().item():.4f}")
+                                    
+                                    # CRITICAL: Force all tensors to the exact same device/dtype to avoid MPS/CPU mismatch
+                                    target_device = image_latents.device
+                                    target_dtype = image_latents.dtype
+                                    t = t.to(device=target_device, dtype=target_dtype)
+                                    noise = noise.to(device=target_device, dtype=target_dtype)
+                                    
+                                    noised_latents = (1.0 - t) * image_latents + t * noise
+                                    
+                                    # SOFT Variance Correction
+                                    # target_std = sqrt(std_natural) to stay balanced.
+                                    var_natural = (1.0 - t)**2 + t**2
+                                    target_std = var_natural**0.25 
+                                    current_std = var_natural**0.5
+                                    noised_latents = noised_latents * (target_std / (current_std + 1e-6))
                                     
                                     # Pass noised latents directly — pipeline handles packing internally
                                     kwargs["latents"] = noised_latents
                                     kwargs["image"] = None # tell pipeline not to regenerate latents
-                                    logging.info(f"   ✅ Patched initial latents ({latent_height}x{latent_width}) on {self.device}.")
+                                    logging.info(f"   ✅ Patched initial latents ({latent_height}x{latent_width}) with Variance Stabilization (t={start_timestep.item():.3f})")
                                     
                                 except Exception as manual_latent_exc:
                                     import traceback; logging.warning(f"   ⚠️ Manual latent injection failed: {manual_latent_exc}\n{traceback.format_exc()}. Falling back to default noise.")
                                 
-                                # Remove strength to avoid TypeError since we are passing explicit sigmas
-                                if "strength" in kwargs:
-                                    del kwargs["strength"]
-                                if "denoising_start" in kwargs:
-                                    del kwargs["denoising_start"]
                     except Exception as exc:
                         logging.warning(f"   ⚠️ Sigma calculation failed: {exc}")
+                        # Fallback to appending strength to kwargs if manual sigmas completely crashed
+                        if "strength" in available_args:
+                            kwargs["strength"] = mapped_strength
+            else:
+                 # Last resort if no sigmas are available
+                 if "strength" in available_args:
+                     kwargs["strength"] = mapped_strength
+                 elif "denoising_start" in available_args:
+                     kwargs["denoising_start"] = 1.0 - mapped_strength
 
             try:
                 with torch.inference_mode():

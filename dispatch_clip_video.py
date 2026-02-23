@@ -78,7 +78,20 @@ def select_clip(source_video, duration):
     total_dur = get_audio_duration(str(source_video))
     if total_dur < duration: return None
     
-    start = random.uniform(0, total_dur - duration)
+    # Boundary logic for credits
+    if total_dur > 1800: # 30 mins
+        min_start = 420.0 # 7 mins
+        max_end = total_dur - 600.0 # 10 mins
+    else:
+        min_start = total_dur * 0.05
+        max_end = total_dur * 0.90
+        
+    usable_dur = max_end - min_start
+    if usable_dur < duration:
+        min_start = 0.0
+        max_end = total_dur
+        
+    start = random.uniform(min_start, max_end - duration)
     return start
 
 def check_overlap(new_start, new_end, used_intervals):
@@ -100,10 +113,23 @@ def select_clip_smart(source_video, duration, usage_tracker):
     total_dur = get_audio_duration(str(source_video))
     if total_dur < duration: return None
     
+    # Boundary logic for credits
+    if total_dur > 1800: # 30 mins
+        min_start = 420.0 # 7 mins
+        max_end = total_dur - 600.0 # 10 mins
+    else:
+        min_start = total_dur * 0.05
+        max_end = total_dur * 0.90
+        
+    usable_dur = max_end - min_start
+    if usable_dur < duration:
+        min_start = 0.0
+        max_end = total_dur
+    
     # Try finding a free spot (Max Retries)
     max_retries = 20
     for _ in range(max_retries):
-        start = random.uniform(0, total_dur - duration)
+        start = random.uniform(min_start, max_end - duration)
         end = start + duration
         
         # Check Tracker
@@ -114,7 +140,7 @@ def select_clip_smart(source_video, duration, usage_tracker):
     # If we failed 20 times, the video is likely saturated.
     # User Policy: "not repeat... unless it has run out of options"
     # Fallback: Just return a random one (allow overlap) but Log it.
-    start = random.uniform(0, total_dur - duration)
+    start = random.uniform(min_start, max_end - duration)
     return start, start + duration
 
 def run_clip_video_pipeline(args):
@@ -296,13 +322,15 @@ def run_clip_video_pipeline(args):
             out_name = f"clip_{i:04d}.mp4"
             out_path = staging_dir / out_name
             
-            vf = "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720"
+            frames = int(target_dur * 30)
+            vf = f"fps=30,scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,zoompan=z='1.3-0.15*(in/{frames})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1280x720:fps=30"
             
             cmd = [
                 "ffmpeg", "-y",
                 "-ss", str(start_t),
                 "-t", str(target_dur),
                 "-i", str(source),
+                "-sn", # Drop subtitles
                 "-vf", vf,
                 "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an",
                 str(out_path)

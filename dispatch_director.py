@@ -671,12 +671,19 @@ def run_dispatch(manifest_path: str, mode: str = "image", model_tier: str = "J",
         if mode == "image":
              # Flux Logic
              seed = 42 + seg.id
+             
+             # Extract Context Image
+             context_arg = str(last_file) if last_file and os.path.exists(str(last_file)) else None
+             if context_arg and context_arg.endswith((".mp4", ".mov")):
+                  context_arg = extract_last_frame(context_arg)
+                  
              img = director.generate(
                 prompt=seg.prompt,
                 width=width,
                 height=height,
                 seed=seed,
-                strength=strength
+                strength=strength,
+                image_path=context_arg
             )
              if img:
                  img.save(filepath)

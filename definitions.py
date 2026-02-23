@@ -209,12 +209,6 @@ FORM_REGISTRY = {
         default_args={"fps": 12},
         description="Abstract Music Visualizer"
     ),
-    "creative-agency": VPFormConfig(
-        key="creative-agency", 
-        aliases=["ca", "commercial", "ad", "agency"],
-        default_args={"fps": 12},
-        description="Commercial/Creative Agency Spot"
-    ),
 
     # --- MOVIE PRODUCER SPECIFIC ---
     "tech-movie": VPFormConfig(
@@ -290,6 +284,12 @@ FORM_REGISTRY = {
         aliases=["cv", "vid2vid", "rotoscope"],
         default_args={"fps": 4, "vspeed": 4, "local": True}, # Default to local for Img2Img control
         description="Frame-by-Frame Video Restyling (Img2Img) @ 4FPS. Ingests video, restyles frames, muxes audio."
+    ),
+    "cartoon-color": VPFormConfig(
+        key="cartoon-color",
+        aliases=["cc", "colorize", "color"],
+        default_args={"fps": 4, "local": True},
+        description="Intelligent B&W/Low-Color Video Colorization via Unicode Art. Brightness-to-palette mapping."
     ),
     "route66-podcast": VPFormConfig(
         key="route66-podcast",

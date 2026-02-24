@@ -70,8 +70,9 @@ MODAL_REGISTRY: Dict[Modality, Dict[str, ModelConfig]] = {
         "imagen-3": ModelConfig("imagen-3.0-generate-001", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
         "flux-schnell": ModelConfig("flux-schnell", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root"),
         "flux-klein": ModelConfig("flux-klein", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root/klein-9b"),
-        "flux-gguf": ModelConfig("flux-gguf", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-gguf-root"),
-        "flux-2-klein-hf": ModelConfig("flux-2-klein-hf", BackendType.CLOUD, Modality.IMAGE, endpoint="env:FLUX_KLEIN_ENDPOINT", api_key_env="HF_TOKEN")
+        "flux-dev": ModelConfig("flux-dev", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root/dev"),
+        "flux-2-dev-hf": ModelConfig("flux-2-dev-hf", BackendType.CLOUD, Modality.IMAGE, endpoint="env:FLUX_DEV_ENDPOINT", api_key_env="HF_TOKEN"),
+        "colorize-diffusion": ModelConfig("colorize-diffusion", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/colorize-diffusion-root")
     },
     Modality.VIDEO: {
         "veo-3.1-fast": ModelConfig("veo-3.1-fast-generate-preview", BackendType.CLOUD, Modality.VIDEO, api_key_env="GEMINI_API_KEY"),
@@ -88,7 +89,7 @@ MODAL_REGISTRY: Dict[Modality, Dict[str, ModelConfig]] = {
 # Defaults
 DEFAULT_PROFILE = {
     Modality.TEXT: "gemini-2.0-flash",
-    Modality.IMAGE: "flux-klein",
+    Modality.IMAGE: "flux-dev",
     Modality.VIDEO: "veo-3.1-fast",
     Modality.SPOKEN_TTS: "google-journey"
 }
@@ -105,7 +106,7 @@ ACTIVE_PROFILE = {
     "cloud": DEFAULT_PROFILE.copy(),
     "local": {
         Modality.TEXT: "gemma-2-9b-it",
-        Modality.IMAGE: "flux-klein",
+        Modality.IMAGE: "flux-dev",
         Modality.VIDEO: "ltx-video",
         Modality.SPOKEN_TTS: "kokoro-v1"
     }
@@ -291,6 +292,12 @@ FORM_REGISTRY = {
         default_args={"fps": 4, "local": True},
         description="Intelligent B&W/Low-Color Video Colorization via Unicode Art. Brightness-to-palette mapping."
     ),
+    "color-video": VPFormConfig(
+        key="color-video",
+        aliases=["cv-cloud", "diff-color", "colorizer"],
+        default_args={"fps": 4, "cloud": True, "model_id": "gemini-2.5-flash-image"},
+        description="High-Quality B&W Video Colorization via Gemini 2.5 Flash Cloud API."
+    ),
     "route66-podcast": VPFormConfig(
         key="route66-podcast",
         aliases=["r66", "route66"],
@@ -355,11 +362,11 @@ def resolve_vpform(input_string: str) -> Optional[VPFormConfig]:
     if not input_string: return None
     s = input_string.lower().strip()
     
-    # Direct Key Match
+    # 1. Direct Key Match (High Priority)
     if s in FORM_REGISTRY:
         return FORM_REGISTRY[s]
     
-    # Alias Match
+    # 2. Exact Alias Match
     for form in FORM_REGISTRY.values():
         if s in form.aliases:
             return form
@@ -378,7 +385,9 @@ def parse_global_vpform(args, current_default: str = None) -> str:
     # 1. Check Explicit Flag
     if getattr(args, "vpform", None):
         res = resolve_vpform(args.vpform)
-        if res: return res.key
+        if res: 
+            logging.info(f"🔎 CLI: Explicit --vpform '{args.vpform}' -> '{res.key}'")
+            return res.key
         
     # 2. Check Positional
     if getattr(args, "cli_args", None):
@@ -386,7 +395,9 @@ def parse_global_vpform(args, current_default: str = None) -> str:
             if val.lower() == "run": continue # Ignore command
             res = resolve_vpform(val)
             if res:
-                logging.info(f"🔎 CLI: Alias '{val}' -> '{res.key}'")
+                logging.info(f"🔎 CLI: Positional Alias '{val}' -> '{res.key}'")
                 return res.key
     
+    if current_default:
+        logging.info(f"🔎 CLI: No VPForm found. Defaulting to '{current_default}'")
     return current_default

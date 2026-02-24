@@ -84,15 +84,23 @@ OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "z_test-out
 TRIPLETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../z_podcast_triplets"))
 MW_ROOT = "/Volumes/XMVPX/mw" # Standard mount point
 
-# Resolve Flux Path via Definitions (GGUF First)
-try:
-    import definitions
-    conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
-    if not conf:
-        conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
-    FLUX_MODEL_PATH = conf.path if conf else os.path.join(MW_ROOT, "flux-root", "klein-9b")
-except:
-    FLUX_MODEL_PATH = os.path.join(MW_ROOT, "flux-root", "klein-9b")
+# Resolve Flux Path via Definitions
+def _init_flux():
+    """Ensure flux requirements and local setup are ready."""
+    global FLUX_MODEL_PATH
+    try:
+        import definitions
+        conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-dev")
+        if conf and conf.backend != definitions.BackendType.LOCAL:
+            conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-dev")
+        FLUX_MODEL_PATH = conf.path if conf else os.path.join(MW_ROOT, "flux-root", "dev")
+    except ImportError:
+        FLUX_MODEL_PATH = os.path.join(MW_ROOT, "flux-root", "dev")
+    if not os.path.exists(FLUX_MODEL_PATH):
+        FLUX_MODEL_PATH = os.path.join(MW_ROOT, "flux-root", "dev")
+
+FLUX_MODEL_PATH = "" # Initialize globally
+_init_flux() # Call to set the path
 
 print(f"    [🎨] Visual Engine: Flux GGUF-Ready (Path: {FLUX_MODEL_PATH})")
 
@@ -253,7 +261,7 @@ def generate_location_context(text_engine, args, seeds=None):
 def generate_image(prompt, output_path, ts=None, init_image=None, strength=0.65):
     """
     Generates an image using either:
-    1. Flux Klein (Local) if LOCAL_MODE is True
+    1. Flux Dev (Local) if LOCAL_MODE is True
     2. Gemini 2.0 Flash (Cloud) otherwise
     """
     global FLUX_BRIDGE
@@ -276,9 +284,11 @@ def generate_image(prompt, output_path, ts=None, init_image=None, strength=0.65)
             w, h = GENERATION_DIMS
             
             img = FLUX_BRIDGE.generate(
-                prompt, 
-                width=w, height=h, 
-                steps=12,  # Klein 12 steps
+                prompt,
+                width=w,
+                height=h,
+                steps=28,  # Dev needs more steps
+                guidance_scale=4.0,
                 image=init_image, 
                 strength=strength
             )
@@ -1459,7 +1469,7 @@ def export_xmvp_manifest(output_dir, base_name, assets, cast_names, seeds=None, 
             if isinstance(item, dict):
                  # Improv Dict
                  spk_len = 1 # Speaker Name
-                 text_len = max(1, len(item.get('text', '')) // 60) # Approx 60 chars per line
+                 text_len = max(1, len(item.get('text', '')).strip() // 60) # Approx 60 chars per line
                  act_len = 1 if item.get('action_prompt') else 0
                  
                  total_lines = spk_len + text_len + act_len
@@ -1890,18 +1900,17 @@ def run_mll_pipeline(xml_path, output_dir):
     return None
 
 def run_fullmovie_still_mode(xml_path, output_dir, text_engine, args):
-    # Enforce Flux 2 Klein for Local Mode (User Request)
+    # Enforce Flux 2 Dev for Local Mode (User Request)
     global FLUX_MODEL_PATH
-    
-    if args.local:
-        # Check standard Klein path
-        klein_target = os.path.join(MW_ROOT, "flux-root/klein-9b")
-        if os.path.exists(klein_target):
-             if FLUX_MODEL_PATH != klein_target:
-                 print(f"    [🎨] Enforcing Flux 2 Klein: {klein_target}")
-                 FLUX_MODEL_PATH = klein_target
+    if LOCAL_MODE:
+        # Check standard Dev path
+        dev_target = os.path.join(MW_ROOT, "flux-root/dev")
+        if os.path.exists(dev_target):
+             if FLUX_MODEL_PATH != dev_target:
+                 print(f"    [🎨] Enforcing Flux 2 Dev: {dev_target}")
+                 FLUX_MODEL_PATH = dev_target
         else:
-             print(f"    [⚠️] Flux 2 Klein requested but NOT FOUND at {klein_target}. Using default: {FLUX_MODEL_PATH}")
+             print(f"    [⚠️] Flux 2 Dev requested but NOT FOUND at {dev_target}. Using default: {FLUX_MODEL_PATH}")
     """
     Ingests an existing XMVP XML and generates a slideshow movie.
     One frame per dialogue line.

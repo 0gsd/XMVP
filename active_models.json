@@ -7,7 +7,7 @@
   },
   "local": {
     "text": "gemma-2-9b-it",
-    "image": "flux-klein",
+    "image": "flux-dev",
     "video": "ltx-video",
     "spoken_tts": "kokoro-v1"
   }

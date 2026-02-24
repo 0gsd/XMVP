@@ -8,6 +8,11 @@ import logging
 import argparse
 import subprocess
 import random
+import os
+
+# Set MPS fallback for missing operators
+os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+
 import yaml
 import itertools
 import shutil
@@ -44,6 +49,13 @@ except ImportError:
     pass
 import definitions
 from definitions import Modality, BackendType, get_active_model
+try:
+    from huggingface_hub import InferenceClient
+except ImportError:
+    pass
+
+
+# Setup Logging
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -167,7 +179,7 @@ def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration, bpm=No
         from flux_bridge import get_flux_bridge
         from definitions import Modality, get_active_model
         flux_conf = get_active_model(Modality.IMAGE)
-        flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Volumes/XMVPX/mw/flux-root/klein-9b"
+        flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Volumes/XMVPX/mw/flux-root/dev"
         flux_bridge = get_flux_bridge(flux_path)
         if not flux_bridge: raise ImportError("No Flux Bridge")
     except Exception as e:
@@ -530,7 +542,7 @@ def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration):
         from flux_bridge import get_flux_bridge
         from definitions import Modality, get_active_model
         flux_conf = get_active_model(Modality.IMAGE)
-        flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Volumes/XMVPX/mw/flux-root/klein-9b"
+        flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Volumes/XMVPX/mw/flux-root/dev"
         flux_bridge = get_flux_bridge(flux_path) # Default local path
         if not flux_bridge: raise ImportError("No Flux Bridge")
     except Exception as e:
@@ -823,7 +835,7 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
         # STRICT LOCAL ENFORCEMENT
     if force_local and not is_local:
         logging.error(f"❌ STRICT LOCAL ENFORCEMENT FAILED: Model '{model}' is not configured as LOCAL.")
-        logging.error("   Please update active_models.json or definitions.py to point to a local model (e.g. flux-klein).")
+        logging.error("   Please update active_models.json or definitions.py to point to a local model (e.g. flux-dev).")
         # Fail hard
         raise RuntimeError("Local execution enforced but model is cloud-based/unknown.")
 
@@ -832,6 +844,16 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
     if nico_context:
         logging.info(f"   🧠 Nicotime Context Found: {nico_context[:60]}...")
         prompt += nico_context
+
+    # --- METADATA STRIPPING ---
+    # To prevent AI from rendering frame indices or music labels ("Frame 1/24", "beat climax") as text in the image.
+    if prompt:
+        import re
+        # Strip (Frame X/Y), (beat ...), beat progress X/Y, etc.
+        p_clean = re.sub(r"\s*\(Frame\s*\d+/\d+[^)]*\)", "", prompt)
+        p_clean = re.sub(r"\s*\(beat\s+[^)]*\)", "", p_clean)
+        p_clean = re.sub(r"beat progress\s*\d+/\d+", "", p_clean, flags=re.IGNORECASE)
+        prompt = p_clean.strip()
 
     # --- OUTPUT PATH ---
     target_path = Path(output_dir) / f"frame_{index:04d}.png"
@@ -971,14 +993,14 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                         logging.info(f"      🔗 Coherence: Injected stylistic anchors for Flux ({coherence_pct}% strength)")
 
                 # Generate
-                # Flux Klein typically benefits from more steps than Schnell (4). 8 is a good balance, 12 is better.
+                # Flux 2 Dev typically needs more steps than Schnell. 28 is recommended.
                 # Standardize to requested dimensions
                 # CRITICAL FIX: Ensure 'image' is passed to enable Img2Img Feedback Loop
                 # If img_input is None (First Frame), it acts as Txt2Img.
                 logging.info(f"   🚀 Flux Generating with Image Input: {img_input is not None}")
                 
-                # Use passed seed or derive from index
-                frame_seed = seed if seed is not None else (42 + index)
+                # Seed Locking: Use a consistent seed for local sequences to improve temporal stability
+                frame_seed = seed if seed is not None else 42
                 
                 # Use passed strength argument (default 0.65 from signature)
                 img = bridge.generate(prompt=final_prompt, width=width, height=height, steps=12, image=img_input, strength=strength, seed=frame_seed)
@@ -1073,14 +1095,16 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                                 final_instruction = (
                                     f"SOURCE: The attached image is the frame to be redrawn.\n"
                                     f"TASK: Redraw this EXACT frame with absolute precision in layout and character. "
-                                    f"Apply this style: {refined_prompt}. Visual fidelity: {coherence_pct}%."
+                                    f"Apply this style: {refined_prompt}. Visual fidelity: {coherence_pct}%.\n"
+                                    f"CRITICAL: Do NOT include any text, frame numbers, or metadata in the image."
                                 )
                             else:
                                 final_instruction = (
                                     f"PREVIOUS: The attached image is the PREVIOUS frame in this animation.\n"
                                     f"TASK: Generate the NEXT frame. Keep style/colors exact. "
                                     f"Change Level: {coherence_pct}% ({'Subtle flipbook' if coherence_pct < 40 else 'Clear motion'}).\n"
-                                    f"Visual: {refined_prompt}"
+                                    f"Visual: {refined_prompt}\n"
+                                    f"CRITICAL: Do NOT include any text, frame numbers, or metadata in the image."
                                 )
                             render_contents.append(final_instruction)
                         except Exception as e_ctx:
@@ -1213,7 +1237,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
     # Bypass for Creative Agency / XB
     # Bypass for Creative Agency / XB / Music Visualizer / Music Agency
     # Bypass for Creative Agency / XB / Music Visualizer / Music Agency
-    if args.vpform in ["music-visualizer", "music-video", "cartoon-video", "cartoon-color"] or args.xb:
+    if args.vpform in ["music-visualizer", "music-video", "cartoon-video", "cartoon-color", "color-video"] or args.xb:
         # Check if we have an explicit XML to load
         if args.xb and os.path.exists(args.xb):
              try:
@@ -1420,7 +1444,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
              if progress > 0.7: phase = "reaching peak intensity, crystallizing into pure light"
              
              raw_desc = f"{prompt_concept} — {phase}. Beat {i}, progress {int(progress*100)}%."
-             prompts.append(f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames})")
+             prompts.append(f"Style: {style_prefix}. Action: {raw_desc}")
 
     elif args.vpform == "music-video":
         print(f"   Mode: Music Video Agency (Legacy: music-agency)")
@@ -1575,7 +1599,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                      
                      # Add sub-frame progression for animation variety
                      beat_progress = f" (beat start)" if f == 0 else f" (beat progress {f+1}/{shot_frames})"
-                     full_prompt = f"Style: {style_prefix}. Action: {story_beat}{beat_progress}"
+                     full_prompt = f"Style: {style_prefix}. Action: {story_beat}"
                      
                      timeline.append({
                          'prompt': full_prompt,
@@ -1647,23 +1671,21 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                   prev_beat_idx = int((i-1) / frames_per_beat) if i > 0 else -1
                   is_cut = (beat_idx != prev_beat_idx)
                   
-                  # Add sub-frame progression within the beat
-                  local_frame = i - int(beat_idx * frames_per_beat)
-                  total_in_beat = max(1, int(frames_per_beat))
-                  beat_pct = local_frame / total_in_beat
-                  if beat_pct < 0.25:
-                      phase = "beginning"
-                  elif beat_pct < 0.5:
-                      phase = "building"
-                  elif beat_pct < 0.75:
-                      phase = "climax"
-                  else:
-                      phase = "resolving"
-                  
-                  full_prompt = f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames}, beat {phase})"
+                  # Determine phase based on progress
+                  progress = i / target_frames
+                  phase = "forming patterns"
+                  if progress > 0.3: phase = "main sequence"
+                  if progress > 0.7: phase = "climax"
+
+                  # Determine beat progression for the Director
+                  beat_frame = i - int(beat_idx * frames_per_beat) + 1
+                  beat_total = max(1, int(frames_per_beat))
+                  full_prompt = f"Style: {style_prefix}. Action: {raw_desc} (beat progress {beat_frame}/{beat_total})"
+                  log_prompt = f"{full_prompt} (Frame {i+1}/{target_frames}, beat {phase})"
                   
                   timeline.append({
                       'prompt': full_prompt,
+                      'log_prompt': log_prompt,
                       'is_cut': is_cut,
                       'shot_idx': beat_idx
                   })
@@ -1762,7 +1784,6 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         
         import numpy as np
         import colorsys
-        import random
         
         # 4. Convert each frame (Unicode Local or Gemini Cloud)
         is_cloud = getattr(args, 'cloud', False)
@@ -1938,6 +1959,12 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         ensure_dir(frames_dir)
         ensure_dir(source_dir)
 
+        # Clear frames directory to prevent corruption from previous runs
+        if frames_dir.exists():
+            logging.info(f"   🧹 Cleaning frames directory: {frames_dir}")
+            for f in frames_dir.glob("*.png"):
+                f.unlink()
+
         # 1. Extract audio
         audio_path = project_dir / "extracted_audio.wav"
         if not audio_path.exists():
@@ -2062,43 +2089,11 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                     return h, s, v
             return active_palette[-1][1], active_palette[-1][2], active_palette[-1][3]
 
-        # ── Auto-detect B&W & Vintage Film ──
-        # Sample first frame to determine if input is monochrome, and if it's vintage
-        is_bw = False
-        is_vintage = False
-        if source_frames:
-            sample_img = Image.open(source_frames[0]).convert("RGB")
-            sample_arr = np.array(sample_img)
-            # Sample ~200 random pixels for saturation, calculate global std dev for contrast/grain
-            h_s, w_s = sample_arr.shape[:2]
-            sat_samples = []
-            
-            # Fast global standard deviation of grayscale intensities to detect textured/vintage vs flat
-            gray_arr = np.mean(sample_arr, axis=2)
-            std_dev = np.std(gray_arr)
-            
-            for _ in range(200):
-                sy = np.random.randint(0, h_s)
-                sx = np.random.randint(0, w_s)
-                sr, sg, sb = int(sample_arr[sy, sx, 0]), int(sample_arr[sy, sx, 1]), int(sample_arr[sy, sx, 2])
-                _, sat, _ = colorsys.rgb_to_hsv(sr / 255.0, sg / 255.0, sb / 255.0)
-                sat_samples.append(sat)
-            avg_sat = sum(sat_samples) / len(sat_samples)
-            is_bw = avg_sat < 0.08
-            
-            if is_bw:
-                if std_dev > 40:
-                    is_vintage = True
-                    logging.info(f"   🎞️ Input detected as VINTAGE B&W (Sat: {avg_sat:.3f}, StdDev: {std_dev:.1f}). Using realistic TCM Palette.")
-                else:
-                    logging.info(f"   🔲 Input detected as MODERN B&W (Sat: {avg_sat:.3f}, StdDev: {std_dev:.1f}). Using stylized Graphic Novel Palette.")
-            else:
-                logging.info(f"   🌈 Input detected as COLOR (Sat: {avg_sat:.3f}, StdDev: {std_dev:.1f}). Blend mode: 40% palette / 60% original.")
-
         # ── Colorization Pass (Texture-Spectrum) ──
         # Randomized hue offset per execution for variety
         start_hue = np.random.random()
         logging.info(f"   🌀 Run Hue Offset: {start_hue:.3f}")
+        logging.info(f"   🌈 Mode: Intense Colorization ({args.blend}% palette / {100-args.blend}% original).")
 
         # 4. Convert each frame to colorized Unicode art
         for i, src_path in enumerate(source_frames):
@@ -2126,70 +2121,30 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                     brightness = (r + g + b) / (3.0 * 255.0)
 
                     # ── TEXTURE-TO-HUE SPECTRUM ENGINE ──
-                    pal_h, pal_s, pal_v = 0.0, 0.0, brightness
+                    # Always use palette lookup and intense blend logic
+                    pal_h, pal_s, pal_v = palette_lookup(brightness, category="default")
                     
-                    if is_vintage:
-                        # Sample a local 8x8 patch for texture/grain analysis
-                        p_size = 4 # Patch radius
-                        p_ymin, p_ymax = max(0, py - p_size), min(src_h_px - 1, py + p_size)
-                        p_xmin, p_xmax = max(0, px - p_size), min(src_w_px - 1, px + p_size)
-                        
-                        patch = src_arr[p_ymin:p_ymax, p_xmin:p_xmax]
-                        if patch.size > 0:
-                            patch_gray = np.mean(patch, axis=2)
-                            local_std = np.std(patch_gray)
-                            
-                            # ── Neon Override ──
-                            if brightness > 0.95:
-                                # High energy highlights (Neon/Electric)
-                                pal_h = start_hue # Start color
-                                pal_s = 0.9 # High saturation
-                                pal_v = 1.0 # Max vibrance
-                            else:
-                                # ── Texture Spectrum Mapping ──
-                                # Map crunchiness (local_std) to a hue range (e.g., 0.0 to 0.7)
-                                # crunchy (high std) -> Red-ish (0.0)
-                                # smooth (low std) -> Violet-ish (0.8)
-                                t_val = np.clip(local_std / 35.0, 0, 1) # Normalize crunch 0-1
-                                texture_hue = (1.0 - t_val) * 0.8 # smooth=0.8, crunchy=0.0
-                                
-                                # Global offset + local texture hue
-                                pal_h = (start_hue + texture_hue) % 1.0
-                                
-                                # Saturation/Vibrance follows brightness + local contrast boost
-                                pal_s = np.clip(brightness * 1.5, 0.2, 0.8)
-                                pal_v = np.clip(brightness * 1.2, 0.1, 0.95)
-
-                    # 2. Look up fallback if not vintage or use spectrum
-                    if is_bw:
-                        if not is_vintage:
-                            pal_h, pal_s, pal_v = palette_lookup(brightness, category="default")
-                    else:
-                        # Blend logic uses default palette for suggestion
-                        pal_h, pal_s, pal_v = palette_lookup(brightness, category="default")
+                    # Incorporate random color shift seed
+                    pal_h = (pal_h + start_hue) % 1.0
 
                     # Spatial coherence jitter (subtle hue drift so it doesn't look stamped)
                     jitter = (row * 0.003 + col * 0.005) % 0.04 - 0.02
-                    # Halve the jitter for vintage film to preserve realistic tones
-                    if is_vintage: jitter *= 0.5
-                    
                     pal_h = (pal_h + jitter) % 1.0
 
-                    if is_bw:
-                        # Full palette colorization
-                        bg_r_f, bg_g_f, bg_b_f = colorsys.hsv_to_rgb(pal_h, pal_s, pal_v)
-                        bg_r, bg_g, bg_b = int(bg_r_f * 255), int(bg_g_f * 255), int(bg_b_f * 255)
-                    else:
-                        # Blend mode: 40% palette suggestion, 60% original, boost saturation
-                        pal_r_f, pal_g_f, pal_b_f = colorsys.hsv_to_rgb(pal_h, pal_s, pal_v)
-                        blend_r = int(0.4 * pal_r_f * 255 + 0.6 * r)
-                        blend_g = int(0.4 * pal_g_f * 255 + 0.6 * g)
-                        blend_b = int(0.4 * pal_b_f * 255 + 0.6 * b)
-                        # Boost saturation by 20%
-                        bh, bs, bv = colorsys.rgb_to_hsv(blend_r / 255.0, blend_g / 255.0, blend_b / 255.0)
-                        bs = min(1.0, bs * 1.2)
-                        final_r, final_g, final_b = colorsys.hsv_to_rgb(bh, bs, bv)
-                        bg_r, bg_g, bg_b = int(final_r * 255), int(final_g * 255), int(final_b * 255)
+                    # Blend mode: user-defined blend ratio, boost saturation intensely
+                    blend_factor = args.blend / 100.0
+                    original_factor = 1.0 - blend_factor
+                    
+                    pal_r_f, pal_g_f, pal_b_f = colorsys.hsv_to_rgb(pal_h, pal_s, pal_v)
+                    blend_r = int(blend_factor * pal_r_f * 255 + original_factor * r)
+                    blend_g = int(blend_factor * pal_g_f * 255 + original_factor * g)
+                    blend_b = int(blend_factor * pal_b_f * 255 + original_factor * b)
+                    
+                    # Boost saturation by 50% (Intense)
+                    bh, bs, bv = colorsys.rgb_to_hsv(blend_r / 255.0, blend_g / 255.0, blend_b / 255.0)
+                    bs = min(1.0, bs * 1.5)
+                    final_r, final_g, final_b = colorsys.hsv_to_rgb(bh, bs, bv)
+                    bg_r, bg_g, bg_b = int(final_r * 255), int(final_g * 255), int(final_b * 255)
 
                     # FOREGROUND = shading character
                     char_idx = int(brightness * (len(density_chars) - 1))
@@ -2234,6 +2189,12 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         ]
         subprocess.run(cmd_s, check=True)
         logging.info(f"   ✅ Done: {out_vid}")
+        return
+
+    elif args.vpform == "color-video":
+        from color_video_cloud import ColorVideoCloudBridge
+        cvb = ColorVideoCloudBridge(api_keys=keys)
+        cvb.process(args, output_root)
         return
 
     elif args.xb:
@@ -2301,7 +2262,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                  if progress > 0.7: phase = "reaching peak intensity, crystallizing into pure light"
                  
                  raw_desc = f"{prompt_concept} — {phase}. Beat {i}, progress {int(progress*100)}%."
-                 prompts.append(f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames})")
+                 prompts.append(f"Style: {style_prefix}. Action: {raw_desc}")
                  
             # Set source_content to something not empty so we skip the default loop
             source_content = ["Visualizer Mode Active"] 
@@ -2390,7 +2351,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
              raw_desc = source_content[beat_idx]
              # Dynamically append frame index to encourage movement in the LLM's mind
              # We inject the STYLE here so it travels with the prompt to the Director.
-             prompts.append(f"Style: {style_prefix}. Action: {raw_desc} (Frame {i+1}/{target_frames})")
+             prompts.append(f"Style: {style_prefix}. Action: {raw_desc}")
              
     else:
         # Interpolation Mode (Legacy)
@@ -2502,7 +2463,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                       start_img = Image.open(start_path)
                  else:
                       logging.warning(f"   ⚠️ Start Frame {frame_start_idx} missing in batch. Regenerating...")
-                      start_img = frame_canvas.generate_seed_image(prompts[i_idx], te, init_dim=args.kid)
+                      start_img = frame_canvas.generate_seed_image(prompts[i_idx], te, init_dim=args.kid, seed=42)
                       if start_img: start_img.save(start_path)
 
             if not start_img:
@@ -2528,7 +2489,8 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             end_path = frames_dir / f"frame_{frame_end_idx:04d}.png"
             logging.info(f"   🎨 Batch End: Frame {frame_end_idx} (Flux)...")
             
-            end_img = frame_canvas.generate_seed_image(prompts[next_i], te, init_dim=args.kid)
+            # Seed Locking: Pass seed=42 to generate_seed_image
+            end_img = frame_canvas.generate_seed_image(prompts[next_i], te, init_dim=args.kid, seed=42)
             if end_img:
                 if end_img.size != (target_w, target_h):
                      # logging.info(f"   📏 Resizing End Frame: {end_img.size} -> {target_w}x{target_h}")
@@ -2560,9 +2522,11 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                  bridge = get_flux_bridge(img_conf.path)
                  
                  if bridge:
-                      logging.info(f"   ✨ Flux Img2Img: {out_p.name} (Str: 0.65)...")
+                      actual_strength = getattr(args, "strength", 70) / 100.0
+                      logging.info(f"   ✨ Flux Img2Img: {out_p.name} (Str: {actual_strength:.2f})...")
                       # Use a lower strength to preserve the "morph" but add details
-                      return bridge.generate(prompt_text, image=t_img, strength=getattr(args, "strength", 50) / 100.0, width=target_w, height=target_h)
+                      # Seed Locking: Use consistent seed (42) for stability
+                      return bridge.generate(prompt_text, image=t_img, strength=actual_strength, width=target_w, height=target_h, seed=42)
                  return t_img # Fallback
             
             if mid_i > i_idx and mid_i < next_i:
@@ -2801,9 +2765,16 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             frame_seed = project_seed + i
 
             # STANDARD GENERATION (Gemini/Imagen/Universal)
-            # Skip Director for Music/Agency modes to preserve pre-formatted styles
-            force_raw = (getattr(args, "vpform", "") in ["music-visualizer", "music-video", "agency-video"])
+            # DIRECTOR ENFORCEMENT: Enable director by default for creative music modes
+            # unless explicitly force_raw via internal logic (which we are relaxing here).
+            # force_raw is True only for "agency-video" by default.
+            force_raw = (getattr(args, "vpform", "") in ["agency-video"])
             
+            # If local mode and a music visualizer/video, we WANT the director to help Gemma interpret the music beats
+            if args.local and getattr(args, "vpform", "") in ["music-visualizer", "music-video"]:
+                force_raw = False
+                logging.debug("   🧠 Director pass enabled for local music mode.")
+
             success = generate_frame_universal(
                 index=index,
                 prompt=p,
@@ -2815,7 +2786,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 width=args.w if args.w else (args.kid if not args.local else 768),
                 height=args.h if args.h else (args.kid if not args.local else 768),
                 force_local=args.local,
-                strength=getattr(args, "strength", 50) / 100.0,
+                strength=getattr(args, "strength", 70 if args.local else 50) / 100.0,
                 use_director=not force_raw,
                 seed=frame_seed
             )
@@ -3288,6 +3259,7 @@ def main():
     parser.add_argument("--cloud", action="store_true", help="Enable Cloud Mode (Gemini 2.x)")
     parser.add_argument("--fsync", type=float, default=None, help="FPS Sync Multiplier (0.1 - 6.0). If provided for cartoon-video, calculates FPS from BPM. If omitted, uses native source FPS.")
     parser.add_argument("--f", type=str, help="Source Folder for Clip Video Mode")
+    parser.add_argument("--blend", type=int, default=70, help="Blend ratio for cartoon-color 1-99 (Default: 70). Higher = More palette color.")
     
     args, unknown = parser.parse_known_args()
 
@@ -3392,9 +3364,12 @@ def main():
             os.environ["TEXT_ENGINE"] = "local_gemma"
             os.environ["LOCAL_MODEL_PATH"] = "mlx-community/gemma-2-9b-it-4bit"
             # Switch Image -> Flux
-            definitions.set_active_model(Modality.IMAGE, "flux-klein", local=True)
+            definitions.set_active_model(Modality.IMAGE, "flux-dev", local=True)
             # Switch Video -> LTX
             definitions.set_active_model(Modality.VIDEO, "ltx-video")
+            # Switch Colorize -> Local (ONLY if color-video is the form)
+            if args.vpform == "color-video":
+                definitions.set_active_model(Modality.IMAGE, "colorize-diffusion", local=True)
         except Exception as e:
             logging.error(f"❌ Failed to switch to Local Mode: {e}")
     elif args.cloud:
@@ -3454,7 +3429,7 @@ def main():
     # ==========================================================================
     
     # Scan (Only needed for legacy FBF/Transcript mode)
-    if args.vpform in ["music-visualizer", "music-video", "full-movie", "cartoon-video", "cartoon-color"] or args.xb:
+    if args.vpform in ["music-visualizer", "music-video", "full-movie", "cartoon-video", "cartoon-color", "color-video"] or args.xb:
         # Virtual Project
         try:
              args.model = model

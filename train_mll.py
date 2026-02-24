@@ -21,8 +21,8 @@ from diffusers import DiffusionPipeline, FlowMatchEulerDiscreteScheduler
 from peft import LoraConfig, get_peft_model
 
 # Standard Paths
-# Prioritize Flux 2 Klein
-FLUX_ROOT = "/Volumes/XMVPX/mw/flux-root/klein-9b"
+# Prioritize Flux 2 Dev
+FLUX_ROOT = "/Volumes/XMVPX/mw/flux-root/dev"
 if not os.path.exists(FLUX_ROOT):
     FLUX_ROOT = "/Volumes/XMVPX/mw/flux-root"
 
@@ -48,7 +48,7 @@ def compute_text_embeddings(pipeline, prompt):
                 device=device
             )
         except TypeError:
-            # Fallback for pipelines that don't accept prompt_2 (e.g. Flux2KleinPipeline)
+            # Fallback for pipelines that don't accept prompt_2 (e.g. Flux2DevPipeline)
             ret = pipeline.encode_prompt(
                 prompt=prompt,
                 device=device
@@ -133,7 +133,7 @@ def main():
     dtype = torch.bfloat16
     
     print("   🌊 Loading Flux Pipeline (DiffusionPipeline)...")
-    # Use DiffusionPipeline to handle custom architectures (Klein) and Auto-Download of components
+    # Use DiffusionPipeline to handle custom architectures (Dev) and Auto-Download of components
     pipeline = DiffusionPipeline.from_pretrained(FLUX_ROOT, torch_dtype=dtype, trust_remote_code=True).to(device)
     
     # Validation: Check for T5 (text_encoder_2)

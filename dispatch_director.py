@@ -40,12 +40,12 @@ import definitions
 # Retrieve Config from Registry
 def get_flux_cache_path():
     try:
-        conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
+        conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-dev")
         if not conf:
-            conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
-        return conf.path if conf else "/Volumes/XMVPX/mw/flux-root/klein-9b"
+            conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-dev")
+        return conf.path if conf else "/Volumes/XMVPX/mw/flux-root/dev"
     except:
-        return "/Volumes/XMVPX/mw/flux-root/klein-9b"
+        return "/Volumes/XMVPX/mw/flux-root/dev"
 
 FLUX_CACHE = get_flux_cache_path()
 FLUX_REPO = "black-forest-labs/FLUX.1-schnell" # Updated repo for cloud fallback
@@ -525,10 +525,9 @@ class FluxCloudDirector:
         # Use fal-ai provider for Flux.1-dev or similar standard endpoint
         self.client = InferenceClient(provider="fal-ai", api_key=self.api_key)
         
-        # Cloud Mapping: "Klein" is likely a local finetune/quant. 
-        # For Cloud, we map it to the upstream reference (Flux.1-dev) to ensure provider support.
+        # Cloud Mapping: If local is dev-based, map to well-supported dev model on cloud if necessary.
         target_model = FLUX_REPO
-        if "klein" in target_model.lower():
+        if "dev" in target_model.lower():
              logging.info(f"   ☁️ Mapping Local '{target_model}' -> Cloud 'black-forest-labs/FLUX.1-dev'")
              target_model = "black-forest-labs/FLUX.1-dev"
              

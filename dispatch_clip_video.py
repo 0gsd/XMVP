@@ -23,12 +23,24 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 def get_audio_duration(file_path):
     try:
-        cmd = ['ffprobe', '-i', file_path, '-show_entries', 'format=duration', '-v', 'quiet', '-of', 'csv=p=0']
+        cmd = ['ffprobe', '-i', str(file_path), '-show_entries', 'format=duration', '-v', 'quiet', '-of', 'csv=p=0']
         result = subprocess.run(cmd, capture_output=True, text=True)
         val = float(result.stdout.strip())
         return val
     except:
         return 0.0
+
+def get_video_dimensions(file_path):
+    """Returns (width, height) using ffprobe."""
+    try:
+        cmd = ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+               '-show_entries', 'stream=width,height', '-of', 'csv=p=0', str(file_path)]
+        probe_out = subprocess.check_output(cmd, text=True).strip()
+        w, h = [int(x) for x in probe_out.split(',')]
+        return w, h
+    except Exception as e:
+        logging.warning(f"   ⚠️ Could not probe video dimensions for {file_path}: {e}")
+        return 1280, 720 # Fallback
 
 def analyze_audio_profile(audio_path, duration):
     """
@@ -241,15 +253,30 @@ def run_clip_video_pipeline(args):
     # Pre-fetch durations for deck to enable smart filtering
     logging.info("   🧠 Analyzing Source Library...")
     deck = []
+    project_w, project_h = None, None
+
     for v in videos:
         d = get_audio_duration(str(v))
         if d > 0.5:
+             # Capture dimensions from the first valid video to set project resolution
+             if project_w is None:
+                 project_w, project_h = get_video_dimensions(v)
+                 logging.info(f"   📐 Detected Project Resolution: {project_w}x{project_h}")
+
              deck.append({
                  "path": v,
                  "duration": d,
                  "name": v.name
              })
     
+    # Override with CLI args if provided
+    if getattr(args, 'w', None): project_w = args.w
+    if getattr(args, 'h', None): project_h = args.h
+
+    if not project_w:
+        project_w, project_h = 1280, 720
+        logging.warning(f"   ⚠️ No valid video dimensions found. Defaulting to {project_w}x{project_h}")
+
     if not deck:
          logging.error("❌ No valid videos found/analyzed.")
          return False
@@ -322,8 +349,33 @@ def run_clip_video_pipeline(args):
             out_name = f"clip_{i:04d}.mp4"
             out_path = staging_dir / out_name
             
+            # Use project dimensions
+            target_w = project_w
+            target_h = project_h
+
+            # Randomize Zoom Direction (1.1 to 1.5 or 1.5 to 1.1)
+            # 1.1x min zoom to hide subtitles
+            zoom_start = random.uniform(1.1, 1.5)
+            zoom_end = random.uniform(1.1, 1.5)
+            # Ensure at least some delta or just pick two ends
+            if random.random() > 0.5:
+                # Zoom In
+                z_expr = f"1.1+(0.4*(in/it))"
+            else:
+                # Zoom Out
+                z_expr = f"1.5-(0.4*(in/it))"
+
+            # FFmpeg zoompan expression
+            # in = current frame, it = total frames (if supported in this context, otherwise we use 'frames' variable)
             frames = int(target_dur * 30)
-            vf = f"fps=30,scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,zoompan=z='1.3-0.15*(in/{frames})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1280x720:fps=30"
+            
+            # Simple expression using 'in' and 'frames' variable
+            if "Zoom In" in z_expr or "+" in z_expr:
+                z_val = f"1.1+0.4*(in/{frames})"
+            else:
+                z_val = f"1.5-0.4*(in/{frames})"
+
+            vf = f"fps=30,scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},zoompan=z='{z_val}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={target_w}x{target_h}:fps=30"
             
             cmd = [
                 "ffmpeg", "-y",

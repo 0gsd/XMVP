@@ -38,13 +38,13 @@ MODELS = {
         "type": "snapshot",
         "target": MW_ROOT / "flux-root"
     },
-    "Flux-Klein": {
-        "repo": "black-forest-labs/FLUX.2-klein-9B",
+    "Flux-Dev": {
+        "repo": "black-forest-labs/FLUX.2-dev",
         "type": "snapshot",
-        "target": MW_ROOT / "flux-root" / "klein-9b"
+        "target": MW_ROOT / "flux-root" / "dev"
     },
-    # GGUF entries removed — stable-diffusion-cpp doesn't support Flux 2 Klein.
-    # Use Diffusers Klein at flux-root/klein-9b instead.
+    # GGUF entries removed — stable-diffusion-cpp doesn't support Flux 2.
+    # Use Diffusers at flux-root/dev instead.
     "IndexTTS": {
         "repo": "IndexTeam/IndexTTS-2",
         "type": "snapshot",
@@ -134,14 +134,14 @@ MODELS = {
         # It's big but useful.
     },
     "Kenney-Assets-Space": {
-        "repo": "KenneyNL/assets-space-kit", # This is a placeholder, Kenney uses direct zips usually. 
-        # Actually let's use a known glTF repo or just stick to the big 2 for now as per plan.
-        # But wait, looking at user request: "Sketchfab... Poly Pizza... Smithsonian..."
-        # Many of these are individual downloads or scrapers. 
-        # Khronos and Three.js are the best "Git Clone" fit.
-        # Let's add checking for the "3D-objects" root creation.
+        "repo": "KenneyNL/assets-space-kit", 
         "type": "placeholder", 
-        "target": MW_ROOT / "3D-objects" # Just ensures dir exists
+        "target": MW_ROOT / "3D-objects"
+    },
+    "ColorizeDiffusion": {
+        "repo": "tellurion/ColorizeDiffusion",
+        "type": "snapshot",
+        "target": MW_ROOT / "colorize-diffusion-root"
     }
 }
 

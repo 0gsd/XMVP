@@ -383,17 +383,17 @@ class FrameUpscaler:
                 img = img.resize((target_w, target_h), Image.LANCZOS)
                 
                 # Flux Denoise (Add Detail)
-                # Use Flux 2 Klein for Img2Img
+                # Use Flux 2 Dev for Img2Img
                 # Resolve Flux Path via Definitions (GGUF First)
                 try:
-                    conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-klein")
+                    conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-dev")
                     if not conf:
-                        conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-klein")
-                    flux_root = conf.path if conf else "/Volumes/XMVPX/mw/flux-root/klein-9b"
+                        conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-dev")
+                    flux_root = conf.path if conf else "/Volumes/XMVPX/mw/flux-root/dev"
                 except:
-                    flux_root = "/Volumes/XMVPX/mw/flux-root/klein-9b"
+                    flux_root = "/Volumes/XMVPX/mw/flux-root/dev"
                 
-                guidance_val = 3.5 if "klein" in str(flux_root).lower() else 0.0
+                guidance_val = 4.0 if "dev" in str(flux_root).lower() else 0.0
                 
                 logging.info(f"   ✨ using Flux for Upscaling: {flux_root}")
                 bridge = get_flux_bridge(flux_root)
@@ -405,7 +405,7 @@ class FrameUpscaler:
                     width=target_w,
                     height=target_h,
                     strength=0.25, # Low strength to preserve geometry but add texture
-                    steps=20, # Klein needs steps (Schnell was 4)
+                    steps=28, # Dev needs steps
                     guidance_scale=guidance_val
                 )
                 
@@ -492,17 +492,17 @@ class FrameInterpolator:
                 blended = Image.blend(img_a, img_b, 0.5)
                 
                 # 3. Flux Img2Img Tweening
-                # Use Flux 2 Klein
+                # Use Flux 2 Dev
                 # Resolve Flux Path via Definitions (GGUF First)
                 try:
-                    conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-klein")
+                    conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-dev")
                     if not conf:
-                        conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-klein")
-                    flux_root = conf.path if conf else "/Volumes/XMVPX/mw/flux-root/klein-9b"
+                        conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-dev")
+                    flux_root = conf.path if conf else "/Volumes/XMVPX/mw/flux-root/dev"
                 except:
-                    flux_root = "/Volumes/XMVPX/mw/flux-root/klein-9b"
+                    flux_root = "/Volumes/XMVPX/mw/flux-root/dev"
                     
-                guidance_val = 3.5 if "klein" in str(flux_root).lower() else 0.0
+                guidance_val = 4.0 if "dev" in str(flux_root).lower() else 0.0
                 
                 logging.info(f"   ✨ using Flux for Tweening: {flux_root}")
                 bridge = get_flux_bridge(flux_root)

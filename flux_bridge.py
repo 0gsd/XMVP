@@ -642,11 +642,18 @@ class FluxBridge:
             
             # NOTE: Do NOT pass height/width to Img2Img — the pipeline infers them 
             # from the input image. Passing them separately causes buffer explosions.
+            # Adaptive Guidance (Softened): Boost guidance at lower strength to force prompt adherence
+            effective_guidance = guidance_scale
+            if strength < 0.6:
+                # Softened boost (multiplier 2.0 instead of 4.0) to prevent structural tearing
+                boost = (0.6 - strength) * 2.0 
+                effective_guidance += boost
+                
             kwargs = {
                 "prompt": prompt,
                 "image": image,
                 "num_inference_steps": steps,
-                "guidance_scale": guidance_scale if guidance_scale != 3.5 else 2.5, # Lower default guidance for Img2Img to preserve continuity
+                "guidance_scale": effective_guidance,
             }
             
             if seed is not None:
@@ -789,17 +796,19 @@ class FluxBridge:
                                     # CRITICAL: Force all tensors to the exact same device/dtype to avoid MPS/CPU mismatch
                                     target_device = image_latents.device
                                     target_dtype = image_latents.dtype
-                                    t = t.to(device=target_device, dtype=target_dtype)
-                                    noise = noise.to(device=target_device, dtype=target_dtype)
+                                    # Power-Curve Noise Schedule (Softened): Gentler curve (0.9 vs 0.8) for smoother transitions
+                                    t_eff = torch.pow(t, 0.9) if t.max() > 0 else t
                                     
-                                    noised_latents = (1.0 - t) * image_latents + t * noise
+                                    # Reduced Variance Stabilization (2% vs 5%) to minimize "boiling" jitter
+                                    noised_latents = (1.0 - t_eff) * image_latents + (t_eff * 1.02) * noise
                                     
-                                    # SOFT Variance Correction
-                                    # target_std = sqrt(std_natural) to stay balanced.
-                                    var_natural = (1.0 - t)**2 + t**2
-                                    target_std = var_natural**0.25 
-                                    current_std = var_natural**0.5
-                                    noised_latents = noised_latents * (target_std / (current_std + 1e-6))
+                                    logging.info(f"   🧪 [DEBUG] Adaptive Refinement: t_eff={t_eff.mean().item():.3f}, G={effective_guidance:.2f}")
+                                    
+                                    # SOFT Variance Correction (DISABLED: Causes cumulative blow-up in sequential mode)
+                                    # var_natural = (1.0 - t)**2 + t**2
+                                    # target_std = var_natural**0.25 
+                                    # current_std = var_natural**0.5
+                                    # noised_latents = noised_latents * (target_std / (current_std + 1e-6))
                                     
                                     # Pass noised latents directly — pipeline handles packing internally
                                     kwargs["latents"] = noised_latents
@@ -904,9 +913,9 @@ def generate_via_hf_endpoint(prompt, width=1024, height=1024, steps=28, guidance
         logging.error("❌ Missing HF_TOKEN for Cloud Flux.")
         return None
         
-    # Use standard Flux.1-dev via fal-ai provider (as used in LTX Cloud Director)
+    # Use standard Flux.2-dev via fal-ai provider (as used in LTX Cloud Director)
     # We ignore endpoint_url unless specifically passed, but default to the Repo ID.
-    model_id = "black-forest-labs/FLUX.1-dev"
+    model_id = "black-forest-labs/FLUX.2-dev"
     if endpoint_url and "http" not in endpoint_url:
          # If user passed a model ID as endpoint_url
          model_id = endpoint_url

@@ -1,4 +1,4 @@
-# XMVP API Reference v3.111few bugfixes for flux via fal.aifew bugfixes for flux via fal.ai
+# XMVP API Reference v3.112few bugfixes for flux via fal.aifew bugfixes for flux via fal.ai
 ## Complete Command-Line Interface Documentation
 
 ---

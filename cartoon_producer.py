@@ -827,6 +827,11 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
         genai = None
         types = None
         
+    try:
+        from truth_safety import TruthSafety
+    except ImportError:
+        TruthSafety = None
+        
     if model is None:
         model = get_active_model(Modality.IMAGE).name # String name from Registry
 
@@ -974,9 +979,12 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                                 director_response = client.models.generate_content(model="gemini-2.0-flash", contents=director_contents)
                                 if director_response.text:
                                     # Truth & Safety check via local
-                                    from truth_safety import TruthSafety
-                                    ts = TruthSafety()
-                                    refined_prompt = ts.refine_prompt(director_response.text, context_dict={"Role": "Director Output"}, pg_mode=pg_mode)
+                                    if TruthSafety:
+                                        ts = TruthSafety()
+                                        refined_prompt = ts.refine_prompt(director_response.text, context_dict={"Role": "Director Output"}, pg_mode=pg_mode)
+                                    else:
+                                        refined_prompt = director_response.text
+                                        
                                     refusal_patterns = ["sorry", "cannot", "can't", "policy", "black void"]
                                     if not any(p in refined_prompt.lower() for p in refusal_patterns):
                                         visual_desc = refined_prompt
@@ -1132,8 +1140,12 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                         director_response = client.models.generate_content(model="gemini-2.0-flash", contents=director_contents)
                         if director_response.text:
                             # Truth & Safety
-                            ts = TruthSafety()
-                            refined_prompt = ts.refine_prompt(director_response.text, context_dict={"Role": "Director Output"}, pg_mode=pg_mode)
+                            if TruthSafety:
+                                ts = TruthSafety()
+                                refined_prompt = ts.refine_prompt(director_response.text, context_dict={"Role": "Director Output"}, pg_mode=pg_mode)
+                            else:
+                                refined_prompt = director_response.text
+                                
                             refusal_patterns = ["sorry", "cannot", "can't", "policy", "black void"]
                             if any(p in refined_prompt.lower() for p in refusal_patterns):
                                 refined_prompt = prompt
@@ -1186,26 +1198,23 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                     img_response = client.models.generate_content(
                         model=render_model,
                         contents=render_contents,
-                        config=types.GenerateContentConfig(
-                            response_modalities=['IMAGE'],
-                            image_config=types.ImageConfig(aspect_ratio=aspect_ratio, image_size="1K")
-                        )
+                        config=types.GenerateContentConfig()
                     )
                     
-                    for part in img_response.parts:
-                        image_data = None
-                        if part.inline_data:
-                            image_data = part.inline_data.data
-                        elif image_wrapper := part.as_image():
-                            # Depending on SDK version, part.as_image() might return an image or a wrapper
-                            image_data = getattr(image_wrapper, 'data', None)
-                        
-                        if image_data:
-                            image = Image.open(io.BytesIO(image_data)).convert("RGB")
-                            if image.size != (width, height):
-                                image = image.resize((width, height), Image.Resampling.LANCZOS)
-                            image.save(target_path)
-                            return True
+                    if img_response and img_response.candidates and img_response.candidates[0].content.parts:
+                        for part in img_response.candidates[0].content.parts:
+                            image_data = None
+                            if hasattr(part, 'inline_data') and part.inline_data:
+                                image_data = part.inline_data.data
+                            elif hasattr(part, 'inlineData') and part.inlineData:
+                                image_data = part.inlineData.data
+                            
+                            if image_data:
+                                image = Image.open(io.BytesIO(image_data)).convert("RGB")
+                                if image.size != (width, height):
+                                    image = image.resize((width, height), Image.Resampling.LANCZOS)
+                                image.save(target_path)
+                                return True
                     
                 elif is_imagen:
                     # --- IMAGEN PASS (generate_images) ---

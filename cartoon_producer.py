@@ -820,6 +820,13 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
     """
     Worker function using Universal Backend (Flux Local or Gemini/Imagen Cloud).
     """
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError:
+        genai = None
+        types = None
+        
     if model is None:
         model = get_active_model(Modality.IMAGE).name # String name from Registry
 
@@ -932,10 +939,8 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                     if key_cycle:
                         try:
                             current_key = next(key_cycle)
-                            if current_key and current_key != "DUMMY":
+                            if current_key and current_key != "DUMMY" and genai is not None:
                                 logging.info("   🧠 Local Inference Director (delegating to Gemini 2.0 Flash Vision)...")
-                                from google import genai
-                                from google.genai import types
                                 client = genai.Client(api_key=current_key)
                                 
                                 director_prompt = f"""
@@ -2826,7 +2831,9 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         else:
             # Seed Consistency
             project_seed = args.seed if hasattr(args, "seed") and args.seed is not None else 42
-            frame_seed = project_seed + i
+            # For Flux Img2Img, a locked static seed is dramatically better for coherence.
+            # Only increment for non-img2img styles or if explicitly requested.
+            frame_seed = project_seed if args.local else (project_seed + i)
 
             # STANDARD GENERATION (Gemini/Imagen/Universal)
             # DIRECTOR ENFORCEMENT: Enable director by default for creative music modes

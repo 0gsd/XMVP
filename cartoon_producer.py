@@ -816,7 +816,7 @@ def blend_videos(base_video, overlay_video, output_path, opacity=0.33):
         
     return None
 
-def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=None, prev_frame_path=None, pg_mode=False, force_local=False, strength=0.65, use_director=True, seed=None, source_img_path=None):
+def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=None, prev_frame_path=None, pg_mode=False, force_local=False, strength=0.65, use_director=True, seed=None, source_img_path=None, prev_action_prompt=None):
     """
     Worker function using Universal Backend (Flux Local or Gemini/Imagen Cloud).
     """
@@ -943,9 +943,12 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                                 else:
                                     ctx += "Describe clear progressive motion and action changes. "
                                     
+                                if prev_action_prompt:
+                                    ctx += f"The PREVIOUS action/beat was: '{prev_action_prompt}'. Ensure sequential continuity from it! "
+                                    
                             director_instruction = (
                                 f"You are a Lead Animator directing frame-by-frame animation. {ctx}\n"
-                                f"Action: '{prompt}'.\n"
+                                f"CURRENT Action: '{prompt}'.\n"
                                 "Task: Output a dense, 20-40 word visual description for the renderer. "
                                 "Focus on character poses, lighting, composition, and motion. "
                                 "Show PROGRESSIVE MOVEMENT and action — each frame should advance the scene. "
@@ -2788,7 +2791,8 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 force_local=args.local,
                 strength=getattr(args, "strength", 70 if args.local else 50) / 100.0,
                 use_director=not force_raw,
-                seed=frame_seed
+                seed=frame_seed,
+                prev_action_prompt=prompts[i-1] if i > 0 else None
             )
             
             if success:

@@ -213,7 +213,7 @@ def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration, bpm=No
             clean_s = re.sub(r"\(Frame \d+/\d+\)", "", prompt_start).strip()
             scold_s = f"{clean_s} {ANI_INSTRUCTION} --no text --no letters --no watermarks"
             logging.info(f"      🖼️  KF Start: {clean_s[:30]}...")
-            img = flux_bridge.generate(prompt=scold_s, width=args.w, height=args.h, steps=12)
+            img = flux_bridge.generate(prompt=scold_s, width=args.w, height=args.h, steps=28)
             if img: img.save(kf_start_path)
             
         # Generate End Keyframe
@@ -223,7 +223,7 @@ def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration, bpm=No
             # Optimization: If Start/End prompts are identical (static shot), maybe Flux varies it slightly?
             # Yes, Flux seed is random. So it will look like "Time passing".
             logging.info(f"      🖼️  KF End:   {clean_e[:30]}...")
-            img = flux_bridge.generate(prompt=scold_e, width=args.w, height=args.h, steps=12)
+            img = flux_bridge.generate(prompt=scold_e, width=args.w, height=args.h, steps=28)
             if img: img.save(kf_end_path)
             
         shot_assets.append({
@@ -1006,7 +1006,7 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                 frame_seed = seed if seed is not None else 42
                 
                 # Use passed strength argument (default 0.65 from signature)
-                img = bridge.generate(prompt=final_prompt, width=width, height=height, steps=12, image=img_input, strength=strength, seed=frame_seed)
+                img = bridge.generate(prompt=final_prompt, width=width, height=height, steps=28, image=img_input, strength=strength, seed=frame_seed)
                 
                 if img:
                     # Save (No resize needed if generated at target)
@@ -1825,7 +1825,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                     width=target_w,
                     height=target_h,
                     force_local=False,
-                    strength=getattr(args, 'strength', 50) / 100.0,
+                    strength=args.strength / 100.0 if args.strength != 50 else (0.70 if args.local else 0.50),
                     use_director=False # Direct redraw usually doesn't need a separate director pass
                 )
                 if success:
@@ -2525,7 +2525,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                  bridge = get_flux_bridge(img_conf.path)
                  
                  if bridge:
-                      actual_strength = getattr(args, "strength", 70) / 100.0
+                      actual_strength = args.strength / 100.0 if args.strength != 50 else 0.70
                       logging.info(f"   ✨ Flux Img2Img: {out_p.name} (Str: {actual_strength:.2f})...")
                       # Use a lower strength to preserve the "morph" but add details
                       # Seed Locking: Use consistent seed (42) for stability
@@ -2789,7 +2789,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 width=args.w if args.w else (args.kid if not args.local else 768),
                 height=args.h if args.h else (args.kid if not args.local else 768),
                 force_local=args.local,
-                strength=getattr(args, "strength", 70 if args.local else 50) / 100.0,
+                strength=args.strength / 100.0 if args.strength != 50 else (0.70 if args.local else 0.50),
                 use_director=not force_raw,
                 seed=frame_seed,
                 prev_action_prompt=prompts[i-1] if i > 0 else None

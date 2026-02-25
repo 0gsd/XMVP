@@ -70,7 +70,7 @@ MODAL_REGISTRY: Dict[Modality, Dict[str, ModelConfig]] = {
         "imagen-3": ModelConfig("imagen-3.0-generate-001", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
         "flux-schnell": ModelConfig("flux-schnell", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root"),
         "flux-klein": ModelConfig("flux-klein", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root/klein-9b"),
-        "flux-dev": ModelConfig("flux-dev", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root/dev"),
+        "flux-dev": ModelConfig("flux-dev", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root/dev", api_key_env="FAL_KEY"),
         "flux-2-dev-hf": ModelConfig("flux-2-dev-hf", BackendType.CLOUD, Modality.IMAGE, endpoint="env:FLUX_DEV_ENDPOINT", api_key_env="HF_TOKEN"),
         "colorize-diffusion": ModelConfig("colorize-diffusion", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/colorize-diffusion-root")
     },

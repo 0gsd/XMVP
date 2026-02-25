@@ -16,3 +16,6 @@ HF_TOKEN: "hf_YOUR_TOKEN_HERE"
 
 ACTION_KEYS_LIST: "AIzaTheFirstKey,AIzaTheSecondKey,AIzaTheBackupKey"
 TEXT_KEYS_LIST: "AIzaTheTextKey1,AIzaTheTextKey2" # For Text Quota Fallback
+
+# --- FAL API (Flux Dev) ---
+FAL_KEY: "YOUR_FAL_KEY_HERE"

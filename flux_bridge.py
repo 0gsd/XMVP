@@ -1,863 +1,210 @@
 #!/usr/bin/env python3
 import os
-import torch
+import io
+import base64
 import logging
-from diffusers import FluxPipeline, FluxImg2ImgPipeline, DiffusionPipeline
-from transformers import CLIPTextModel, T5EncoderModel, CLIPTokenizer, T5TokenizerFast
 from PIL import Image
-try:
-    from huggingface_hub import InferenceClient
-except ImportError:
-    InferenceClient = None # Handle optional dependency
+import requests
 
 try:
-    from stable_diffusion_cpp import StableDiffusion
+    import fal_client
 except ImportError:
-    StableDiffusion = None
+    fal_client = None
 
 logging.basicConfig(level=logging.INFO)
 
-def _make_multiple_of_16(val: int) -> int:
-    """Rounds an integer to the nearest multiple of 16 to prevent Flux VAE tensor size mismatch on MPS."""
-    return int(round(val / 16.0)) * 16
+# --- UTILS ---
+def load_fal_key():
+    key = os.environ.get("FAL_KEY")
+    if key: return key
+    
+    # Try finding env_vars.yaml centrally
+    from pathlib import Path
+    import yaml
+    
+    # tools/fmv/env_vars.yaml (Central)
+    central = Path(__file__).resolve().parent.parent.parent / "env_vars.yaml"
+    local = Path(__file__).resolve().parent / "env_vars.yaml"
+    
+    for p in [central, local]:
+        if p.exists():
+            try:
+                with open(p, "r") as f:
+                    data = yaml.safe_load(f)
+                    if data and "FAL_KEY" in data:
+                        # Set to environ so fal_client picks it up automatically
+                        val = data["FAL_KEY"]
+                        os.environ["FAL_KEY"] = val
+                        return val
+            except Exception as e:
+                pass
+    return None
 
+def pil_to_base64_uri(img, format="JPEG"):
+    buffered = io.BytesIO()
+    # Convert RGBA to RGB if saving as JPEG
+    if format == "JPEG" and img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    img.save(buffered, format=format, quality=95)
+    b64 = base64.b64encode(buffered.getvalue()).decode()
+    return f"data:image/{format.lower()};base64,{b64}"
+
+def download_image(url: str) -> Image.Image:
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    return Image.open(io.BytesIO(response.content)).convert("RGB")
+
+def _make_multiple_of_16(val: int) -> int:
+    return int(round(val / 16.0)) * 16
 
 class FluxBridge:
     def __init__(self, model_path, device="mps"):
         self.model_path = model_path
         self.device = device
-        self.pipeline = None
-        self.img2img_pipeline = None
-        self.sdcpp_pipeline = None
-        self.is_gguf = False
+        self.is_gguf = False # Legacy compat
         
-        # Check availability
-        if device == "mps" and not torch.backends.mps.is_available():
-            logging.warning("⚠️ MPS not available. Falling back to CPU (Slow!).")
-            self.device = "cpu"
+        load_fal_key()
+        if not fal_client:
+            logging.warning("⚠️ fal_client not installed! pip install fal-client is required for Flux API.")
+        if not os.environ.get("FAL_KEY") or os.environ.get("FAL_KEY") == "YOUR_FAL_KEY_HERE":
+            logging.warning("⚠️ FAL_KEY not found or default in env_vars.yaml. API calls will fail.")
             
-        self.load_pipeline(model_path)
-
-    def load_pipeline(self, model_path):
-        logging.info(f"   🌊 Loading Flux Pipeline from: {model_path}...")
-        
-        try:
-            # Check if directory or file
-            is_diffusers_dir = False
-            self.is_gguf = False
-            
-            # GGUF DETECTION (Comprehensive check)
-            if model_path.endswith(".gguf") or "flux-gguf" in model_path.lower():
-                if model_path.endswith(".gguf"):
-                    self.is_gguf = True
-                elif os.path.isdir(model_path):
-                     # Look for .gguf files inside
-                     for f in os.listdir(model_path):
-                          if f.endswith(".gguf"):
-                               model_path = os.path.join(model_path, f)
-                               self.is_gguf = True
-                               break
-                else:
-                    # Path contains flux-gguf but is not a dir and doesn't end in .gguf? 
-                    # Probably a file without extension or a symlink.
-                    self.is_gguf = True
-            
-            if not self.is_gguf and os.path.isdir(model_path):
-                 if os.path.exists(os.path.join(model_path, "model_index.json")):
-                      is_diffusers_dir = True
-                 else:
-                      logging.warning(f"   ⚠️ Directory found but no GGUF signature or model_index.json. Looking for safetensors in {model_path}...")
-                      # Find first .safetensors file
-                      for f in os.listdir(model_path):
-                           if f.endswith(".safetensors"):
-                                model_path = os.path.join(model_path, f)
-                                logging.info(f"      -> Found single file: {f}")
-                                break
-
-            if self.is_gguf:
-                if StableDiffusion is None:
-                    logging.error("   ❌ stable-diffusion-cpp-python not installed. Cannot load GGUF. Falling back to Diffusers...")
-                    self.is_gguf = False # Fall back
-                else:
-                    logging.info(f"   🚀 GGUF Mode Detected. Loading Flux GGUF Engine (SDCPP) from: {model_path}...")
-                    
-                    # We need to find the T5 GGUF and VAE if possible
-                    t5_path = ""
-                    vae_path = ""
-                    clip_path = ""
-                    
-                    # Try to find buddies in same dir
-                    parent_dir = os.path.dirname(model_path)
-                    for f in os.listdir(parent_dir):
-                        f_low = f.lower()
-                        if "t5" in f_low and f.endswith(".gguf") and "t5xxl" not in f_low.replace("-","").replace("_",""):
-                            # Match t5-v1_1-xxl-encoder style names
-                            if not t5_path:  # Don't overwrite if already found
-                                t5_path = os.path.join(parent_dir, f)
-                        elif "t5xxl" in f_low and f.endswith(".gguf"):
-                            # Exact t5xxl match takes highest priority
-                            t5_path = os.path.join(parent_dir, f)
-                        elif (f_low.startswith("t5") or "t5-v1" in f_low) and f.endswith(".gguf"):
-                            # Any T5 variant
-                            if not t5_path:
-                                t5_path = os.path.join(parent_dir, f)
-                        elif ("vae" in f_low or f_low == "ae.safetensors" or f_low == "ae.gguf") and (f.endswith(".safetensors") or f.endswith(".gguf")):
-                            vae_path = os.path.join(parent_dir, f)
-                        elif "clip_l" in f_low and (f.endswith(".safetensors") or f.endswith(".gguf")):
-                            clip_path = os.path.join(parent_dir, f)
-
-                    logging.info(f"      🧩 Components: ENC_2={os.path.basename(t5_path) if t5_path else 'MISSING'}, VAE={os.path.basename(vae_path) if vae_path else 'MISSING'}, CLIP={os.path.basename(clip_path) if clip_path else 'MISSING'}")
-
-                    # Initialize SDCPP
-                    try:
-                        self.sdcpp_pipeline = StableDiffusion(
-                            model_path=model_path,
-                            t5xxl_path=t5_path,
-                            vae_path=vae_path,
-                            clip_l_path=clip_path,
-                            wtype="default", 
-                            n_threads=os.cpu_count() or 4
-                        )
-                        logging.info("   ✅ Flux GGUF Engine Ready.")
-                        return
-                    except Exception as e_gguf:
-                        logging.error(f"   ❌ GGUF Initialization Failed: {e_gguf}. Falling back to Diffusers...")
-                        self.is_gguf = False
-                        # Continue to diffusers fallback
-
-            if is_diffusers_dir:
-                # Auto-Load (Generic) for directories (Handles Flux.2 Klein, etc.)
-                # This uses model_index.json to determine the class (e.g. Flux2KleinPipeline)
-                logging.info(f"      ✨ Using Auto-Loader (DiffusionPipeline) for {model_path}...")
-                self.pipeline = DiffusionPipeline.from_pretrained(
-                    model_path,
-                    torch_dtype=torch.bfloat16, # bfloat16 for MPS stability (float16 causes garbled output on Apple Silicon)
-                    trust_remote_code=True # Needed for custom pipelines like Klein
-                )
-            else:
-                # Single File Loader (Needs explicit encoders usually if not in file)
-                # Attempt 1: Try default loading (might fail if weights missing)
-                try:
-                    self.pipeline = FluxPipeline.from_single_file(
-                        model_path,
-                        torch_dtype=torch.bfloat16
-                    )
-                except Exception as e:
-                    if "CLIPTextModel" in str(e) or "text_encoder" in str(e):
-                        logging.warning("   ⚠️ Flux Single File missing Encoders. Loading from Local/Hub...")
-                        
-                        # 1. CLIP (Standard Hub)
-                        text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=torch.bfloat16)
-                        tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
-                        
-                        # 2. T5 (Local Preference -> Hub Fallback)
-                        t5_local_path = "/Volumes/XMVPX/mw/t5weights-root"
-                        if os.path.exists(t5_local_path):
-                            logging.info(f"      📚 Loading T5 from Local Cache: {t5_local_path}")
-                            text_encoder_2 = T5EncoderModel.from_pretrained(t5_local_path, torch_dtype=torch.bfloat16)
-                            tokenizer_2 = T5TokenizerFast.from_pretrained(t5_local_path) 
-                        else:
-                            logging.warning("      ☁️ Local T5 not found. Downloading from Hub (city96/t5-v1_1-xxl-encoder-bf16)...")
-                            text_encoder_2 = T5EncoderModel.from_pretrained("city96/t5-v1_1-xxl-encoder-bf16", torch_dtype=torch.bfloat16)
-                            tokenizer_2 = T5TokenizerFast.from_pretrained("city96/t5-v1_1-xxl-encoder-bf16")
-                        
-                        self.pipeline = FluxPipeline.from_single_file(
-                            model_path,
-                            text_encoder=text_encoder,
-                            tokenizer=tokenizer,
-                            text_encoder_2=text_encoder_2,
-                            tokenizer_2=tokenizer_2,
-                            torch_dtype=torch.bfloat16
-                        )
-                    else:
-                        raise e
-
-            # Optimization for Mac (MPS)
-            if self.device == "mps" and self.pipeline:
-                logging.info("   ⚡ Stability Protocol: Component-Level MPS + VAE-on-CPU...")
-                
-                # Slicing reduces memory spikes during VAE operations
-                self.pipeline.enable_attention_slicing("max")
-                if hasattr(self.pipeline, 'enable_vae_slicing'):
-                    self.pipeline.enable_vae_slicing()
-                if hasattr(self.pipeline, 'enable_vae_tiling'):
-                    self.pipeline.enable_vae_tiling()
-                
-                # COMPONENT-LEVEL PLACEMENT:
-                if hasattr(self.pipeline, 'transformer') and self.pipeline.transformer:
-                    self.pipeline.transformer.to(self.device)
-                    logging.info(f"      ➡️  transformer → {self.device}")
-                
-                for comp_name in ['text_encoder', 'text_encoder_2', 'vae']:
-                    comp = getattr(self.pipeline, comp_name, None)
-                    if comp is not None:
-                        dtype = torch.float32 if comp_name == 'vae' else torch.float16
-                        comp.to(device="cpu", dtype=dtype)
-                        logging.info(f"      🧊 {comp_name} → CPU ({dtype})")
-                
-                # CRITICAL: Override _execution_device to return MPS.
-                # The default implementation checks the first nn.Module component,
-                # which is now text_encoder on CPU. This would make __call__ create
-                # ALL tensors (guidance, timesteps, etc.) on CPU, but the transformer
-                # expects MPS. Force it to return the correct compute device.
-                _target_device = torch.device(self.device)
-                # For some pipeline classes, _execution_device is a property.
-                # We need to set it on the class or use a simpler override:
-                type(self.pipeline)._execution_device = property(lambda s, d=_target_device: d)
-                logging.info(f"      🎯 _execution_device overridden → {self.device}")
-                
-                # CRITICAL PATCHES: Monkey-patch internal pipeline methods to be device-aware.
-                # encode_prompt is called with keyword args, so kwargs patch works.
-                if hasattr(self.pipeline, 'encode_prompt'):
-                    _orig_encode_prompt = self.pipeline.encode_prompt
-                    _mps_device = self.device
-                    def _safe_encode_prompt(*args, **kwargs):
-                        target_device = kwargs.get('device', _mps_device)
-                        kwargs['device'] = torch.device('cpu')
-                        out = _orig_encode_prompt(*args, **kwargs)
-                        return tuple(t.to(target_device) if isinstance(t, torch.Tensor) else t for t in out)
-                    self.pipeline.encode_prompt = _safe_encode_prompt
-
-                # prepare_latents is called with ALL POSITIONAL ARGS inside __call__.
-                # The position of 'device' varies by pipeline type:
-                #   FluxPipeline (T2I):     device is arg index 5
-                #   FluxImg2ImgPipeline:    device is arg index 7
-                # Use inspect to find the correct index dynamically.
-                if hasattr(self.pipeline, 'prepare_latents'):
-                    import inspect
-                    _orig_prep = self.pipeline.prepare_latents
-                    _prep_params = list(inspect.signature(_orig_prep).parameters.keys())
-                    _device_idx = _prep_params.index('device') if 'device' in _prep_params else -1
-                    logging.info(f"      🔧 prepare_latents: 'device' at positional index {_device_idx}")
-                    
-                    def _safe_prepare_latents(*args, _didx=_device_idx, **kwargs):
-                        target_device = None
-                        if 'device' in kwargs:
-                            target_device = kwargs['device']
-                            kwargs['device'] = torch.device('cpu')
-                        elif _didx >= 0 and len(args) > _didx:
-                            args = list(args)
-                            target_device = args[_didx]
-                            args[_didx] = torch.device('cpu')
-                        
-                        result = _orig_prep(*args, **kwargs)
-                        if target_device is not None:
-                            if isinstance(result, tuple):
-                                return tuple(t.to(target_device) if isinstance(t, torch.Tensor) else t for t in result)
-                            return result.to(target_device) if isinstance(result, torch.Tensor) else result
-                        return result
-                    self.pipeline.prepare_latents = _safe_prepare_latents
-
-                if hasattr(self.pipeline, 'prepare_image_latents'):
-                    import inspect
-                    _orig_prep_img = self.pipeline.prepare_image_latents
-                    _prep_img_params = list(inspect.signature(_orig_prep_img).parameters.keys())
-                    _device_idx_img = _prep_img_params.index('device') if 'device' in _prep_img_params else -1
-                    logging.info(f"      🔧 prepare_image_latents: 'device' at positional index {_device_idx_img}")
-                    
-                    def _safe_prepare_image_latents(*args, _didx=_device_idx_img, **kwargs):
-                        target_device = None
-                        if 'device' in kwargs:
-                            target_device = kwargs['device']
-                            kwargs['device'] = torch.device('cpu')
-                        elif _didx >= 0 and len(args) > _didx:
-                            args = list(args)
-                            target_device = args[_didx]
-                            args[_didx] = torch.device('cpu')
-                            
-                        result = _orig_prep_img(*args, **kwargs)
-                        if target_device is not None:
-                            if isinstance(result, tuple):
-                                return tuple(t.to(target_device) if isinstance(t, torch.Tensor) else t for t in result)
-                            return result.to(target_device) if isinstance(result, torch.Tensor) else result
-                        return result
-                    self.pipeline.prepare_image_latents = _safe_prepare_image_latents
-
-                # VAE decode AND encode wrappers (both needed for cross-device safety)
-                if hasattr(self.pipeline, 'vae') and self.pipeline.vae:
-                    _orig_decode = self.pipeline.vae.decode
-                    _orig_vae_encode = self.pipeline.vae.encode
-                    def _cpu_safe_decode(z, *args, **kwargs):
-                        if isinstance(z, torch.Tensor):
-                            z = z.to(device="cpu", dtype=torch.float32)
-                        return _orig_decode(z, *args, **kwargs)
-                    def _cpu_safe_encode(x, *args, **kwargs):
-                        if isinstance(x, torch.Tensor):
-                            x = x.to(device="cpu", dtype=torch.float32)
-                        return _orig_vae_encode(x, *args, **kwargs)
-                    self.pipeline.vae.decode = _cpu_safe_decode
-                    self.pipeline.vae.encode = _cpu_safe_encode
-
-                logging.info("   ✅ Stability Protocol Applied: Cross-Device Wrappers Active.")
-                
-            logging.info("   ✅ Flux Pipeline Ready.")
-            
-        except Exception as e:
-            logging.error(f"   ❌ Failed to load Flux: {e}")
-            self.pipeline = None
+        logging.info(f"   ⚡ FluxBridge initialized for Cloud Inference via Fal.ai API.")
 
     def load_lora(self, lora_path, adapter_name="default", scale=1.0):
-        """Loads a LoRA adapter."""
-        if not self.pipeline: return False
-        
-        logging.info(f"   💉 Loading LoRA: {lora_path} (Scale: {scale})")
-        try:
-            self.pipeline.load_lora_weights(lora_path, adapter_name=adapter_name)
-            # FluxPipeline supports set_adapters or fuse_lora?
-            # Diffusers unified LoRA support:
-            self.pipeline.fuse_lora(lora_scale=scale) # Fuse for speed? Or keep separate?
-            # Note: fuse_lora merges weights. If we want to switch movies, we should unfuse first?
-            # For simplicity in this script (one run per movie), fusing is fine and faster.
-            logging.info("   ✅ LoRA Fused.")
-            return True
-        except Exception as e:
-            logging.error(f"   ❌ LoRA Load Failed: {e}")
-            return False
+        # Fal.ai supports LoRAs by passing loras=[{"path": url, "scale": scale}]
+        # But for 'local' files, would need upload logic. 
+        # For our main pipeline, we're not heavily using local LoRAs with Flux Dev yet.
+        logging.warning("   ⚠️ Local LoRA load requested but Fal.ai bridge currently ignores it. (Upload unsupported online yet)")
+        return False
 
-    def generate(self, prompt, width=1024, height=1024, steps=4, seed=None, guidance_scale=3.5, image=None, strength=0.5):
-        """
-        Unified generation method.
-        If 'image' is provided, performs Img2Img.
-        Otherwise, performs Text2Image.
-        """
-        if self.is_gguf and self.sdcpp_pipeline:
-            logging.info(f"   🎨 Flux GGUF (SDCPP) Generating: {prompt[:40]}... ({width}x{height}, {steps} steps)")
-            
-            # SDCPP uses generate_image() for both txt2img and img2img
-            # If image is provided, pass as init_image for img2img
-            init_img = None
-            img_strength = 0.75
-            if image is not None:
-                init_img = image if isinstance(image, Image.Image) else Image.open(image).convert("RGB")
-                img_strength = strength
-            
-            results = self.sdcpp_pipeline.generate_image(
-                prompt=prompt,
-                width=width,
-                height=height,
-                sample_steps=steps,
-                seed=seed if seed is not None else -1,
-                guidance=guidance_scale,
-                init_image=init_img,
-                strength=img_strength
-            )
-            
-            if results and len(results) > 0:
-                return results[0]  # Returns list of PIL Images
-            return None
-
+    def generate(self, prompt, width=1024, height=1024, steps=28, seed=None, guidance_scale=3.5, image=None, strength=0.5):
         if image is not None:
-             # Route to Img2Img
-             if not self.img2img_pipeline:
-                 self.load_img2img()
-                 
-             if self.img2img_pipeline:
-                 return self.generate_img2img(prompt, image, strength=strength, width=width, height=height, steps=steps, seed=seed, guidance_scale=guidance_scale)
-             else:
-                 # Fallback to T2I (Graceful degradation for Single Model Mode)
-                 logging.warning("   ⚠️ Img2Img requested but Pipeline not ready. Falling back to Text-to-Image (ignoring input image).")
-                 # proceed to T2I block below...
-
-        if not self.pipeline:
-            self.load_pipeline(self.model_path)
-            # logging.error("   ❌ Flux Pipeline not initialized.")
-            # return None
-            
-        logging.info(f"   🎨 Flux Generating: {prompt[:40]}... ({width}x{height}, {steps} steps, G:{guidance_scale})")
+             return self.generate_img2img(
+                 prompt=prompt, image=image, strength=strength, 
+                 width=width, height=height, steps=steps, 
+                 seed=seed, guidance_scale=guidance_scale
+             )
+             
+        # TEXT TO IMAGE
+        logging.info(f"   ☁️  Flux T2I (Fal.ai): {prompt[:40]}... ({width}x{height}, {steps} steps, G:{guidance_scale})")
+        if not fal_client: return None
         
-        # Memory Cleanup (Critical for Loop Stability)
-        import gc
-        gc.collect()
-        if self.device == "mps":
-            torch.mps.empty_cache()
+        fixed_width = _make_multiple_of_16(width)
+        fixed_height = _make_multiple_of_16(height)
         
-        generator = None
+        args = {
+            "prompt": prompt,
+            "image_size": {
+                "width": fixed_width,
+                "height": fixed_height
+            },
+            "num_inference_steps": steps,
+            "guidance_scale": guidance_scale,
+            # "enable_safety_checker": False # Optional depending on endpoint
+        }
         if seed is not None:
-            generator = torch.Generator(device="cpu").manual_seed(seed) # MPS generators tricky? Use CPU for determinism if needed
-            
-        # Prompt Sanitization & Truncation (Fix for CLIP 77 token limit)
-        # Flux uses T5 (512 tokens) and CLIP (77 tokens). Diffusers usually masks the excess,
-        # but explicit truncation avoids "Batch size mismatch" or tokenizer warnings.
-        # We target ~70 words / 300 chars to be safe.
-        safe_prompt = prompt
-        if len(prompt) > 1024:
-            logging.warning(f"   ✂️ Truncating long prompt ({len(prompt)} chars).")
-            safe_prompt = prompt[:1024]
+            args["seed"] = seed
             
         try:
-            with torch.inference_mode():
-                image_obj = self.pipeline(
-                    prompt=safe_prompt,
-                    height=height,
-                    width=width,
-                    num_inference_steps=steps,
-                    generator=generator,
-                    guidance_scale=guidance_scale # Configurable
-                )
-            image = image_obj.images[0]
-            del image_obj
-            
-            # Post-Gen Cleanup
-            import gc
-            gc.collect() 
-            if self.device == "mps":
-                torch.mps.empty_cache()
-                
-            return image
-        except Exception as e:
-            logging.error(f"   ❌ Flux Generation Error: {e}")
-            return None
-
-    def load_img2img(self):
-        """Lazy loads the Img2Img pipeline, reusing components if possible."""
-        if self.img2img_pipeline: return
-
-        logging.info("   🔄 Loading Flux Img2Img Pipeline...")
-        
-        try:
-            from diffusers import FluxImg2ImgPipeline
-            import inspect
-
-            # 1. Primary Check: Reuse pipeline directly if it already supports Img2Img natively
-            if self.pipeline:
-                call_args = inspect.signature(self.pipeline.__call__).parameters
-                if "image" in call_args and "strength" in call_args:
-                    logging.info("   ✨ Pipeline natively supports image+strength. Reusing directly.")
-                    self.img2img_pipeline = self.pipeline
-                elif "image" in call_args:
-                    logging.info("   ✨ Pipeline natively supports image (no strength). Reusing directly.")
-                    self.img2img_pipeline = self.pipeline
-
-            # 2. Component Casting (Fallback if not natively supported)
-            if not self.img2img_pipeline and self.pipeline:
-                try:
-                    from diffusers import FluxImg2ImgPipeline
-                    pipe_cls = self.pipeline.__class__.__name__
-                    logging.info(f"   🔧 Casting {pipe_cls} → FluxImg2ImgPipeline (Shared Components)...")
-                    
-                    comps = self.pipeline.components
-                    logging.info(f"   📦 Components available: {list(comps.keys())}")
-                    
-                    if "text_encoder_2" not in comps or "tokenizer_2" not in comps:
-                        logging.info("   📚 Injecting T5 encoder/tokenizer for Img2Img compatibility...")
-                        t5_local_path = "/Volumes/XMVPX/mw/t5weights-root"
-                        if os.path.exists(t5_local_path):
-                            logging.info(f"      📚 Loading T5 from Local: {t5_local_path}")
-                            comps["text_encoder_2"] = T5EncoderModel.from_pretrained(t5_local_path, torch_dtype=torch.float16)
-                            comps["tokenizer_2"] = T5TokenizerFast.from_pretrained(t5_local_path)
-                        else:
-                            logging.info("      ☁️ Loading T5 from Hub (city96/t5-v1_1-xxl-encoder-bf16)...")
-                            comps["text_encoder_2"] = T5EncoderModel.from_pretrained("city96/t5-v1_1-xxl-encoder-bf16", torch_dtype=torch.float16)
-                            comps["tokenizer_2"] = T5TokenizerFast.from_pretrained("city96/t5-v1_1-xxl-encoder-bf16")
-                    
-                    for opt_key in ["image_encoder", "feature_extractor"]:
-                        if opt_key not in comps:
-                            comps[opt_key] = None
-                    
-                    self.img2img_pipeline = FluxImg2ImgPipeline(**comps)
-                    
-                    cast_args = inspect.signature(self.img2img_pipeline.__call__).parameters
-                    has_strength = "strength" in cast_args
-                    has_denoising = "denoising_start" in cast_args
-                    logging.info(f"   ✅ Flux Img2Img Ready (Shared Components). strength={has_strength}, denoising_start={has_denoising}")
-                except Exception as e:
-                    logging.warning(f"   ⚠️ Cannot cast to FluxImg2ImgPipeline: {type(e).__name__}: {e}")
-                    self.img2img_pipeline = None
-
-            # 3. Independent Load (Last Resort)
-            if not self.img2img_pipeline:
-                logging.info("   ⚠️ Component Casting failed. Attempting independent load of FluxImg2ImgPipeline...")
-                try:
-                    from diffusers import FluxImg2ImgPipeline
-                    self.img2img_pipeline = FluxImg2ImgPipeline.from_pretrained(
-                        self.model_path,
-                        torch_dtype=torch.float16,
-                        trust_remote_code=True
-                    )
-                    logging.info("   ✅ Flux Img2Img Loaded (Independent).")
-                except Exception as e_ind:
-                    logging.warning(f"   ⚠️ Independent Load Failed: {e_ind}")
-
-        except Exception as e:
-            logging.error(f"   ❌ Failed to load Flux Img2Img: {e}")
-            
-        if self.device == "mps" and self.img2img_pipeline and self.img2img_pipeline is not self.pipeline:
-             logging.info("   ⚡ Stability Protocol (Img2Img): Component-Level MPS + VAE-on-CPU...")
-             
-             # Slicing reduces memory spikes during VAE operations
-             self.img2img_pipeline.enable_attention_slicing("max")
-             if hasattr(self.img2img_pipeline, 'enable_vae_slicing'):
-                 self.img2img_pipeline.enable_vae_slicing()
-             if hasattr(self.img2img_pipeline, 'enable_vae_tiling'):
-                 self.img2img_pipeline.enable_vae_tiling()
-
-             # COMPONENT-LEVEL PLACEMENT:
-             if hasattr(self.img2img_pipeline, 'transformer') and self.img2img_pipeline.transformer:
-                 self.img2img_pipeline.transformer.to(self.device)
-                 logging.info(f"      ➡️  transformer → {self.device}")
-             
-             for comp_name in ['text_encoder', 'text_encoder_2', 'vae']:
-                 comp = getattr(self.img2img_pipeline, comp_name, None)
-                 if comp is not None:
-                     dtype = torch.float32 if comp_name == 'vae' else torch.float16
-                     comp.to(device="cpu", dtype=dtype)
-                     logging.info(f"      🧊 {comp_name} → CPU ({dtype})")
-             
-             # Override _execution_device → MPS (same as load_pipeline)
-             _target_device = torch.device(self.device)
-             type(self.img2img_pipeline)._execution_device = property(lambda s, d=_target_device: d)
-             logging.info(f"      🎯 _execution_device overridden → {self.device}")
-             
-             # CRITICAL PATCHES
-             if hasattr(self.img2img_pipeline, 'encode_prompt'):
-                 _orig_encode_prompt = self.img2img_pipeline.encode_prompt
-                 _mps_device = self.device
-                 def _safe_encode_prompt(*args, **kwargs):
-                     target_device = kwargs.get('device', _mps_device)
-                     kwargs['device'] = torch.device('cpu')
-                     out = _orig_encode_prompt(*args, **kwargs)
-                     return tuple(t.to(target_device) if isinstance(t, torch.Tensor) else t for t in out)
-                 self.img2img_pipeline.encode_prompt = _safe_encode_prompt
-
-             # prepare_latents: device is positional arg, index varies by pipeline type
-             if hasattr(self.img2img_pipeline, 'prepare_latents'):
-                 import inspect
-                 _orig_prep = self.img2img_pipeline.prepare_latents
-                 _prep_params = list(inspect.signature(_orig_prep).parameters.keys())
-                 _device_idx = _prep_params.index('device') if 'device' in _prep_params else -1
-                 logging.info(f"      🔧 prepare_latents: 'device' at positional index {_device_idx}")
-                 
-                 def _safe_prepare_latents(*args, _didx=_device_idx, **kwargs):
-                     target_device = None
-                     if 'device' in kwargs:
-                         target_device = kwargs['device']
-                         kwargs['device'] = torch.device('cpu')
-                     elif _didx >= 0 and len(args) > _didx:
-                         args = list(args)
-                         target_device = args[_didx]
-                         args[_didx] = torch.device('cpu')
-                         
-                     result = _orig_prep(*args, **kwargs)
-                     if target_device is not None:
-                         if isinstance(result, tuple):
-                             return tuple(t.to(target_device) if isinstance(t, torch.Tensor) else t for t in result)
-                         return result.to(target_device) if isinstance(result, torch.Tensor) else result
-                     return result
-                 self.img2img_pipeline.prepare_latents = _safe_prepare_latents
-
-             if hasattr(self.img2img_pipeline, 'prepare_image_latents'):
-                 import inspect
-                 _orig_prep_img = self.img2img_pipeline.prepare_image_latents
-                 _prep_img_params = list(inspect.signature(_orig_prep_img).parameters.keys())
-                 _device_idx_img = _prep_img_params.index('device') if 'device' in _prep_img_params else -1
-                 logging.info(f"      🔧 prepare_image_latents: 'device' at positional index {_device_idx_img}")
-                 
-                 def _safe_prepare_image_latents(*args, _didx=_device_idx_img, **kwargs):
-                     target_device = None
-                     if 'device' in kwargs:
-                         target_device = kwargs['device']
-                         kwargs['device'] = torch.device('cpu')
-                     elif _didx >= 0 and len(args) > _didx:
-                         args = list(args)
-                         target_device = args[_didx]
-                         args[_didx] = torch.device('cpu')
-                         
-                     result = _orig_prep_img(*args, **kwargs)
-                     if target_device is not None:
-                         if isinstance(result, tuple):
-                             return tuple(t.to(target_device) if isinstance(t, torch.Tensor) else t for t in result)
-                         return result.to(target_device) if isinstance(result, torch.Tensor) else result
-                     return result
-                 self.img2img_pipeline.prepare_image_latents = _safe_prepare_image_latents
-
-             # VAE decode AND encode wrappers
-             if hasattr(self.img2img_pipeline, 'vae') and self.img2img_pipeline.vae:
-                 _orig_decode = self.img2img_pipeline.vae.decode
-                 _orig_vae_encode = self.img2img_pipeline.vae.encode
-                 def _cpu_safe_decode(z, *args, **kwargs):
-                     if isinstance(z, torch.Tensor):
-                         z = z.to(device="cpu", dtype=torch.float32)
-                     return _orig_decode(z, *args, **kwargs)
-                 def _cpu_safe_encode(x, *args, **kwargs):
-                     if isinstance(x, torch.Tensor):
-                         x = x.to(device="cpu", dtype=torch.float32)
-                     return _orig_vae_encode(x, *args, **kwargs)
-                 self.img2img_pipeline.vae.decode = _cpu_safe_decode
-                 self.img2img_pipeline.vae.encode = _cpu_safe_encode
-
-             logging.info("   ✅ Stability Protocol (Img2Img) Applied: Cross-Device Wrappers Active.")
-             
-    def generate_img2img(self, prompt, image, strength=0.5, width=1024, height=1024, steps=4, seed=None, guidance_scale=3.5, denoising_start=None):
-        if self.is_gguf and self.sdcpp_pipeline:
-            logging.info(f"   🎨 Flux GGUF (SDCPP) Img2Img: {prompt[:40]}... (Str: {strength:.2f}, {width}x{height})")
-            return self.sdcpp_pipeline.img2img(
-                init_image=image,
-                prompt=prompt,
-                width=width,
-                height=height,
-                sample_steps=steps,
-                strength=strength,
-                seed=seed if seed is not None else -1,
-                guidance_scale=guidance_scale
+            result = fal_client.subscribe(
+                "fal-ai/flux/dev",
+                arguments=args,
+                with_logs=False
             )
-
-        if not self.img2img_pipeline:
-            self.load_img2img()
-            
-        if not self.img2img_pipeline:
+            img_url = result.get('images', [{}])[0].get('url')
+            if img_url:
+                 return download_image(img_url)
             return None
-        
-        # Clamp strength to valid range
+        except Exception as e:
+            logging.error(f"   ❌ Fal.ai Generation Error: {e}")
+            return None
+
+    def generate_img2img(self, prompt, image, strength=0.5, width=1024, height=1024, steps=28, seed=None, guidance_scale=3.5, denoising_start=None):
+        logging.info(f"   ☁️  Flux Img2Img (Fal.ai): {prompt[:40]}... (Str: {strength:.2f}, {width}x{height}, G:{guidance_scale})")
+        if not fal_client: return None
+
+        fixed_width = _make_multiple_of_16(width)
+        fixed_height = _make_multiple_of_16(height)
+
+        # Handle PIL Image
+        if isinstance(image, Image.Image):
+             # Ensure dimensions match requested
+             if image.size != (fixed_width, fixed_height):
+                 image = image.resize((fixed_width, fixed_height), Image.Resampling.LANCZOS)
+             image_url = pil_to_base64_uri(image)
+        elif isinstance(image, str):
+             # Assume path or existing URL
+             if image.startswith("http") or image.startswith("data:"):
+                 image_url = image
+             else:
+                 img = Image.open(image).convert("RGB").resize((fixed_width, fixed_height), Image.Resampling.LANCZOS)
+                 image_url = pil_to_base64_uri(img)
+        else:
+            logging.error("   ❌ Invalid image type passed to generate_img2img.")
+            return None
+            
+        # Strength logic: Diffusers maps denoising_start to strength.
+        if denoising_start is not None:
+            strength = 1.0 - denoising_start
+
+        # FAL.AI FLUX DEV STRENGTH MAPPER
+        # The Fal.ai `flux/dev/image-to-image` endpoint has an extremely steep, non-linear strength curve.
+        # Any strength < 0.90 behaves like a rigid ControlNet, ignoring prompts to retain the exact image constraints.
+        # It only breaks free to allow "animation/redraw" between 0.93 and 0.98.
+        # To maintain compatibility with local Diffusers expectations (where 0.70 is standard animation):
+        # We remap the incoming 0.0->1.0 band into Fal's 0.85->1.0 band.
+        if strength < 0.90:
+             mapped_strength = 0.85 + (float(strength) * 0.15)
+             logging.info(f"   🧮 Mapped Fal.ai Strength: {strength:.2f} -> {mapped_strength:.3f} to unlock movement.")
+             strength = mapped_strength
+
+        # Fal expects strength > 0.0 effectively.
         strength = max(0.01, min(strength, 1.0))
         
-        logging.info(f"   🎨 Flux Img2Img: {prompt[:40]}... (Str: {strength:.2f}, {width}x{height}, G:{guidance_scale})")
-        
-        # Memory Cleanup
-        import gc
-        gc.collect()
-        if self.device == "mps":
-            torch.mps.empty_cache()
-        
-        import inspect
+        args = {
+            "prompt": prompt,
+            "image_url": image_url,
+            "strength": strength,
+            "num_inference_steps": steps,
+            "guidance_scale": guidance_scale,
+        }
+        if seed is not None:
+            args["seed"] = seed
+            
         try:
-            # CRITICAL: Ensure inputs are multiples of 128 for the VAE to prevent 64GB buffer size error
-            fixed_width = _make_multiple_of_16(width)
-            fixed_height = _make_multiple_of_16(height)
-            
-            # DIAGNOSTIC
-            vae_dtype = self.img2img_pipeline.vae.dtype if hasattr(self.img2img_pipeline, "vae") else "unknown"
-            logging.info(f"   📐 Tensor Shape Check: Requested {width}x{height} -> Aligned {fixed_width}x{fixed_height} | VAE Dtype: {vae_dtype}")
-            
-            # CRITICAL: Resize input image to target dimensions BEFORE passing to pipeline.
-            # FluxImg2ImgPipeline derives output dims from the input image.
-            # Passing height/width as separate kwargs causes a latent-space mismatch
-            # that triggers a 64GB buffer allocation on MPS/Metal.
-            if isinstance(image, Image.Image):
-                if image.size != (fixed_width, fixed_height):
-                    logging.info(f"   📐 Resizing input image {image.size} → ({fixed_width}, {fixed_height}) (multiple of 128) for Img2Img")
-                    image = image.resize((fixed_width, fixed_height), Image.Resampling.LANCZOS)
-            
-            sig = inspect.signature(self.img2img_pipeline.__call__)
-            available_args = sig.parameters.keys()
-            
-            # NOTE: Do NOT pass height/width to Img2Img — the pipeline infers them 
-            # from the input image. Passing them separately causes buffer explosions.
-            # Adaptive Guidance (Softened): Boost guidance at lower strength to force prompt adherence
-            effective_guidance = guidance_scale
-            if strength < 0.6:
-                # Softened boost (multiplier 2.0 instead of 4.0) to prevent structural tearing
-                boost = (0.6 - strength) * 2.0 
-                effective_guidance += boost
-                
-            kwargs = {
-                "prompt": prompt,
-                "image": image,
-                "num_inference_steps": steps,
-                "guidance_scale": effective_guidance,
-            }
-            
-            if seed is not None:
-                kwargs["generator"] = torch.Generator(device="cpu").manual_seed(seed)
-            
-            # Strength / Denoising Control
-            # denoising_start overrides strength when provided (per diffusers API).
-            # We explicitly want to bypass native diffusers "strength" handling because of the MPS melting bug.
-            # If "sigmas" is available we calculate our own noise and pass latents directly.
-            
-            # Map strength to start index
-            mapped_strength = strength
-            
-            if denoising_start is not None:
-                mapped_strength = 1.0 - denoising_start
-                logging.info(f"   🎛️  Using denoising_start={denoising_start:.2f} (mapped strength {mapped_strength:.2f})")
-            else:
-                logging.info(f"   🎛️  Using explicit strength {mapped_strength:.2f}")
-
-            # Check for 'sigmas' support to manually control denoising schedule (THE FIX FOR MELTING)
-            if "sigmas" in available_args:
-                    logging.info(f"   ✨ Pipeline uses 'sigmas'. Calculating noise schedule for strength {strength}...")
-                    try:
-                        from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
-                        if isinstance(self.img2img_pipeline.scheduler, FlowMatchEulerDiscreteScheduler):
-                            # Generate a fresh schedule for the requested number of steps
-                            try:
-                                # Determine mu if dynamic shifting is enabled
-                                if getattr(self.img2img_pipeline.scheduler.config, "use_dynamic_shifting", False):
-                                    import math
-                                    # Calculate sequence length for Flux (patch size 2, 2x2 merged = effective patch 4)
-                                    # Seq len = (height / 16) * (width / 16)
-                                    seq_len = (fixed_height // 16) * (fixed_width // 16)
-                                    
-                                    # Default Flux shift parameters
-                                    base_shift = getattr(self.img2img_pipeline.scheduler.config, "base_shift", 0.5)
-                                    max_shift = getattr(self.img2img_pipeline.scheduler.config, "max_shift", 1.15)
-                                    base_image_seq_len = getattr(self.img2img_pipeline.scheduler.config, "base_image_seq_len", 256)
-                                    max_image_seq_len = getattr(self.img2img_pipeline.scheduler.config, "max_image_seq_len", 4096)
-                                    
-                                    # Interpolate shift based on sequence length
-                                    m = (max_shift - base_shift) / (max_image_seq_len - base_image_seq_len)
-                                    b = base_shift - m * base_image_seq_len
-                                    mu = m * seq_len + b
-                                    
-                                    self.img2img_pipeline.scheduler.set_timesteps(steps, device="cpu", mu=mu)
-                                else:
-                                    self.img2img_pipeline.scheduler.set_timesteps(steps, device="cpu")
-                            except TypeError:
-                                # Fallback if signature doesn't match expectations
-                                try:
-                                    self.img2img_pipeline.scheduler.set_timesteps(steps, device="cpu", mu=None)
-                                except Exception:
-                                    pass 
-                            
-                            timesteps = getattr(self.img2img_pipeline.scheduler, "timesteps", None)
-                            sigmas = getattr(self.img2img_pipeline.scheduler, "sigmas", None)
-                            
-                            if timesteps is not None and sigmas is not None and len(timesteps) > 0:
-                                start_idx = int(len(timesteps) * (1.0 - strength))
-                                start_idx = max(0, min(start_idx, len(timesteps) - 1))
-                                
-                                filtered_sigmas = sigmas[start_idx:].cpu().tolist()
-                                kwargs["sigmas"] = filtered_sigmas
-                                kwargs["strength"] = 1.0 # CRITICAL: Prevent diffusers from double-truncating the schedule
-                                logging.info(f"   🎛️  Generated {len(kwargs['sigmas'])} sigmas from {len(timesteps)} steps (Strength {strength}).")
-                                
-                    except Exception as exc:
-                        logging.warning(f"   ⚠️ Sigma calculation failed: {exc}")
-                        # Fallback to appending strength to kwargs if manual sigmas completely crashed
-                        if "strength" in available_args:
-                            kwargs["strength"] = mapped_strength
-            else:
-                 # Last resort if no sigmas are available
-                 if "strength" in available_args:
-                     kwargs["strength"] = mapped_strength
-                 elif "denoising_start" in available_args:
-                     kwargs["denoising_start"] = 1.0 - mapped_strength
-
-            try:
-                with torch.inference_mode():
-                    out_img_obj = self.img2img_pipeline(**kwargs)
-            except TypeError as te:
-                # If strength caused the TypeError, retry without it
-                if "strength" in str(te) and "strength" in kwargs:
-                    logging.warning(f"   ⚠️ Pipeline rejected 'strength'. Retrying without it...")
-                    del kwargs["strength"]
-                    with torch.inference_mode():
-                        out_img_obj = self.img2img_pipeline(**kwargs)
-                else:
-                    logging.error(f"   ❌ Flux Img2Img TypeError: {te}. Attempted kwargs: {list(kwargs.keys())}")
-                    return None
-
-            out_img = out_img_obj.images[0]
-            del out_img_obj
-            
-            # Post-Gen Cleanup
-            gc.collect() 
-            if self.device == "mps":
-                torch.mps.empty_cache()
-
-            return out_img
+            result = fal_client.subscribe(
+                "fal-ai/flux/dev/image-to-image",
+                arguments=args,
+                with_logs=False
+            )
+            img_url = result.get('images', [{}])[0].get('url')
+            if img_url:
+                 return download_image(img_url)
+            return None
         except Exception as e:
-            logging.error(f"   ❌ Flux Img2Img Error: {e}")
+            logging.error(f"   ❌ Fal.ai Img2Img Error: {e}")
             return None
 
     def unload(self):
-        """Unload Flux pipelines."""
-        if self.sdcpp_pipeline:
-            logging.info("   🗑️  Unloading Flux GGUF Engine...")
-            del self.sdcpp_pipeline
-            self.sdcpp_pipeline = None
-
-        if self.pipeline:
-             logging.info("   🗑️  Unloading Flux Engine...")
-             del self.pipeline
-             self.pipeline = None
-             
-        if self.img2img_pipeline:
-             del self.img2img_pipeline
-             self.img2img_pipeline = None
-             
-        import gc
-        gc.collect()
-        if self.device == "mps":
-             torch.mps.empty_cache()
-        logging.info("   ✅ Flux Engine Unloaded.")
+        logging.info("   ✅ Fal.ai Bridge Unloaded (No-Op).")
 
 
-# Multi-Bridge Registry to prevent redundant loading but allow path switching
 _BRIDGES = {}
 def get_flux_bridge(path):
     global _BRIDGES
-    # Resolve Path for consistency
     res_path = os.path.abspath(path)
     if res_path not in _BRIDGES:
-        logging.info(f"   🏗️  Initializing new Flux Bridge for: {res_path}")
-        # Optimization: If we switch, unload old bridges to free VRAM/MPS memory
-        for old_p in list(_BRIDGES.keys()):
-            logging.info(f"   🧹 Unloading old bridge: {old_p}")
-            _BRIDGES[old_p].unload()
-            del _BRIDGES[old_p]
-            
+        logging.info(f"   🏗️  Initializing Fal.ai Bridge for path: {res_path}...")
         _BRIDGES[res_path] = FluxBridge(res_path)
     return _BRIDGES[res_path]
 
-def generate_via_hf_endpoint(prompt, width=1024, height=1024, steps=28, guidance=3.5, seed=None, api_key=None, endpoint_url=None, image=None, strength=0.5):
-    """
-    Generates an image using Hugging Face InferenceClient (fal-ai provider).
-    Supports Text-to-Image and Image-to-Image.
-    """
-    if not InferenceClient:
-        logging.error("❌ huggingface_hub not installed. Cannot use Cloud Flux.")
-        return None
 
-    if not api_key:
-        api_key = os.environ.get("HF_TOKEN") or os.environ.get("HF_API_KEY")
-        
-    if not api_key:
-        logging.error("❌ Missing HF_TOKEN for Cloud Flux.")
-        return None
-        
-    # Use standard Flux.2-dev via fal-ai provider (as used in LTX Cloud Director)
-    # We ignore endpoint_url unless specifically passed, but default to the Repo ID.
-    model_id = "black-forest-labs/FLUX.2-dev"
-    if endpoint_url and "http" not in endpoint_url:
-         # If user passed a model ID as endpoint_url
-         model_id = endpoint_url
-    
-    # Enforce multiples of 128 for HF Inference API to prevent buffer size issues
-    fixed_width = _make_multiple_of_16(width)
-    fixed_height = _make_multiple_of_16(height)
-    
-    try:
-        client = InferenceClient(provider="fal-ai", api_key=api_key)
-        
-        # NOTE: fal-ai provider does NOT support Img2Img for Flux.
-        # Skip straight to T2I to avoid wasting a round-trip on a guaranteed failure.
-        if image:
-            logging.info(f"   ☁️  Cloud: Img2Img not supported by fal-ai. Using T2I instead.")
-            logging.info(f"   ☁️  Flux Cloud T2I (fal-ai): '{prompt[:40]}...' ({fixed_width}x{fixed_height})")
-            generated_image = client.text_to_image(
-                prompt=prompt,
-                model=model_id,
-                width=fixed_width,
-                height=fixed_height,
-                num_inference_steps=steps,
-                guidance_scale=guidance,
-                seed=seed
-            )
-            return generated_image
-        
-    except Exception as e:
-        logging.error(f"   ❌ Flux Cloud Generation Failed: {e}")
-        return None
+def generate_via_hf_endpoint(*args, **kwargs):
+    logging.warning("   ⚠️ generate_via_hf_endpoint called but local bridge is already using Fal.ai. Delegating to FluxBridge.")
+    bridge = get_flux_bridge("cloud")
+    return bridge.generate(*args, **kwargs)
 
 if __name__ == "__main__":
-    # Test
-    path = "/Volumes/XMVPX/mw/flux-root"
-    if os.path.exists(path):
-        bridge = FluxBridge(path)
-        img = bridge.generate("A pixel art cyberpunk city", width=512, height=512)
-        if img:
-            img.save("test_flux.png")
-            print("Saved test_flux.png")
-    else:
-        print(f"Skipping test, path not found: {path}")
+    bridge = FluxBridge("")
+    print("Bridge loaded. Ensure FAL_KEY is set in env_vars.yaml.")

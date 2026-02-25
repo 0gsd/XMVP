@@ -922,68 +922,129 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                     except Exception as e:
                         logging.warning(f"   ⚠️ Failed to load previous frame for feedback: {e}")
 
-                # 2. Director Mode (Gemma)
+                # 2. Director Mode (Gemini Vision or Gemma Fallback)
                 coherence_pct = int(strength * 100)
                 if use_director:
-                    try:
-                        from text_engine import get_engine
-                        te = get_engine()
-                        if te:
-                            # Context-Aware Directing
-                            ctx = "This is the FIRST frame."
-                            
-                            if img_input:
-                                ctx = (
-                                    f"Previous frame exists. You MUST describe the NEXT sequential frame in a continuous animation. "
-                                    f"CRITICAL: You must preserve the exact same art style, characters, and color palette. "
-                                    f"Animation change level is {coherence_pct}%. "
-                                )
-                                if coherence_pct < 40:
-                                    ctx += "Describe subtle, incremental flipbook-style motion. "
-                                else:
-                                    ctx += "Describe clear progressive motion and action changes. "
+                    director_success = False
+                    
+                    # --- A. Vision-Aware Director (Gemini 2.0 Flash) ---
+                    # Uses the previous frame to maintain perfect structural continuity.
+                    if key_cycle:
+                        try:
+                            current_key = next(key_cycle)
+                            if current_key and current_key != "DUMMY":
+                                logging.info("   🧠 Local Inference Director (delegating to Gemini 2.0 Flash Vision)...")
+                                from google import genai
+                                from google.genai import types
+                                client = genai.Client(api_key=current_key)
+                                
+                                director_prompt = f"""
+                                You are a Lead Animator directing frame-by-frame animation.
+                                Goal: Describe the EXACT VISUALS for the next frame in this animation sequence.
+                                Context: Previous frame is attached (if available). 
+                                Current Prompt: "{prompt}".
+                                
+                                CRITICAL RULES: 
+                                1. Maintain the STYLE described in the prompt exactly.
+                                2. If the 'Action' is similar to the previous frame, describe INCREMENTAL MOTION (flipbook style). Do not change camera angles or character designs unless explicitly told to.
+                                3. If the 'Action' is a new beat, describe the new scene but KEEP THE VISUAL STYLE CONSISTENT.
+                                4. ABSOLUTELY NO TEXT DESCRIPTIONS IN THE IMAGE. 
+                                5. Animation change/motion level is {coherence_pct}%.
+
+                                Output: A dense, visual description of the image to generate. No conversational filler.
+                                """
+                                director_contents = []
+                                if prev_frame_path and prev_frame_path.exists():
+                                    try:
+                                        img_bytes = prev_frame_path.read_bytes()
+                                        director_contents.append(types.Part.from_bytes(data=img_bytes, mime_type="image/png"))
+                                        director_prompt += "\n(Refer to the image above as the PREVIOUS FRAME to maintain continuity from.)"
+                                    except: pass
                                     
                                 if prev_action_prompt:
-                                    ctx += f"The PREVIOUS action/beat was: '{prev_action_prompt}'. Ensure sequential continuity from it! "
+                                    director_prompt += f"\nThe PREVIOUS action/beat was: '{prev_action_prompt}'. Ensure sequential continuity from it! "
                                     
-                            director_instruction = (
-                                f"You are a Lead Animator directing frame-by-frame animation. {ctx}\n"
-                                f"CURRENT Action: '{prompt}'.\n"
-                                "Task: Output a dense, 20-40 word visual description for the renderer. "
-                                "Focus on character poses, lighting, composition, and motion. "
-                                "Show PROGRESSIVE MOVEMENT and action — each frame should advance the scene. "
-                                "Describe what is HAPPENING right now, not a static pose. NO FILLER."
-                            )
-                            # Quick generation
-                            visual_desc = te.generate(director_instruction, temperature=0.7)
-                            
-                            # CLEANUP: Handle JSON output if Director decides to be structured
-                            if visual_desc and visual_desc.strip().startswith("{"):
-                                  try:
-                                      pass # Local import of json removed to avoid UnboundLocalError
-                                      # Try to find the first { and last }
-                                      start = visual_desc.find("{")
-                                      end = visual_desc.rfind("}")
-                                      if start != -1 and end != -1:
-                                          json_str = visual_desc[start:end+1]
-                                          data = json.loads(json_str)
-                                          # Extract best key
-                                          for key in ["description", "Description", "action", "Action", "visual", "Visuals"]:
-                                              if key in data:
-                                                  visual_desc = data[key]
-                                                  break
-                                  except:
-                                      pass # Fallback to raw text
-                            
-                            if visual_desc and len(visual_desc) > 10:
-                                logging.info(f"   🎬 Local Director: {visual_desc[:60]}...")
-                                final_prompt = visual_desc
+                                director_contents.append(director_prompt)
                                 
-                    except Exception as e_dir:
-                        logging.warning(f"   ⚠️ Local Director failed: {e_dir}. Using raw prompt.")
-                    else:
-                        if not use_director:
-                            final_prompt = prompt # Fallback/Guard
+                                director_response = client.models.generate_content(model="gemini-2.0-flash", contents=director_contents)
+                                if director_response.text:
+                                    # Truth & Safety check via local
+                                    from truth_safety import TruthSafety
+                                    ts = TruthSafety()
+                                    refined_prompt = ts.refine_prompt(director_response.text, context_dict={"Role": "Director Output"}, pg_mode=pg_mode)
+                                    refusal_patterns = ["sorry", "cannot", "can't", "policy", "black void"]
+                                    if not any(p in refined_prompt.lower() for p in refusal_patterns):
+                                        visual_desc = refined_prompt
+                                    else:
+                                        visual_desc = director_response.text
+                                        
+                                    logging.info(f"   🎬 Vision Director: {visual_desc[:60]}...")
+                                    final_prompt = visual_desc
+                                    director_success = True
+                        except Exception as e:
+                            logging.warning(f"   ⚠️ Vision Director failed: {e}. Falling back to Gemma text...")
+                            
+                    # --- B. Blind Text Director (Gemma Fallback) ---
+                    if not director_success:
+                        try:
+                            from text_engine import get_engine
+                            te = get_engine()
+                            if te:
+                                # Context-Aware Directing
+                                ctx = "This is the FIRST frame."
+                                
+                                if img_input:
+                                    ctx = (
+                                        f"Previous frame exists. You MUST describe the NEXT sequential frame in a continuous animation. "
+                                        f"CRITICAL: You must preserve the exact same art style, characters, and color palette. "
+                                        f"Animation change level is {coherence_pct}%. "
+                                    )
+                                    if coherence_pct < 40:
+                                        ctx += "Describe subtle, incremental flipbook-style motion. "
+                                    else:
+                                        ctx += "Describe clear progressive motion and action changes. "
+                                        
+                                    if prev_action_prompt:
+                                        ctx += f"The PREVIOUS action/beat was: '{prev_action_prompt}'. Ensure sequential continuity from it! "
+                                        
+                                director_instruction = (
+                                    f"You are a Lead Animator directing frame-by-frame animation. {ctx}\n"
+                                    f"CURRENT Action: '{prompt}'.\n"
+                                    "Task: Output a dense, 20-40 word visual description for the renderer. "
+                                    "Focus on character poses, lighting, composition, and motion. "
+                                    "Show PROGRESSIVE MOVEMENT and action — each frame should advance the scene. "
+                                    "Describe what is HAPPENING right now, not a static pose. NO FILLER."
+                                )
+                                # Quick generation
+                                visual_desc = te.generate(director_instruction, temperature=0.7)
+                                
+                                # CLEANUP: Handle JSON output if Director decides to be structured
+                                if visual_desc and visual_desc.strip().startswith("{"):
+                                      try:
+                                          import json
+                                          # Try to find the first { and last }
+                                          start = visual_desc.find("{")
+                                          end = visual_desc.rfind("}")
+                                          if start != -1 and end != -1:
+                                              json_str = visual_desc[start:end+1]
+                                              data = json.loads(json_str)
+                                              # Extract best key
+                                              for key in ["description", "Description", "action", "Action", "visual", "Visuals"]:
+                                                  if key in data:
+                                                      visual_desc = data[key]
+                                                      break
+                                      except:
+                                          pass # Fallback to raw text
+                                
+                                if visual_desc and len(visual_desc) > 10:
+                                    logging.info(f"   🎬 Local Text Director: {visual_desc[:60]}...")
+                                    final_prompt = visual_desc
+                                    
+                        except Exception as e_dir:
+                            logging.warning(f"   ⚠️ Local Director failed: {e_dir}. Using raw prompt.")
+                        else:
+                            if not use_director:
+                                final_prompt = prompt # Fallback/Guard
                 
                 # --- CONTINUITY ANCHORS (Universal for Local Mode) ---
                 # Even if we skip the director (e.g. music-visualizer), we still apply anchors 

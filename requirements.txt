@@ -8,6 +8,7 @@ peft
 google-cloud-aiplatform
 google-generativeai
 google-genai
+fal-client
 
 # Utilities
 torch

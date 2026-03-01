@@ -67,7 +67,8 @@ MODAL_REGISTRY: Dict[Modality, Dict[str, ModelConfig]] = {
     },
     Modality.IMAGE: {
         "gemini-2.5-flash-image": ModelConfig("gemini-2.5-flash-image", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
-        "imagen-3": ModelConfig("imagen-3.0-generate-001", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
+        "gemini-3": ModelConfig("gemini-3-pro-image-preview", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
+        "gemini-3.1": ModelConfig("gemini-3.1-flash-image-preview", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
         "flux-schnell": ModelConfig("flux-schnell", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root"),
         "flux-klein": ModelConfig("flux-klein", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root/klein-9b"),
         "flux-dev": ModelConfig("flux-dev", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root/dev", api_key_env="FAL_KEY"),
@@ -91,7 +92,7 @@ DEFAULT_PROFILE = {
     Modality.TEXT: "gemini-2.0-flash",
     Modality.IMAGE: "flux-dev",
     Modality.VIDEO: "veo-3.1-fast",
-    Modality.SPOKEN_TTS: "google-journey"
+    Modality.SPOKEN_TTS: "kokoro-v1"
 }
 
 # Load Active Profile

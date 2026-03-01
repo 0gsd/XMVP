@@ -1,7 +1,7 @@
 {
   "cloud": {
     "text": "gemma-2-9b-it",
-    "image": "gemini-2.5-flash-image",
+    "image": "gemini-3.1",
     "video": "ltx-video",
     "spoken_tts": "kokoro-v1"
   },

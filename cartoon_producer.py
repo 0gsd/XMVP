@@ -832,6 +832,9 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
     except ImportError:
         TruthSafety = None
         
+    import definitions
+    from definitions import Modality, get_active_model
+
     if model is None:
         model = get_active_model(Modality.IMAGE).name # String name from Registry
 
@@ -1154,7 +1157,8 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                     # 2. Rendering (Final Image Pass)
                     render_model = model
                     if model == "gemini-2.0-flash":
-                        render_model = "gemini-2.5-flash-image"
+                        from definitions import Modality, get_active_model
+                        render_model = get_active_model(Modality.IMAGE).name
                     
                     # BUILD MULTIMODAL CONTENTS
                     render_contents = []
@@ -1889,7 +1893,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 continue
             
             if is_cloud:
-                # Cloud Generation Path (using gemini-2.5-flash-image)
+                # Cloud Generation Path
                 success = generate_frame_universal(
                     index=idx,
                     prompt=args.prompt if args.prompt else "Redraw this frame with absolute precision in a premium cinematic art style.",
@@ -3155,8 +3159,10 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         
         meta_result = {"title": f"Cartoon {project_name}", "synopsis": "A generated cartoon.", "characters": [], "themes": [], "vibe": "Hand Drawn"}
         try:
-            # Use Flash 2.5 (Gemini L)
-            resp = meta_client.models.generate_content(model="gemini-2.5-flash-image", contents=meta_prompt)
+            # Use a fast text model
+            from definitions import Modality, get_active_model
+            text_model = get_active_model(Modality.TEXT).name
+            resp = meta_client.models.generate_content(model=text_model, contents=meta_prompt)
             if resp.text:
                 clean_json = re.sub(r"```json|```", "", resp.text).strip()
                 meta_result = json.loads(clean_json)
@@ -3338,6 +3344,7 @@ def main():
     parser.add_argument("--h", type=int, help="Override height (Local Only, e.g. 1080)")
     parser.add_argument("--strength", "--str", dest="strength", type=int, default=50, help="Img2Img noise strength 1-99 (Default: 50). Lower = MORE frame coherence. 10-30: very stable. 30-50: balanced. 50-80: creative/different.")
     parser.add_argument("--cloud", action="store_true", help="Enable Cloud Mode (Gemini 2.x)")
+    parser.add_argument("--model", "-m", type=str, help="Override image model (e.g. gemini-3)")
     parser.add_argument("--fsync", type=float, default=None, help="FPS Sync Multiplier (0.1 - 6.0). If provided for cartoon-video, calculates FPS from BPM. If omitted, uses native source FPS.")
     parser.add_argument("--f", type=str, help="Source Folder for Clip Video Mode")
     parser.add_argument("--blend", type=int, default=70, help="Blend ratio for cartoon-color 1-99 (Default: 70). Higher = More palette color.")
@@ -3460,8 +3467,9 @@ def main():
             definitions.set_active_model(Modality.TEXT, "gemma-2-9b-it")
             os.environ["TEXT_ENGINE"] = "local_gemma"
             os.environ["LOCAL_MODEL_PATH"] = "mlx-community/gemma-2-9b-it-4bit"
-            # IMAGE goes to Cloud (Gemini)
-            definitions.set_active_model(Modality.IMAGE, "gemini-2.5-flash-image")
+            # IMAGE goes to Cloud
+            target_model = args.model if getattr(args, "model", None) else "gemini-2.5-flash-image"
+            definitions.set_active_model(Modality.IMAGE, target_model)
         except Exception as e:
             logging.error(f"❌ Failed to switch to Cloud Mode: {e}")
             

@@ -1,0 +1,192 @@
+{
+  "simple": {
+    "colonel": "kernel",
+    "lieutenant": "loo-tenant",
+    "genre": "zhon-ruh",
+    "debris": "deh-BREE",
+    "lingerie": "lon-zhuh-RAY",
+    "segue": "SEG-way",
+    "niche": "neesh",
+    "epitome": "eh-PIT-oh-mee",
+    "hyperbole": "hy-PER-boh-lee",
+    "quinoa": "KEEN-wah",
+    "açaí": "ah-sah-EE",
+    "coup": "koo",
+    "faux": "foh",
+    "fiancé": "fee-ON-say",
+    "fiancée": "fee-ON-say",
+    "naïve": "nah-EEV",
+    "résumé": "REZ-oo-may",
+    "café": "kah-FAY",
+    "cliché": "klee-SHAY",
+    "rendezvous": "RON-day-voo",
+    "bourgeois": "boor-ZHWAH",
+    "entrepreneur": "ON-truh-pruh-NUR",
+    "chauffeur": "show-FUR",
+    "silhouette": "sil-oo-ET",
+    "château": "sha-TOH",
+    "queue": "kyoo",
+    "quay": "kee",
+    "choir": "KWIRE",
+    "corps": "kor",
+    "albeit": "all-BEE-it",
+    "mischievous": "MIS-chih-vus",
+    "nuclear": "NOO-klee-ur",
+    "often": "OFF-en",
+    "victuals": "VIT-ulz",
+    "worcestershire": "WUS-ter-shur",
+    "gloucester": "GLOS-ter",
+    "edinburgh": "ED-in-buruh",
+    "thames": "temz",
+    "leicester": "LES-ter",
+    "viscount": "VY-count",
+    "marquis": "mar-KEE",
+    "comptroller": "con-TROL-er",
+    "indict": "in-DYTE",
+    "rapport": "ra-POR",
+    "coup d'état": "koo day-TAH",
+    "faux pas": "foh PAH",
+    "hors d'oeuvres": "or-DURVZ",
+    "laissez-faire": "les-ay FAIR",
+    "tête-à-tête": "tet-ah-TET",
+    "née": "nay",
+    "vis-à-vis": "veez-ah-VEE",
+    "Mme": "madam",
+    "Mme.": "madam",
+    "Mr.": "Mister",
+    "Mrs.": "Missus",
+    "Dr.": "Doctor",
+    "St.": "Saint",
+    "govt.": "government",
+    "dept.": "department",
+    "etc.": "et cetera",
+    "e.g.": "for example",
+    "i.e.": "that is",
+    "vs.": "versus",
+    "approx.": "approximately",
+    "misc.": "miscellaneous",
+    "Feb.": "February",
+    "Jan.": "January",
+    "Aug.": "August",
+    "Sept.": "September",
+    "Oct.": "October",
+    "Nov.": "November",
+    "Dec.": "December"
+  },
+  "heteronyms": [
+    {
+      "word": "read",
+      "pattern": "\\b(had|have|has|already|just|never|once|yesterday|last night)\\s+(\\w+\\s+)*read\\b",
+      "replacement": null,
+      "note": "Past tense 'red' — handled by LLM Layer 2 due to context complexity"
+    },
+    {
+      "word": "lead",
+      "pattern": "\\b(lead)\\b(?=\\s+(?:pipe|paint|bullet|weight|poisoning|lined|pencil))",
+      "replacement": "led",
+      "note": "The metal (led), not the verb (leed)"
+    },
+    {
+      "word": "live",
+      "pattern": "\\b(live)\\b(?=\\s+(?:wire|broadcast|performance|music|show|audience|concert|ammunition|round))",
+      "replacement": "lyve",
+      "note": "Adjective 'lyve' (alive/real-time), not verb 'liv'"
+    },
+    {
+      "word": "close",
+      "pattern": "\\b(close)\\b(?=\\s+(?:call|quarters|combat|range|shave|friend|relationship|proximity|to\\s+the))",
+      "replacement": "kloce",
+      "note": "Adjective 'kloce' (near), not verb 'kloze'"
+    },
+    {
+      "word": "wound",
+      "pattern": "\\b(wound)\\b(?=\\s+(?:up|down|around|the\\s+clock|the\\s+thread|the\\s+rope|the\\s+handle|tightly|slowly))",
+      "replacement": "wownd",
+      "note": "Past tense of wind (wownd), not injury (woond)"
+    },
+    {
+      "word": "tear",
+      "pattern": "\\b(tear)\\b(?=\\s*(?:drop|drops|stained|streaked|filled|in\\s+(?:his|her|my|their)\\s+eye))",
+      "replacement": "teer",
+      "note": "Crying tear (teer), not rip tear (tare)"
+    },
+    {
+      "word": "bow",
+      "pattern": "\\b(bow)\\b(?=\\s+(?:and\\s+arrow|string|tie|window|legged))",
+      "replacement": "boh",
+      "note": "Weapon/decorative bow (boh), not bending bow (bow)"
+    },
+    {
+      "word": "bass",
+      "pattern": "\\b(bass)\\b(?=\\s+(?:guitar|line|note|drum|clef|voice|singer|baritone|player))",
+      "replacement": "base",
+      "note": "Musical bass (base), not fish bass"
+    },
+    {
+      "word": "minute",
+      "pattern": "\\b(minute)\\b(?=\\s+(?:detail|details|particle|particles|difference|differences|amount|quantities|traces|examination|inspection|change|changes|variation))",
+      "replacement": "my-NOOT",
+      "note": "Tiny (my-NOOT), not time unit (MIN-it)"
+    },
+    {
+      "word": "desert",
+      "pattern": "\\b(desert)\\b(?=ed|ing|s\\s+(?:him|her|them|us|me|his|the))",
+      "replacement": "deh-ZERT",
+      "note": "Verb desert/abandon (deh-ZERT)"
+    },
+    {
+      "word": "object",
+      "pattern": "\\b(object)\\b(?=ed|ing|s\\s+to|\\s+to\\s+(?:the|this|that|his|her))",
+      "replacement": "ob-JECT",
+      "note": "Verb object (ob-JECT), not noun (OB-ject)"
+    },
+    {
+      "word": "present",
+      "pattern": "\\b(present)\\b(?=ed|ing|s\\s+(?:the|a|his|her|their|this|an))",
+      "replacement": "preh-ZENT",
+      "note": "Verb present (preh-ZENT), not noun/adjective (PREZ-ent)"
+    },
+    {
+      "word": "record",
+      "pattern": "\\b(record)\\b(?=ed|ing|s\\s+(?:the|a|his|her|their|this|every|each))",
+      "replacement": "reh-KORD",
+      "note": "Verb record (reh-KORD), not noun (REK-ord)"
+    },
+    {
+      "word": "produce",
+      "pattern": "\\b(produce)\\b(?=\\s+(?:section|aisle|department|stand|market|fresh|organic))",
+      "replacement": "PROH-doose",
+      "note": "Noun produce/vegetables (PROH-doose), not verb (proh-DOOSE)"
+    },
+    {
+      "word": "refuse",
+      "pattern": "\\b(refuse)\\b(?=\\s+(?:bin|collection|heap|pile|dump|truck|collector))",
+      "replacement": "REF-yoose",
+      "note": "Noun refuse/garbage (REF-yoose), not verb (reh-FYOOZ)"
+    },
+    {
+      "word": "content",
+      "pattern": "\\b(content)\\b(?=\\s+(?:with|to\\s+(?:sit|stay|wait|remain|be|let)))",
+      "replacement": "con-TENT",
+      "note": "Adjective content/satisfied (con-TENT), not noun (CON-tent)"
+    },
+    {
+      "word": "sow",
+      "pattern": "\\b(sow)\\b(?=\\s+(?:the|some|seeds|discord|doubt|confusion|chaos))",
+      "replacement": "soh",
+      "note": "Verb sow/plant (soh), not female pig (sow)"
+    },
+    {
+      "word": "row",
+      "pattern": "\\b(row)\\b(?=\\s+(?:erupted|broke|ensued|started|about|over|between))",
+      "replacement": "rou",
+      "note": "Argument row (rou), not line row (roh)"
+    },
+    {
+      "word": "use",
+      "pattern": "(?:no|of|any|some|little|much|great|good|what)\\s+(use)\\b",
+      "replacement": "yoose",
+      "note": "Noun use (yoose), not verb (yooz)"
+    }
+  ]
+}

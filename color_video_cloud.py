@@ -35,7 +35,7 @@ class ColorVideoCloudBridge:
         self.key_index += 1
         return True
 
-    def colorize_frame(self, image_path, prompt, attempt=0):
+    def colorize_frame(self, image_path, prompt, attempt=0, model_name="gemini-2.5-flash-image"):
         """
         Sends a single B&W frame to Gemini for colorization.
         """
@@ -59,7 +59,7 @@ class ColorVideoCloudBridge:
 
             # 2. Call Gemini
             response = self.client.models.generate_content(
-                model="gemini-2.5-flash-image",
+                model=model_name,
                 contents=contents,
                 config=types.GenerateContentConfig(
                     response_modalities=['IMAGE'],
@@ -83,7 +83,7 @@ class ColorVideoCloudBridge:
                 logging.warning(f"   ⏳ Rate limited (429). Rotated Key. Waiting {wait:.1f}s...")
                 time.sleep(wait)
                 if attempt < 5:
-                    return self.colorize_frame(image_path, prompt, attempt + 1)
+                    return self.colorize_frame(image_path, prompt, attempt + 1, model_name=model_name)
             else:
                 logging.error(f"   ❌ Gemini Error: {e}")
             return None
@@ -138,14 +138,20 @@ class ColorVideoCloudBridge:
             source_frames = source_frames[:args.limit]
 
         prompt = args.prompt if args.prompt else "natural skin tones, period accurate colors"
+        
+        # Determine model
+        model_name = getattr(args, 'model', None)
+        if not model_name:
+            from definitions import Modality, get_active_model
+            model_name = get_active_model(Modality.IMAGE).name
 
         for i, src_path in enumerate(source_frames):
             idx = i + 1
             dst = frames_dir / f"frame_{idx:04d}.png"
             if dst.exists(): continue
 
-            logging.info(f"   ✨ Colorizing {idx}/{len(source_frames)} via Gemini...")
-            colorized = self.colorize_frame(src_path, prompt)
+            logging.info(f"   ✨ Colorizing {idx}/{len(source_frames)} via {model_name}...")
+            colorized = self.colorize_frame(src_path, prompt, model_name=model_name)
             
             if colorized:
                 if colorized.size != (target_w, target_h):

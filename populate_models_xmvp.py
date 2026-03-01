@@ -142,6 +142,15 @@ MODELS = {
         "repo": "tellurion/ColorizeDiffusion",
         "type": "snapshot",
         "target": MW_ROOT / "colorize-diffusion-root"
+    },
+    "F5-TTS": {
+        "repo": "SWivid/F5-TTS",
+        "type": "files",
+        "filenames": [
+            "F5TTS_v1_Base/model_1250000.safetensors",
+            "F5TTS_v1_Base/vocab.txt"
+        ],
+        "target": MW_ROOT / "f5tts-root"
     }
 }
 
@@ -232,7 +241,7 @@ def main():
     git_clone_comfy()
     git_clone_wan()
 
-    # 2. HF Models
+    # HF Models
     for name, conf in MODELS.items():
         print(f"\n[*] Processing {name} ({conf['repo']}) -> {conf['target']}")
         
@@ -246,21 +255,33 @@ def main():
                 conf['target'].parent.mkdir(parents=True, exist_ok=True)
         
         try:
+            # Common patterns to ignore for large snapshots (e.g. redundant split weights if we want consolidated)
+            # Or vice-versa. Default: enable symlinks to save 50% storage immediately.
+            dl_kwargs = {
+                "repo_id": conf['repo'],
+                "revision": conf.get('revision', None),
+                "local_dir": str(conf['target']),
+                "local_dir_use_symlinks": True, # CRITICAL: Uses hardlinks on same drive, saves 100s of GBs
+                "token": token
+            }
+
             if conf['type'] == 'snapshot':
-                snapshot_download(
-                    repo_id=conf['repo'],
-                    revision=conf.get('revision', None),
-                    local_dir=str(conf['target']),
-                    local_dir_use_symlinks=False,
-                    token=token
-                )
+                # Optimization for Flux/Gemma to avoid double-weight downloads
+                if "FLUX" in name:
+                    # If we only want the consolidated file (best for ComfyUI/Local Single-Load)
+                    # We ignore the split transformer/vae/text_encoder component folders
+                    dl_kwargs["ignore_patterns"] = ["transformer/*", "text_encoder/*", "text_encoder_2/*", "vae/*"]
+                    print("    -> Opt: Ignoring split component folders (using consolidated .safetensors only)")
+                
+                snapshot_download(**dl_kwargs)
+                
             elif conf['type'] == 'file':
                 hf_hub_download(
                     repo_id=conf['repo'],
                     filename=conf['filename'],
                     revision=conf.get('revision', None),
                     local_dir=str(conf['target']),
-                    local_dir_use_symlinks=False,
+                    local_dir_use_symlinks=True,
                     token=token
                 )
             elif conf['type'] == 'files':
@@ -271,7 +292,7 @@ def main():
                         filename=fname,
                         revision=conf.get('revision', None),
                         local_dir=str(conf['target']),
-                        local_dir_use_symlinks=False,
+                        local_dir_use_symlinks=True,
                         token=token
                     )
             elif conf['type'] == 'git_clone':

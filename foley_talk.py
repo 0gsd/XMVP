@@ -17,6 +17,7 @@ from hunyuan_foley_bridge import HunyuanFoleyBridge
 
 # --- CONFIGURATION ---
 COMFY_SERVER = "http://127.0.0.1:8188"
+F5TTS_MODEL_DIR = "/Volumes/XMVPX/mw/f5tts-root"
 LOG_LEVEL = logging.INFO
 logging.basicConfig(level=LOG_LEVEL, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -324,6 +325,27 @@ def generate_audio_asset(text, output_path, voice_name="en-US-Journey-D", pitch=
         except Exception as e:
             logging.error(f"❌ Kokoro Error: {e}")
             return None
+            
+    elif mode == "f5":
+        # Local F5-TTS
+        try:
+            from f5_bridge import get_f5_bridge
+            bridge = get_f5_bridge(F5TTS_MODEL_DIR)
+            
+            # Note: For foley_talk, we might need a way to pass ref_audio/text
+            # For now, we'll assume default reference logic in the bridge
+            if bridge.generate(text, output_path):
+                # Apply Pitch Shift if needed (though F5 is better at this naturally)
+                shifted = pitch_shift_file(output_path, pitch)
+                
+                if shifted != output_path:
+                    shutil.move(shifted, output_path)
+                
+                return output_path
+            return None
+        except Exception as e:
+            logging.error(f"❌ F5-TTS Error: {e}")
+            return None
         
     return final_path
 
@@ -503,6 +525,20 @@ def generate_kokoro_dialogue(script: DialogueScript, output_dir):
              
     return results
 
+def generate_f5_dialogue(script: DialogueScript, output_dir):
+    logging.info(f"🚀 [F5-TTS] Generating Dialogue ({len(script.lines)} lines)...")
+    results = []
+    
+    for i, line in enumerate(script.lines):
+        logging.info(f"   Actor {line.character}: '{line.text[:30]}...'")
+        out_path = os.path.join(output_dir, f"dial_{i}_{line.character}.wav")
+        # In F5 mode, we use zero-shot cloning. 
+        # We might eventually map actor names to specific ref audios.
+        if generate_audio_asset(line.text, out_path, mode="f5"):
+             results.append({"path": out_path, "offset": line.start_offset})
+             
+    return results
+
 
 # --- MAIN ---
 
@@ -534,7 +570,10 @@ def main():
         # 2. Dialogue (Kokoro)
         dialogue_assets = []
         if manifest.dialogue and manifest.dialogue.lines:
-             dialogue_assets = generate_kokoro_dialogue(manifest.dialogue, out_dir)
+             if args.mode == "kokoro":
+                 dialogue_assets = generate_kokoro_dialogue(manifest.dialogue, out_dir)
+             elif args.mode == "f5":
+                 dialogue_assets = generate_f5_dialogue(manifest.dialogue, out_dir)
              
         # 3. Mux
         total_duration = get_audio_duration(args.input)
@@ -599,6 +638,8 @@ def main():
                     dialogue_wavs = generate_rvc_dialogue(manifest.dialogue, out_dir)
                 elif args.mode == "kokoro":
                     dialogue_wavs = generate_kokoro_dialogue(manifest.dialogue, out_dir)
+                elif args.mode == "f5":
+                    dialogue_wavs = generate_f5_dialogue(manifest.dialogue, out_dir)
         except Exception as e:
             logging.error(f"Failed to load dialogue: {e}")
 
@@ -626,6 +667,8 @@ def run_audio_pipeline(manifest_path, out_dir, mode="kokoro"):
         dialogue_assets = []
         if mode == "kokoro":
              dialogue_assets = generate_kokoro_dialogue(manifest.dialogue, out_dir)
+        elif mode == "f5":
+             dialogue_assets = generate_f5_dialogue(manifest.dialogue, out_dir)
         # Add other modes if needed
         
         if not dialogue_assets:

@@ -69,7 +69,6 @@ venv/
 *.mp4
 *.png
 *.jpg
-*.wav
 bible.json
 story.json
 portions.json

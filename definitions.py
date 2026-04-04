@@ -62,28 +62,28 @@ MODAL_REGISTRY: Dict[Modality, Dict[str, ModelConfig]] = {
     Modality.TEXT: {
         "gemini-2.0-flash": ModelConfig("gemini-2.0-flash", BackendType.CLOUD, Modality.TEXT, api_key_env="GEMINI_API_KEY"),
         "gemini-1.5-pro": ModelConfig("gemini-1.5-pro-002", BackendType.CLOUD, Modality.TEXT, api_key_env="GEMINI_API_KEY"),
-        "gemma-2-9b-it": ModelConfig("gemma-2-9b-it", BackendType.LOCAL, Modality.TEXT, path="/Volumes/XMVPX/mw/gemma-root"),
-        "gemma-2-9b-it-director": ModelConfig("gemma-2-9b-it", BackendType.LOCAL, Modality.TEXT, path="/Volumes/XMVPX/mw/gemma-root", adapter_path="adapters/director_v1")
+        "gemma-2-9b-it": ModelConfig("gemma-2-9b-it", BackendType.LOCAL, Modality.TEXT, path="/Users/m3u/METMcloud/METMroot/tools/fmv/weights/gemma-3-root"),
+        "gemma-2-9b-it-director": ModelConfig("gemma-2-9b-it", BackendType.LOCAL, Modality.TEXT, path="/Users/m3u/METMcloud/METMroot/tools/fmv/weights/gemma-3-root", adapter_path="adapters/director_v1")
     },
     Modality.IMAGE: {
         "gemini-2.5-flash-image": ModelConfig("gemini-2.5-flash-image", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
         "gemini-3": ModelConfig("gemini-3-pro-image-preview", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
         "gemini-3.1": ModelConfig("gemini-3.1-flash-image-preview", BackendType.CLOUD, Modality.IMAGE, api_key_env="GEMINI_API_KEY"),
-        "flux-schnell": ModelConfig("flux-schnell", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root"),
-        "flux-klein": ModelConfig("flux-klein", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root/klein-9b"),
-        "flux-dev": ModelConfig("flux-dev", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/flux-root/dev", api_key_env="FAL_KEY"),
+        "flux-schnell": ModelConfig("flux-schnell", BackendType.LOCAL, Modality.IMAGE, path="/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root"),
+        "flux-klein": ModelConfig("flux-klein", BackendType.LOCAL, Modality.IMAGE, path="/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/klein-9b"),
+        "flux-dev": ModelConfig("flux-dev", BackendType.LOCAL, Modality.IMAGE, path="/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev", api_key_env="FAL_KEY"),
         "flux-2-dev-hf": ModelConfig("flux-2-dev-hf", BackendType.CLOUD, Modality.IMAGE, endpoint="env:FLUX_DEV_ENDPOINT", api_key_env="HF_TOKEN"),
-        "colorize-diffusion": ModelConfig("colorize-diffusion", BackendType.LOCAL, Modality.IMAGE, path="/Volumes/XMVPX/mw/colorize-diffusion-root")
+        "colorize-diffusion": ModelConfig("colorize-diffusion", BackendType.LOCAL, Modality.IMAGE, path="/Users/m3u/METMcloud/METMroot/tools/fmv/weights/colorize-diffusion-root")
     },
     Modality.VIDEO: {
         "veo-3.1-fast": ModelConfig("veo-3.1-fast-generate-preview", BackendType.CLOUD, Modality.VIDEO, api_key_env="GEMINI_API_KEY"),
         "veo-3.1-4k": ModelConfig("veo-3.1-generate-preview", BackendType.CLOUD, Modality.VIDEO, api_key_env="GEMINI_API_KEY"),
-        "ltx-video": ModelConfig("ltx-video", BackendType.LOCAL, Modality.VIDEO, path="/Volumes/XMVPX/mw/LT2X-root/ltxv-13b-0.9.8-dev.safetensors"),
-        "skyreels": ModelConfig("skyreels", BackendType.LOCAL, Modality.VIDEO, path="/Volumes/XMVPX/mw/skyreels-root")
+        "ltx-video": ModelConfig("ltx-video", BackendType.LOCAL, Modality.VIDEO, path="/Users/m3u/METMcloud/METMroot/tools/fmv/weights/LT2X-root/ltxv-13b-0.9.8-dev.safetensors"),
+        "skyreels": ModelConfig("skyreels", BackendType.LOCAL, Modality.VIDEO, path="/Users/m3u/METMcloud/METMroot/tools/fmv/weights/skyreels-root")
     },
     Modality.SPOKEN_TTS: {
         "google-journey": ModelConfig("en-US-Journey-F", BackendType.CLOUD, Modality.SPOKEN_TTS, api_key_env="GOOGLE_CLOUD_ACCESS_TOKEN"),
-        "kokoro-v1": ModelConfig("kokoro-v0_19.onnx", BackendType.LOCAL, Modality.SPOKEN_TTS, path="/Volumes/XMVPX/mw/kokoro-root/kokoro-v0_19.onnx")
+        "kokoro-v1": ModelConfig("kokoro-v0_19.onnx", BackendType.LOCAL, Modality.SPOKEN_TTS, path="/Users/m3u/METMcloud/METMroot/tools/fmv/weights/kokoro-root/kokoro-v0_19.onnx")
     }
 }
 

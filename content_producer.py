@@ -82,7 +82,7 @@ print("DEBUG: Imports Done.")
 # --- CONFIG ---
 OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "z_test-outputs"))
 TRIPLETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../z_podcast_triplets"))
-MW_ROOT = "/Volumes/XMVPX/mw" # Standard mount point
+MW_ROOT = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights" # Standard mount point
 
 # Resolve Flux Path via Definitions
 def _init_flux():
@@ -2452,7 +2452,7 @@ def main():
     if not args.geminiapi:
         print("   [Engine] Defaulting Text Engine to Local Gemma (Saving API Quota)...")
         os.environ["TEXT_ENGINE"] = "local_gemma"
-        # We assume local_gemma path is set in env_vars or defaults to mlx-community/gemma-2-9b-it-4bit
+        # We assume local_gemma path is set in env_vars or defaults to /Users/m3u/METMcloud/METMroot/tools/fmv/weights/gemma-3-root
     else:
         print("   [Engine] Text Engine Forced to Gemini API (Cloud).")
     

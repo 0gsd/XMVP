@@ -1,4 +1,4 @@
-# XMVP API Reference v3.20few bugfixes for flux via fal.aifew bugfixes for flux via fal.ai
+# XMVP API Reference v3.25few bugfixes for flux via fal.aifew bugfixes for flux via fal.ai
 ## Complete Command-Line Interface Documentation
 
 ---
@@ -684,7 +684,7 @@ The backend is determined by the `TEXT_ENGINE` environment variable:
 |----|---------|-------|
 | `gemini-2.0-flash` | cloud | Default cloud text |
 | `gemini-1.5-pro` | cloud | Higher quality |
-| `gemma-2-9b-it` | local | Default local text |
+| `gemma-4` | local | Default local text |
 | `gemma-2-9b-it-director` | local | With director_v1 adapter |
 
 #### Image
@@ -715,7 +715,7 @@ The backend is determined by the `TEXT_ENGINE` environment variable:
 
 **Cloud**: gemini-2.0-flash (text), flux-klein (image), veo-3.1-fast (video), google-journey (TTS)
 
-**Local**: gemma-2-9b-it (text), flux-klein (image), ltx-video (video), kokoro-v1 (TTS)
+**Local**: gemma-4 (text), flux-klein (image), ltx-video (video), kokoro-v1 (TTS)
 
 ---
 
@@ -767,8 +767,8 @@ The backend is determined by the `TEXT_ENGINE` environment variable:
 python3 model_scout.py --status          # Check all model paths
 python3 model_scout.py --list            # List registered models
 python3 model_scout.py --list text       # List models for a modality
-python3 model_scout.py --switch text gemma-2-9b-it  # Switch active model
-python3 model_scout.py --scan            # Scan /Volumes/XMVPX/mw/ for models
+python3 model_scout.py --switch text gemma-4  # Switch active model
+python3 model_scout.py --scan            # Scan /Users/m3u/METMcloud/METMroot/tools/fmv/weights/ for models
 python3 model_scout.py --probe MODEL     # Test a specific model endpoint
 python3 model_scout.py --pull MODEL      # Download model from HuggingFace
 ```
@@ -777,7 +777,7 @@ python3 model_scout.py --pull MODEL      # Download model from HuggingFace
 
 ## populate_models_xmvp.py
 
-**Model Downloader** — Interactive script to download all model weights to `/Volumes/XMVPX/mw/`. Prompts for HuggingFace token. 311 lines.
+**Model Downloader** — Interactive script to download all model weights to `/Users/m3u/METMcloud/METMroot/tools/fmv/weights/`. Prompts for HuggingFace token. 311 lines.
 
 ---
 

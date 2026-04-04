@@ -17,7 +17,7 @@ from hunyuan_foley_bridge import HunyuanFoleyBridge
 
 # --- CONFIGURATION ---
 COMFY_SERVER = "http://127.0.0.1:8188"
-F5TTS_MODEL_DIR = "/Volumes/XMVPX/mw/f5tts-root"
+F5TTS_MODEL_DIR = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/f5tts-root"
 LOG_LEVEL = logging.INFO
 logging.basicConfig(level=LOG_LEVEL, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -298,7 +298,7 @@ def generate_audio_asset(text, output_path, voice_name="en-US-Journey-D", pitch=
         # Local Kokoro
         try:
             from kokoro_bridge import get_kokoro_bridge
-            KOKORO_MODEL = "/Volumes/XMVPX/mw/kokoro-root/kokoro-v0_19.onnx"
+            KOKORO_MODEL = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/kokoro-root/kokoro-v0_19.onnx"
             bridge = get_kokoro_bridge(KOKORO_MODEL)
             
             temp_raw = output_path.replace(".wav", "_raw.wav")
@@ -380,7 +380,7 @@ def generate_cloud_dialogue(script: DialogueScript, output_dir, project_id):
 # Ported from voice_engine.py
 
 class LegacyVoiceEngine:
-    def __init__(self, weights_dir="/Volumes/XMVPX/mw/rvc-root/weights"):
+    def __init__(self, weights_dir="/Users/m3u/METMcloud/METMroot/tools/fmv/weights/rvc-root/weights"):
         self.weights_dir = weights_dir
         
     def generate_base_audio(self, text, output_path, gender="MALE"):
@@ -477,7 +477,7 @@ def generate_kokoro_dialogue(script: DialogueScript, output_dir):
     # Initialize Bridge & Fetch Voices
     try:
         from kokoro_bridge import get_kokoro_bridge
-        KOKORO_MODEL = "/Volumes/XMVPX/mw/kokoro-root/kokoro-v0_19.onnx"
+        KOKORO_MODEL = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/kokoro-root/kokoro-v0_19.onnx"
         bridge = get_kokoro_bridge(KOKORO_MODEL)
         
         # Ensure bridge loaded to get voices

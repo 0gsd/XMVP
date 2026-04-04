@@ -6,8 +6,8 @@ import subprocess
 from pathlib import Path
 
 # Config
-REPO_PATH = "/Volumes/XMVPX/mw/hunyuan-foley-code"
-MODEL_PATH = "/Volumes/XMVPX/mw/hunyuan-foley" # Assuming weights here? Check listing.
+REPO_PATH = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/hunyuan-foley-code"
+MODEL_PATH = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/hunyuan-foley" # Assuming weights here? Check listing.
 
 class HunyuanFoleyBridge:
     def __init__(self, repo_path=REPO_PATH, model_path=MODEL_PATH):

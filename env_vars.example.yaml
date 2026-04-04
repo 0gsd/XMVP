@@ -4,8 +4,8 @@
 # --- TEXT ENGINE (New in v1.5) ---
 # Options: "gemini_api" (Default), "local_gemma"
 TEXT_ENGINE: "gemini_api"
-# If local, specify HuggingFace ID or Path (e.g. "google/gemma-2-9b-it")
-# or just the folder name if inside /Volumes/XMVPX/mw/gemma-root/
+# If local, specify HuggingFace ID or Path (e.g. "google/gemma-4")
+# or just the folder name if inside /Users/m3u/METMcloud/METMroot/tools/fmv/weights/gemma-3-root/
 LOCAL_MODEL_PATH: ""
 
 # --- GEMINI API KEYS ---

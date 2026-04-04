@@ -22,9 +22,9 @@ from peft import LoraConfig, get_peft_model
 
 # Standard Paths
 # Prioritize Flux 2 Dev
-FLUX_ROOT = "/Volumes/XMVPX/mw/flux-root/dev"
+FLUX_ROOT = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
 if not os.path.exists(FLUX_ROOT):
-    FLUX_ROOT = "/Volumes/XMVPX/mw/flux-root"
+    FLUX_ROOT = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root"
 
 # Device Selection
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -142,7 +142,7 @@ def main():
          try:
              # Fallback logic from flux_bridge
              from transformers import T5EncoderModel, T5TokenizerFast
-             t5_local = "/Volumes/XMVPX/mw/t5weights-root"
+             t5_local = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/t5weights-root"
              if os.path.exists(t5_local):
                  print(f"      📚 Loading T5 from Local Cache: {t5_local}")
                  pipeline.text_encoder_2 = T5EncoderModel.from_pretrained(t5_local, torch_dtype=dtype).to(device)

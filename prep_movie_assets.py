@@ -344,9 +344,9 @@ def main():
         conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
         if not conf:
             conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-klein")
-        flux_path = conf.path if conf else "/Volumes/XMVPX/mw/flux-root/klein-9b"
+        flux_path = conf.path if conf else "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/klein-9b"
     except:
-        flux_path = "/Volumes/XMVPX/mw/flux-root/klein-9b"
+        flux_path = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/klein-9b"
         
     print(f"       Target Model: {flux_path}")
     bridge = get_flux_bridge(flux_path)

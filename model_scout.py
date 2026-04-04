@@ -112,7 +112,7 @@ def probe_model(keys, model_name):
             fail_count += 1
         time.sleep(1)
 
-def pull_model(model_name, dest_dir="/Volumes/XMVPX/mw/gemma-root"):
+def pull_model(model_name, dest_dir="/Users/m3u/METMcloud/METMroot/tools/fmv/weights/gemma-3-root"):
     """Downloads/Converts HF model via mlx-lm."""
     print(f"\n📦 MODEL PULL: {model_name} -> {dest_dir}")
     if not os.path.exists(dest_dir):

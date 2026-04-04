@@ -389,9 +389,9 @@ class FrameUpscaler:
                     conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-dev")
                     if not conf:
                         conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-dev")
-                    flux_root = conf.path if conf else "/Volumes/XMVPX/mw/flux-root/dev"
+                    flux_root = conf.path if conf else "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
                 except:
-                    flux_root = "/Volumes/XMVPX/mw/flux-root/dev"
+                    flux_root = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
                 
                 guidance_val = 4.0 if "dev" in str(flux_root).lower() else 0.0
                 
@@ -474,7 +474,11 @@ class FrameInterpolator:
     def __init__(self, keys, context=""):
         self.keys = keys
         self.context = context
-        self.model = "gemini-2.5-flash-image"
+        try:
+            from definitions import Modality, get_active_model
+            self.model = get_active_model(Modality.IMAGE).name
+        except:
+            self.model = "gemini-2.5-flash-image"
 
     def generate_tween(self, img_path_a, img_path_b, output_path, frame_idx_a, frame_idx_b, local=False):
         """
@@ -498,9 +502,9 @@ class FrameInterpolator:
                     conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-dev")
                     if not conf:
                         conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-dev")
-                    flux_root = conf.path if conf else "/Volumes/XMVPX/mw/flux-root/dev"
+                    flux_root = conf.path if conf else "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
                 except:
-                    flux_root = "/Volumes/XMVPX/mw/flux-root/dev"
+                    flux_root = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
                     
                 guidance_val = 4.0 if "dev" in str(flux_root).lower() else 0.0
                 
@@ -552,12 +556,18 @@ class FrameInterpolator:
             img_a = Image.open(img_path_a)
             img_b = Image.open(img_path_b)
             
-            # Put Images FIRST for Gemini 2.0/2.5 Context Priority
-            prompt += "\n(Refer to the two images above as the Start and End frames. Generate the Middle Frame.)"
+            is_gemini_3 = "gemini-3" in self.model.lower()
+            
+            if is_gemini_3:
+                prompt += "\n(Refer to the two attached images as the Start and End frames. Generate the Middle Frame.)"
+                contents = [prompt, img_a, img_b]
+            else:
+                prompt += "\n(Refer to the two images above as the Start and End frames. Generate the Middle Frame.)"
+                contents = [img_a, img_b, prompt]
             
             response = client.models.generate_content(
                 model=self.model,
-                contents=[img_a, img_b, prompt],
+                contents=contents,
                 config=types.GenerateContentConfig(
                     response_modalities=['IMAGE']
                 )

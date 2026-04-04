@@ -43,9 +43,9 @@ def get_flux_cache_path():
         conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-dev")
         if not conf:
             conf = definitions.MODAL_REGISTRY[definitions.Modality.IMAGE].get("flux-dev")
-        return conf.path if conf else "/Volumes/XMVPX/mw/flux-root/dev"
+        return conf.path if conf else "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
     except:
-        return "/Volumes/XMVPX/mw/flux-root/dev"
+        return "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
 
 FLUX_CACHE = get_flux_cache_path()
 FLUX_REPO = "black-forest-labs/FLUX.1-schnell" # Updated repo for cloud fallback
@@ -278,7 +278,7 @@ class LTXDirector:
             config = definitions.MODAL_REGISTRY[definitions.Modality.VIDEO].get("ltx-video")
             if not config:
                 logging.warning("⚠️ LTX-Video config not found in definitions. Using fallback path.")
-                path = "/Volumes/XMVPX/mw/LT2X-root"
+                path = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/LT2X-root"
             else:
                 path = config.path
                 

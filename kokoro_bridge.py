@@ -128,7 +128,7 @@ def get_kokoro_bridge(model_path):
 if __name__ == "__main__":
     # Test
     # Assuming standard install location
-    path = "/Volumes/XMVPX/mw/kokoro-root/kokoro-v0_19.onnx"
+    path = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/kokoro-root/kokoro-v0_19.onnx"
     if os.path.exists(path):
         bridge = KokoroBridge(path)
         bridge.generate("Hello world, this is a test of the local Emergency Broadcast System.", "test_kokoro.wav")

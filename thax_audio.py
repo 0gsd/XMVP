@@ -15,7 +15,7 @@ INDEX_NAME = "thax.index"
 
 # Path to Kokoro (Base TTS)
 # 1. Env Var -> 2. Hardcoded Local Fallback
-DEFAULT_KOKORO = "/Volumes/XMVPX/mw/kokoro-root/kokoro-v0_19.onnx"
+DEFAULT_KOKORO = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/kokoro-root/kokoro-v0_19.onnx"
 KOKORO_MODEL_PATH = os.getenv("KOKORO_MODEL_PATH", DEFAULT_KOKORO)
 
 # RVC Python Path (In separate environment)

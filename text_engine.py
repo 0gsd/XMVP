@@ -52,7 +52,7 @@ from mvp_shared import load_api_keys, load_text_keys
 class TextEngine:
     def __init__(self, config_path=None):
         self.backend = "gemini_api" # Default
-        self.local_model_path = "mlx-community/gemma-2-9b-it-4bit"
+        self.local_model_path = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/gemma-3-root"
         self.local_adapter_path = None
         self.api_keys = []
         self.mlx_model = None
@@ -81,7 +81,7 @@ class TextEngine:
              logging.info("   🔧 Overriding Text Engine Backend via ENV: local_gemma")
              self.backend = "local_gemma"
              # Optionally set model path if also in env, otherwise default
-             self.local_model_path = os.environ.get("LOCAL_MODEL_PATH", "mlx-community/gemma-2-9b-it-4bit")
+             self.local_model_path = os.environ.get("LOCAL_MODEL_PATH", "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/gemma-3-root")
              self.local_adapter_path = os.environ.get("LOCAL_ADAPTER_PATH")
 
         elif env_backend == "gemini_cloud":
@@ -110,7 +110,7 @@ class TextEngine:
                         with open(am_path, 'r') as f:
                             profile = json.load(f)
                             text_model = profile.get("text", "")
-                            # If model is gemma-2-9b-it (Local), switch backend
+                            # If model is gemma-4 (Local), switch backend
                             if "gemma" in text_model or "local" in text_model:
                                 logging.info(f"   🔧 Active Profile ({text_model}) requests Local Backend.")
                                 self.backend = "local_gemma"
@@ -131,7 +131,7 @@ class TextEngine:
                     custom_path = config.get("LOCAL_MODEL_PATH")
                     if custom_path:
                         # Check if it's a full path, or just a name in the volume
-                        volume_path = Path("/Volumes/XMVPX/mw/gemma-root") / custom_path
+                        volume_path = Path("/Users/m3u/METMcloud/METMroot/tools/fmv/weights/gemma-3-root") / custom_path
                         if volume_path.exists():
                             self.local_model_path = str(volume_path)
                         else:

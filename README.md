@@ -55,13 +55,13 @@ With the right hardware and a big external drive, you can run the entire pipelin
 Format an external SSD and name it **`XMVPX`**. Create the weights directory:
 
 ```bash
-mkdir -p /Volumes/XMVPX/mw
+mkdir -p /Users/m3u/METMcloud/METMroot/tools/fmv/weights
 ```
 
 Final structure:
 
 ```
-/Volumes/XMVPX/mw/
+/Users/m3u/METMcloud/METMroot/tools/fmv/weights/
 ├── flux-root/           # Flux.1-schnell + Klein 9B (image generation)
 ├── gemma-root/          # Gemma 3 (text/direction)
 ├── t5weights-root/      # T5 encoder for Flux
@@ -96,7 +96,7 @@ conda activate xmvp
 python3 populate_models_xmvp.py
 ```
 
-This prompts for a HuggingFace token and downloads everything to `/Volumes/XMVPX/mw/`. Expect ~400GB.
+This prompts for a HuggingFace token and downloads everything to `/Users/m3u/METMcloud/METMroot/tools/fmv/weights/`. Expect ~400GB.
 
 Manual download reference:
 
@@ -338,7 +338,7 @@ XMVP ships with fine-tuned adapter weights and training data:
 
 **"No API Keys found"** → Ensure `env_vars.yaml` exists with valid keys.
 
-**"Local model not found"** → Verify `/Volumes/XMVPX/mw/` contains model folders. Run `python3 model_scout.py --status`.
+**"Local model not found"** → Verify `/Users/m3u/METMcloud/METMroot/tools/fmv/weights/` contains model folders. Run `python3 model_scout.py --status`.
 
 **"MPS not available"** → Requires macOS 12.3+ on Apple Silicon. Falls back to CPU (slow).
 

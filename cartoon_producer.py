@@ -179,7 +179,7 @@ def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration, bpm=No
         from flux_bridge import get_flux_bridge
         from definitions import Modality, get_active_model
         flux_conf = get_active_model(Modality.IMAGE)
-        flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Volumes/XMVPX/mw/flux-root/dev"
+        flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
         flux_bridge = get_flux_bridge(flux_path)
         if not flux_bridge: raise ImportError("No Flux Bridge")
     except Exception as e:
@@ -542,7 +542,7 @@ def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration):
         from flux_bridge import get_flux_bridge
         from definitions import Modality, get_active_model
         flux_conf = get_active_model(Modality.IMAGE)
-        flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Volumes/XMVPX/mw/flux-root/dev"
+        flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
         flux_bridge = get_flux_bridge(flux_path) # Default local path
         if not flux_bridge: raise ImportError("No Flux Bridge")
     except Exception as e:
@@ -1176,22 +1176,44 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                             render_contents.append(types.Part.from_bytes(data=buf.getvalue(), mime_type="image/jpeg"))
                             
                             coherence_pct = int(strength * 100)
+                            is_gemini_3 = "gemini-3" in render_model.lower()
+                            
                             if is_redraw:
-                                final_instruction = (
-                                    f"SOURCE: The attached image is the frame to be redrawn.\n"
-                                    f"TASK: Redraw this EXACT frame with absolute precision in layout and character. "
-                                    f"Apply this style: {refined_prompt}. Visual fidelity: {coherence_pct}%.\n"
-                                    f"CRITICAL: Do NOT include any text, frame numbers, or metadata in the image."
-                                )
+                                if is_gemini_3:
+                                    final_instruction = (
+                                        f"TASK: Restyle the attached reference image.\n"
+                                        f"Apply this specific art style: {refined_prompt}\n"
+                                        f"Maintain the core layout and pose of the subject seamlessly, but fully commit to the new art style.\n"
+                                        f"CRITICAL: Do NOT include any text, frame numbers, or metadata in the image."
+                                    )
+                                else:
+                                    final_instruction = (
+                                        f"SOURCE: The attached image is the frame to be redrawn.\n"
+                                        f"TASK: Redraw this EXACT frame with absolute precision in layout and character. "
+                                        f"Apply this style: {refined_prompt}. Visual fidelity: {coherence_pct}%.\n"
+                                        f"CRITICAL: Do NOT include any text, frame numbers, or metadata in the image."
+                                    )
                             else:
-                                final_instruction = (
-                                    f"PREVIOUS: The attached image is the PREVIOUS frame in this animation.\n"
-                                    f"TASK: Generate the NEXT frame. Keep style/colors exact. "
-                                    f"Change Level: {coherence_pct}% ({'Subtle flipbook' if coherence_pct < 40 else 'Clear motion'}).\n"
-                                    f"Visual: {refined_prompt}\n"
-                                    f"CRITICAL: Do NOT include any text, frame numbers, or metadata in the image."
-                                )
-                            render_contents.append(final_instruction)
+                                if is_gemini_3:
+                                    final_instruction = (
+                                        f"TASK: Generate the NEXT frame of an animation sequence. "
+                                        f"Use the attached image as a style and character reference, but clearly depict this new visual action: {refined_prompt}\n"
+                                        f"Change Level: {coherence_pct}% ({'Subtle flipbook' if coherence_pct < 40 else 'Clear motion'}).\n"
+                                        f"CRITICAL: Do NOT include any text, frame numbers, or metadata in the image."
+                                    )
+                                else:
+                                    final_instruction = (
+                                        f"PREVIOUS: The attached image is the PREVIOUS frame in this animation.\n"
+                                        f"TASK: Generate the NEXT frame. Keep style/colors exact. "
+                                        f"Change Level: {coherence_pct}% ({'Subtle flipbook' if coherence_pct < 40 else 'Clear motion'}).\n"
+                                        f"Visual: {refined_prompt}\n"
+                                        f"CRITICAL: Do NOT include any text, frame numbers, or metadata in the image."
+                                    )
+                            
+                            if is_gemini_3:
+                                render_contents.insert(0, final_instruction)
+                            else:
+                                render_contents.append(final_instruction)
                         except Exception as e_ctx:
                             logging.warning(f"   ⚠️ Context attachment failed: {e_ctx}")
                             render_contents.append(f"Generate an image of: {refined_prompt} --aspect_ratio {aspect_ratio}")
@@ -3450,7 +3472,7 @@ def main():
             # Switch Text -> Gemma
             definitions.set_active_model(Modality.TEXT, "gemma-2-9b-it")
             os.environ["TEXT_ENGINE"] = "local_gemma"
-            os.environ["LOCAL_MODEL_PATH"] = "mlx-community/gemma-2-9b-it-4bit"
+            os.environ["LOCAL_MODEL_PATH"] = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/gemma-3-root"
             # Switch Image -> Flux
             definitions.set_active_model(Modality.IMAGE, "flux-dev", local=True)
             # Switch Video -> LTX
@@ -3466,7 +3488,7 @@ def main():
             # TEXT stays LOCAL (Gemma) — avoids burning Gemini text quotas
             definitions.set_active_model(Modality.TEXT, "gemma-2-9b-it")
             os.environ["TEXT_ENGINE"] = "local_gemma"
-            os.environ["LOCAL_MODEL_PATH"] = "mlx-community/gemma-2-9b-it-4bit"
+            os.environ["LOCAL_MODEL_PATH"] = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/gemma-3-root"
             # IMAGE goes to Cloud
             target_model = args.model if getattr(args, "model", None) else "gemini-2.5-flash-image"
             definitions.set_active_model(Modality.IMAGE, target_model)

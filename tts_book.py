@@ -55,8 +55,8 @@ from foley_talk import assign_kokoro_voice_deterministic, pitch_shift_file
 from text_engine import TextEngine
 
 # --- Configuration ---
-KOKORO_MODEL = "/Volumes/XMVPX/mw/kokoro-root/kokoro-v0_19.onnx"
-F5TTS_MODEL_DIR = "/Volumes/XMVPX/mw/f5tts-root"
+KOKORO_MODEL = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/kokoro-root/kokoro-v0_19.onnx"
+F5TTS_MODEL_DIR = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/f5tts-root"
 MAX_TTS_CHARS = 600  # Max characters per TTS call; longer segments get split
 
 # --- Initial Setup ---

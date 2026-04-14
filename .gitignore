@@ -93,6 +93,7 @@ check_diffusers.py
 debug_diffusers.log
 debug_keys.py
 debug_kokoro.py
+z_test-outputs/E47xmvp/*
 
 # OS
 v0.5.code-workspace

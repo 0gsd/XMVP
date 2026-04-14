@@ -1,4 +1,4 @@
-# XMVP API Reference v3.25few bugfixes for flux via fal.aifew bugfixes for flux via fal.ai
+# XMVP API Reference v3.33few bugfixes for flux via fal.aifew bugfixes for flux via fal.ai
 ## Complete Command-Line Interface Documentation
 
 ---
@@ -26,6 +26,7 @@
    - [sfx_bridge.py](#sfx_bridgepy)
 5. [Bridge Modules (Local Inference)](#bridge-modules)
    - [flux_bridge.py](#flux_bridgepy)
+   - [mflux_bridge.py](#mflux_bridgepy)
    - [kokoro_bridge.py](#kokoro_bridgepy)
    - [hunyuan_foley_bridge.py](#hunyuan_foley_bridgepy)
 6. [Core Libraries](#core-libraries)
@@ -83,7 +84,7 @@ python3 cartoon_producer.py music-video --mu track.mp3 --prompt "Neon dreams"
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `--mu` | str | `None` | Path to music/audio file for sync. In cartoon-video mode, the input video. |
-| `--xb` | str | `None` | Path to XMVP XML manifest for re-rendering |
+| `--xb` | str | `None` | Path to XMVP XML manifest for re-rendering. If `<GeneratedFrames>` exists, it triggers 1:1 Prompt Mapping bypass. |
 | `--tf` | Path | (default path) | Transcript folder (legacy FBF source) |
 | `--vf` | Path | `/Volumes/XMVPX/fmv_corpus` | Video folder (corpus for clip-video) |
 | `--f` | str | `None` | Source folder for clip-video mode |
@@ -582,7 +583,20 @@ python3 portion_control.py --bible bible.json --portions portions.json --out man
 
 ---
 
-## kokoro_bridge.py
+## mflux_bridge.py
+
+**MFLUX Image Generator** — Successor to `flux_bridge.py`. Native Apple Silicon (MLX) bridge for Flux.1-schnell and Flux 2 Klein 9B. Provides fully memory-managed txt2img and img2img pipelines via `mflux` without the overhead of PyTorch/diffusers. Includes safety handlers for `KeyboardInterrupt`.
+
+### MFluxBridge Class
+| Method | Description |
+|--------|-------------|
+| `__init__(model_path, device)` | Initialize with model path |
+| `load_pipeline(model_path)` | Load MFLUX native pipeline |
+| `generate(...)` | Text-to-image generation |
+| `generate_img2img(...)` | Image-to-image generation |
+| `unload()` | Free MLX memory |
+
+---
 
 **Kokoro TTS** — Local text-to-speech via Kokoro ONNX model. 156 lines.
 

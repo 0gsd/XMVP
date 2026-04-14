@@ -20,14 +20,14 @@ try:
     from mvp_shared import load_xmvp
     import definitions 
     from definitions import Modality, BackendType
-    from flux_bridge import get_flux_bridge
+    from mflux_bridge import get_flux_bridge
 except ImportError:
     # If not in path, try relative
     sys.path.append(str(Path(__file__).parent))
     from mvp_shared import load_xmvp
     import definitions 
     from definitions import Modality, BackendType
-    from flux_bridge import get_flux_bridge
+    from mflux_bridge import get_flux_bridge
 import json
 
 # Third Party (Check availability)

@@ -83,8 +83,8 @@ conda activate xmvp
 
 pip install torch torchvision torchaudio
 pip install -r requirements.txt
-pip install mlx mlx-lm                    # Gemma (text)
-pip install diffusers transformers        # Flux & LTX
+pip install mlx mlx-lm mflux            # Gemma (text) & MFLUX (Native Apple Silicon Image Gen)
+pip install diffusers transformers        # LTX Server Fallback
 pip install kokoro-onnx soundfile         # Kokoro TTS
 pip install librosa pyloudnorm demucs     # Audio analysis + stem splitting
 ```
@@ -313,10 +313,14 @@ Every production exports to an open XML format that captures the full creative s
 </XMVP>
 ```
 
-Re-render any XMVP file with different settings:
+Re-render any XMVP file with different settings. With v3.00+, passing `--xb` to an XML that contains a `GeneratedFrames` array will automatically bypass the LLM director and perform a **1:1 Frame-accurate re-render** with the exact original prompts (e.g., pumping a local sequence up to Gemini on the cloud).
 
 ```bash
+# General Re-render or 1:1 Prompt Mapping
 python3 cartoon_producer.py --xb previous_run.xml --local
+
+# E.g. Send local frames directly to the cloud
+python3 cartoon_producer.py --xb previous_local_run.xml --cloud --model gemini-2.5-flash
 ```
 
 ---

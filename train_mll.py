@@ -140,7 +140,7 @@ def main():
     if not hasattr(pipeline, "text_encoder_2") or pipeline.text_encoder_2 is None:
          print("   ⚠️ Pipeline missing text_encoder_2 (T5). Attempting manual load...")
          try:
-             # Fallback logic from flux_bridge
+             # Fallback logic from transformers
              from transformers import T5EncoderModel, T5TokenizerFast
              t5_local = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/t5weights-root"
              if os.path.exists(t5_local):

@@ -1,5 +1,6 @@
 import re
 import os
+import sys
 import io
 import json
 import time
@@ -40,7 +41,7 @@ from mvp_shared import VPForm, CSSV, Constraints, Story, Portion, save_xmvp, loa
 from vision_producer import get_chaos_seed
 import frame_canvas # Support FC Mode
 try:
-    from flux_bridge import get_flux_bridge
+    from mflux_bridge import get_flux_bridge
 except ImportError:
     pass # Handle locally inside function if missing
 try:
@@ -176,7 +177,7 @@ def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration, bpm=No
     
     # Load Flux Bridge
     try:
-        from flux_bridge import get_flux_bridge
+        from mflux_bridge import get_flux_bridge
         from definitions import Modality, get_active_model
         flux_conf = get_active_model(Modality.IMAGE)
         flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
@@ -412,10 +413,19 @@ def analyze_audio_profile(audio_path, duration):
         meter = pyln.Meter(sr) # create BS.1770 meter
         
         # Calculate Integrated Loudness (Overall)
-        try:
-            loudness_overall = meter.integrated_loudness(y)
-        except Exception:
-            loudness_overall = -24.0 # Default fallback
+        import warnings
+        import numpy as np
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                # Handle near-silence directly to prevent pyloudnorm crashes
+                if np.allclose(y, 0):
+                    loudness_overall = -70.0
+                else:
+                    loudness_overall = meter.integrated_loudness(y)
+            except Exception:
+                loudness_overall = -24.0 # Default fallback
             
         logging.info(f"   📊 Audio Integrated Loudness: {loudness_overall:.2f} LUFS")
 
@@ -436,11 +446,18 @@ def analyze_audio_profile(audio_path, duration):
             if len(chunk) < sr * 0.4: # < 400ms might error
                 chunk_lufs = loudness_overall # Fallback
             else:
-                try:
-                    chunk_lufs = meter.integrated_loudness(chunk)
-                except ValueError:
-                    # Silence or too short
-                    chunk_lufs = -70.0 
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    try:
+                        if np.allclose(chunk, 0):
+                            chunk_lufs = -70.0
+                        else:
+                            chunk_lufs = meter.integrated_loudness(chunk)
+                            if np.isneginf(chunk_lufs):
+                                chunk_lufs = -70.0
+                    except ValueError:
+                        # Silence or too short
+                        chunk_lufs = -70.0 
             
             lufs_values.append(chunk_lufs)
 
@@ -539,7 +556,7 @@ def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration):
     
     # Load Flux Bridge
     try:
-        from flux_bridge import get_flux_bridge
+        from mflux_bridge import get_flux_bridge
         from definitions import Modality, get_active_model
         flux_conf = get_active_model(Modality.IMAGE)
         flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
@@ -816,7 +833,7 @@ def blend_videos(base_video, overlay_video, output_path, opacity=0.33):
         
     return None
 
-def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=None, prev_frame_path=None, pg_mode=False, force_local=False, strength=0.65, use_director=True, seed=None, source_img_path=None, prev_action_prompt=None):
+def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, height=768, aspect_ratio="1:1", model=None, prev_frame_path=None, pg_mode=False, force_local=False, strength=0.65, use_director=True, seed=None, source_img_path=None, prev_action_prompt=None, is_cut=False):
     """
     Worker function using Universal Backend (Flux Local or Gemini/Imagen Cloud).
     """
@@ -862,8 +879,15 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
 
     # --- METADATA STRIPPING ---
     # To prevent AI from rendering frame indices or music labels ("Frame 1/24", "beat climax") as text in the image.
+    target_style = None
     if prompt:
         import re
+        
+        # EXTRACT STYLE PREFIX
+        m = re.search(r"Style:\s*(.*?)\.\s*Action:", prompt, re.IGNORECASE)
+        if m:
+            target_style = m.group(1).strip()
+            
         # Strip (Frame X/Y), (beat ...), beat progress X/Y, etc.
         p_clean = re.sub(r"\s*\(Frame\s*\d+/\d+[^)]*\)", "", prompt)
         p_clean = re.sub(r"\s*\(beat\s+[^)]*\)", "", p_clean)
@@ -913,7 +937,7 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
             try:
                 # Get Bridge
                 try:
-                    from flux_bridge import get_flux_bridge
+                    from mflux_bridge import get_flux_bridge
                 except ImportError:
                     logging.error("Flux Bridge not found.")
                     return False
@@ -934,13 +958,26 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                     try:
                         img_input = Image.open(prev_frame_path).convert("RGB")
                         logging.info(f"   🔄 Feedback: Using {prev_frame_path.name} as Img2Img input.")
+                        
+                        # --- LOCAL AFFINE MOTION INJECTION ---
+                        # Subtle camera drift to prevent static convergence.
+                        # 1.005x is gentler: over 64 frames ≈ 1.37x total (was 3.5x at 1.02)
+                        if not is_cut:
+                            zoom_factor = 1.005
+                            w, h = img_input.size
+                            nw, nh = int(w * zoom_factor), int(h * zoom_factor)
+                            img_z = img_input.resize((nw, nh), Image.Resampling.BICUBIC)
+                            
+                            l, t = (nw - w) / 2, (nh - h) / 2
+                            img_input = img_z.crop((l, t, l + w, t + h))
+                        
                     except Exception as e:
                         logging.warning(f"   ⚠️ Failed to load previous frame for feedback: {e}")
 
                 # 2. Director Mode (Gemini Vision or Gemma Fallback)
                 coherence_pct = int(strength * 100)
+                director_success = False  # Track whether Director produced a clean prompt
                 if use_director:
-                    director_success = False
                     
                     # --- A. Vision-Aware Director (Gemini 2.0 Flash) ---
                     # Uses the previous frame to maintain perfect structural continuity.
@@ -952,20 +989,27 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                                 client = genai.Client(api_key=current_key)
                                 
                                 director_prompt = f"""
-                                You are a Lead Animator directing frame-by-frame animation.
-                                Goal: Describe the EXACT VISUALS for the next frame in this animation sequence.
-                                Context: Previous frame is attached (if available). 
-                                Current Prompt: "{prompt}".
-                                
-                                CRITICAL RULES: 
-                                1. Maintain the STYLE described in the prompt exactly.
-                                2. If the 'Action' is similar to the previous frame, describe INCREMENTAL MOTION (flipbook style). Do not change camera angles or character designs unless explicitly told to.
-                                3. If the 'Action' is a new beat, describe the new scene but KEEP THE VISUAL STYLE CONSISTENT.
-                                4. ABSOLUTELY NO TEXT DESCRIPTIONS IN THE IMAGE. 
-                                5. Animation change/motion level is {coherence_pct}%.
+You are a PROMPT DISTILLERY for Flux, a diffusion image model.
+Your job: compress the user's narrative/creative prompt into a PURE VISUAL DESCRIPTION 
+that is EXACTLY 50-72 words (to fit CLIP's 77-token window).
 
-                                Output: A dense, visual description of the image to generate. No conversational filler.
-                                """
+RULES:
+1. OUTPUT ONLY the visual description. No preamble, no explanation.
+2. Preserve the SPIRIT and VIBE of the original — if it's goofy, the visuals should reflect that energy. If it mentions specific people/objects/scenarios, translate them into VISUAL compositions.
+3. Describe: subjects (who/what), composition (framing, perspective), lighting, color palette, mood, motion/action.
+4. NEVER include dialogue, narrative prose, or conversational text.
+5. NEVER describe text, words, labels, or signage appearing in the image.
+6. The target art style is: {target_style or 'cinematic animation'}.
+7. If a previous frame is attached, maintain character identity and scene continuity from it. Same characters, same outfits, same setting — only action/pose/camera changes.
+8. Animation change/motion level: {coherence_pct}%.
+
+USER'S ORIGINAL PROMPT:
+\"\"\"
+{prompt}
+\"\"\"
+
+Now output ONLY the 50-72 word visual description for Flux:
+"""
                                 director_contents = []
                                 if prev_frame_path and prev_frame_path.exists():
                                     try:
@@ -1062,37 +1106,67 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                             if not use_director:
                                 final_prompt = prompt # Fallback/Guard
                 
-                # --- CONTINUITY ANCHORS (Universal for Local Mode) ---
-                # Even if we skip the director (e.g. music-visualizer), we still apply anchors 
-                # if performing Img2Img in a sequence.
-                if img_input and coherence_pct < 80:
-                    # Append anchors if not already there
-                    anchors = " -- subtle motion, exact same art style, consistent color palette, flipbook animation sequence"
-                    if anchors not in final_prompt:
-                        final_prompt += anchors
-                        logging.info(f"      🔗 Coherence: Injected stylistic anchors for Flux ({coherence_pct}% strength)")
+                # --- MFLUX PROMPT SCRUBBING (Local Only) ---
+                # MFLUX thrives on natural language prose and chokes on key-val meta-tags,
+                # SD-style comma lists, and markdown timing loops (e.g. Action: **0s:**)
+                clean_prompt = final_prompt
+                # Strip leading stylistic metadata tags passed by orchestrator
+                clean_prompt = re.sub(r"^(?:Artwork strictly.*?:|Style:.*?(?:\.|Action:))\s*(?:Action:)?\s*", "", clean_prompt, flags=re.IGNORECASE)
+                # Strip timestamp timing markers
+                clean_prompt = re.sub(r"\*\*\d+s:\*\*\s*", "", clean_prompt)
+                if clean_prompt != final_prompt:
+                    final_prompt = clean_prompt
+                    logging.info(f"      🧽 Anti-Slop: Scrubbed metadata formatting for Flux clarity.")
+
+                # --- EMERGENCY TRUNCATION (Director-Failed Safety Net) ---
+                # CLIP has a hard 77-token window. If the Director didn't distill the prompt
+                # and the raw prompt is still too long, hard-truncate to 72 words.
+                # This is the last line of defense against text bleed-through.
+                prompt_words = final_prompt.split()
+                if not director_success and len(prompt_words) > 77:
+                    logging.warning(f"      ✂️ Emergency Truncation: {len(prompt_words)} words → 72 (Director unavailable)")
+                    final_prompt = ' '.join(prompt_words[:72])
+
+                # --- ANTI-TEXT-RENDERING SUFFIX ---
+                # CLIP negative guidance: prevent Flux from rendering prompt fragments as visible text
+                if "no text" not in final_prompt.lower():
+                    final_prompt = final_prompt.rstrip('. ') + ". No text, no words, no letters, no writing in the image."
+
+                # --- EXPLICIT STYLE RE-INJECTION (LOCAL) ---
+                # Only inject style prefix if the Director didn't already handle it
+                if target_style and target_style not in final_prompt and not director_success:
+                    final_prompt = f"Artwork strictly in the visual style of '{target_style}': " + final_prompt
 
                 # Generate
-                # Flux 2 Dev typically needs more steps than Schnell. 28 is recommended.
-                # Standardize to requested dimensions
-                # CRITICAL FIX: Ensure 'image' is passed to enable Img2Img Feedback Loop
-                # If img_input is None (First Frame), it acts as Txt2Img.
-                logging.info(f"   🚀 Flux Generating with Image Input: {img_input is not None}")
+                # DYNAMIC STEPS: Scale inference steps based on prompt complexity.
+                # Longer/more complex prompts benefit from more denoising steps.
+                # T2I (no image input) gets more steps; I2I gets fewer (init provides structure).
+                prompt_word_count = len(final_prompt.split())
+                if img_input is not None:
+                    # I2I: 6 steps (simple) to 12 steps (complex). Bridge clamps to [4,12].
+                    dynamic_steps = 6 if prompt_word_count < 20 else (8 if prompt_word_count < 40 else 12)
+                else:
+                    # T2I: 8 steps (simple) to 16 steps (complex). Bridge clamps to [4,16].
+                    dynamic_steps = 8 if prompt_word_count < 20 else (12 if prompt_word_count < 40 else 16)
                 
-                # Seed Locking: Use a consistent seed for local sequences to improve temporal stability
+                logging.info(f"   🚀 Flux Generating: I2I={img_input is not None}, Steps={dynamic_steps}, Words={prompt_word_count}")
+                
+                # Seed: Use caller's seed (now hybrid-varied per frame)
                 frame_seed = seed if seed is not None else 42
                 
-                # Use passed strength argument (default 0.65 from signature)
-                img = bridge.generate(prompt=final_prompt, width=width, height=height, steps=28, image=img_input, strength=strength, seed=frame_seed)
+                img = bridge.generate(prompt=final_prompt, width=width, height=height, steps=dynamic_steps, image=img_input, strength=strength, seed=frame_seed)
                 
                 if img:
                     # Save (No resize needed if generated at target)
                     img.save(target_path)
-                    return True
+                    return final_prompt
                 else:
                     logging.warning(f"   ⚠️ Flux returned None for frame {index}.")
                     continue
                     
+            except KeyboardInterrupt:
+                logging.info("🚪 Ctrl-C Detected during MFLUX generation! Shutting down...")
+                raise
             except Exception as e:
                 logging.error(f"Flux Generation Failed: {e}")
                 continue # Retry? Or fail? Retry.
@@ -1159,6 +1233,10 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                     if model == "gemini-2.0-flash":
                         from definitions import Modality, get_active_model
                         render_model = get_active_model(Modality.IMAGE).name
+                        
+                    # --- EXPLICIT STYLE RE-INJECTION (CLOUD) ---
+                    if target_style and target_style not in refined_prompt:
+                        refined_prompt = f"Artwork strictly in the visual style of '{target_style}': " + refined_prompt
                     
                     # BUILD MULTIMODAL CONTENTS
                     render_contents = []
@@ -1240,7 +1318,7 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                                 if image.size != (width, height):
                                     image = image.resize((width, height), Image.Resampling.LANCZOS)
                                 image.save(target_path)
-                                return True
+                                return refined_prompt
                     
                 elif is_imagen:
                     # --- IMAGEN PASS (generate_images) ---
@@ -1254,7 +1332,7 @@ def generate_frame_universal(index, prompt, output_dir, key_cycle, width=768, he
                         image = resp.generated_images[0]
                         if image.image:
                             image.image.save(target_path)
-                            return True
+                            return prompt
                 
                 else:
                     logging.error(f"❌ Unknown Cloud Model Type: {model}")
@@ -1487,68 +1565,162 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         if not args.mu or not os.path.exists(args.mu):
              logging.error("❌ Music Visualizer requires --mu [audio_path]")
              return
-             
-        # 1. Analyze Audio
-        if args.bpm and args.bpm > 0:
-             # Manual Override
-             bpm = float(args.bpm)
-             # Get duration via soundfile if possible, or fallback
-             try:
-                 import soundfile as sf
-                 f = sf.SoundFile(args.mu)
-                 duration = len(f) / f.samplerate
-             except:
-                 # Last ditch effort if librosa also fails
-                 logging.warning("⚠️ Could not read duration. Defaulting to 60s.")
-                 duration = 60.0
-             
-             # Calculate derived metrics
-             frames_per_beat = 4
-             bps = bpm / 60.0
-             fps = (bps * frames_per_beat) * (getattr(args, 'fsync', None) or 1.0)
-             
-             logging.info(f"   🎹 BPM Override: {bpm}")
-             logging.info(f"   🎵 Derived FPS: {fps:.2f} (based on {frames_per_beat} frames/beat * fsync {getattr(args, 'fsync', None) or 1.0})")
-             
+
+        # === LOCAL: PROCEDURAL VISUALIZER (No Flux — pure math) ===
+        if args.local:
+            logging.info("🎆 Music Visualizer (LOCAL): Routing to Procedural Engine...")
+            try:
+                from procedural_visualizer import run_procedural_visualizer
+                result = run_procedural_visualizer(args, project_dir, te, key_cycle)
+                if result:
+                    frames_dir_pv, project_fps, target_duration, target_frames = result
+                    # Jump straight to stitching — frames are already rendered
+                    prompts = ["procedural"] * target_frames
+                    # Override frames_dir for downstream stitching
+                    # We'll set a flag so the frame generation loop is skipped
+                    args._procedural_frames_dir = str(frames_dir_pv)
+                    args._procedural_done = True
+                    logging.info(f"   ✅ Procedural Visualizer: {target_frames} frames ready in {frames_dir_pv}")
+                else:
+                    logging.error("❌ Procedural Visualizer failed. Falling back to standard path.")
+                    args._procedural_done = False
+            except Exception as e:
+                logging.error(f"❌ Procedural Visualizer import/run failed: {e}")
+                import traceback; traceback.print_exc()
+                args._procedural_done = False
         else:
-             bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=(getattr(args, 'fsync', None) or 1.0))
+            args._procedural_done = False
+
+        # === CLOUD / FALLBACK: Standard Flux/Gemini prompt generation ===
+        if not getattr(args, '_procedural_done', False):
              
-        target_frames = int(duration * fps)
-        project_fps = fps
-        target_duration = duration
+            # 1. Analyze Audio
+            if args.bpm and args.bpm > 0:
+                 # Manual Override
+                 bpm = float(args.bpm)
+                 # Get duration via soundfile if possible, or fallback
+                 try:
+                     import soundfile as sf
+                     f = sf.SoundFile(args.mu)
+                     duration = len(f) / f.samplerate
+                 except:
+                     # Last ditch effort if librosa also fails
+                     logging.warning("⚠️ Could not read duration. Defaulting to 60s.")
+                     duration = 60.0
+                 
+                 # Calculate derived metrics
+                 frames_per_beat = 4
+                 bps = bpm / 60.0
+                 fps = (bps * frames_per_beat) * (getattr(args, 'fsync', None) or 1.0)
+                 
+                 logging.info(f"   🎹 BPM Override: {bpm}")
+                 logging.info(f"   🎵 Derived FPS: {fps:.2f} (based on {frames_per_beat} frames/beat * fsync {getattr(args, 'fsync', None) or 1.0})")
+                 
+            else:
+                 bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=(getattr(args, 'fsync', None) or 1.0))
+                 
+            target_frames = int(duration * fps)
+            project_fps = fps
+            target_duration = duration
+            
+            logging.info(f"   🎹 Visualizer Target: {target_frames} frames @ {fps:.2f} FPS ({duration:.1f}s)")
         
-        logging.info(f"   🎹 Visualizer Target: {target_frames} frames @ {fps:.2f} FPS ({duration:.1f}s)")
+        if getattr(args, '_procedural_done', False):
+            # Procedural engine already generated frames — skip cloud prompt building
+            prompts = ["procedural"] * target_frames
+            timeline = []
+        else:
+            # 2. Generate Abstract Prompts
+            # No "Story", just pure visual evolution.
+            prompts = []
         
-        # 2. Generate Abstract Prompts
-        # No "Story", just pure visual evolution.
-        prompts = []
-        
-        # Style Definition
-        base_style = args.style if args.style != "Indie graphic novel artwork. Precise, uniform, dead-weight linework. Highly stylized, elegantly sophisticated, and with an explosive, highly saturated pop-color palette." else "Abstract, pixel art, Stan Brakhage style, melting film on hot projectors, unique fractal algorithm, highly saturated colors"
-        
-        # Generate evolution
-        # We want "Patterns" and "One path".
-        # We can simulate this by evolving a noise seed or just descriptive interpolation.
-        
-        style_prefix = base_style
-        
-        # Visualizer Loop
-        # Incorporate user prompt as the visual CONCEPT
-        prompt_concept = args.prompt if args.prompt else "A single continuous abstract form"
-        
-        for i in range(target_frames):
-             progress = i / target_frames
-             # Evolve description
-             # Phase 1: 0-0.3 (Buildup)
-             # Phase 2: 0.3-0.7 (Chaos)
-             # Phase 3: 0.7-1.0 (Resolution)
-             
-             phase = "forming patterns, emerging from void"
-             if progress > 0.3: phase = "in full motion, melting and warping with energy"
-             if progress > 0.7: phase = "reaching peak intensity, crystallizing into pure light"
-             
-             raw_desc = f"{prompt_concept} — {phase}. Beat {i}, progress {int(progress*100)}%."
-             prompts.append(f"Style: {style_prefix}. Action: {raw_desc}")
+            # Style Definition
+            base_style = args.style if args.style != "Indie graphic novel artwork. Precise, uniform, dead-weight linework. Highly stylized, elegantly sophisticated, and with an explosive, highly saturated pop-color palette." else "Abstract, pixel art, Stan Brakhage style, melting film on hot projectors, unique fractal algorithm, highly saturated colors"
+            
+            # Generate evolution
+            style_prefix = base_style
+            
+            # Visualizer Loop
+            # Incorporate user prompt as the visual CONCEPT
+            prompt_concept = args.prompt if args.prompt else "A single continuous abstract form"
+            
+            timeline = []
+            bps = bpm / 60.0
+            frames_per_beat = fps / bps if bps > 0 else 4
+            
+            # --- RICH PROGRESSIVE VISUAL EVOLUTION ---
+            # 12 sub-phases with continuous interpolation instead of 3 static blocks.
+            # Each phase has unique visual vocabulary that survives metadata scrubbing.
+            visual_phases = [
+                (0.00, "sparse geometric seeds drifting in deep space, pinpoints of color nucleating"),
+                (0.08, "crystalline lattices forming, translucent grids catching spectral light"),
+                (0.16, "organic tendrils unfurling from the lattice, bioluminescent veins pulsing"),
+                (0.25, "dense fractal architectures spiraling outward, iridescent surfaces refracting"),
+                (0.33, "liquid metal rivers flowing between impossible structures, chrome reflections"),
+                (0.42, "explosive prismatic eruptions shattering the surfaces, kaleidoscopic fragments"),
+                (0.50, "swirling vortex of color consuming all geometry, centrifugal force pulling outward"),
+                (0.58, "chaotic superposition of overlapping dimensions, vibrating interference patterns"),
+                (0.67, "peak intensity singularity collapsing inward, white-hot radiance at the core"),
+                (0.75, "crystalline order re-emerging from chaos, sharp faceted surfaces catching light"),
+                (0.83, "ethereal dissolve into luminous mist, ghostly afterimages of the structures"),
+                (0.92, "final particles settling like cosmic dust, serene void with residual glow"),
+            ]
+            
+            # Composition angles that rotate throughout the piece
+            compositions = [
+                "extreme close-up detail view", "wide establishing shot from above",
+                "dynamic dutch angle perspective", "symmetrical frontal composition",
+                "sweeping orbital camera movement", "macro lens intimate perspective",
+                "bird's eye geometric overview", "worm's eye dramatic upshot",
+            ]
+            
+            # Color palettes that shift across the track
+            palettes = [
+                "deep indigo and electric cyan", "molten gold and volcanic crimson",
+                "neon magenta and acid green", "arctic white and cobalt blue",
+                "burnt amber and twilight purple", "phosphorescent teal and hot coral",
+                "obsidian black and plasma orange", "pearl iridescent and rose quartz",
+            ]
+            
+            for i in range(target_frames):
+                 progress = i / max(1, target_frames - 1)
+                 
+                 # Find the two nearest phases and interpolate the description
+                 phase_desc = visual_phases[-1][1]  # default to last
+                 for pi in range(len(visual_phases) - 1):
+                     if visual_phases[pi][0] <= progress < visual_phases[pi + 1][0]:
+                         # Use the current phase's description (interpolation happens visually via Flux)
+                         local_progress = (progress - visual_phases[pi][0]) / (visual_phases[pi + 1][0] - visual_phases[pi][0])
+                         if local_progress < 0.5:
+                             phase_desc = visual_phases[pi][1]
+                         else:
+                             phase_desc = visual_phases[pi + 1][1]
+                         break
+                 
+                 beat_idx = int(i / frames_per_beat)
+                 # Cut every 16 beats (4 bars) for a musical "section" feel
+                 is_cut = (i > 0) and (int((i-1) / frames_per_beat) < beat_idx) and (beat_idx % 16 == 0)
+                 
+                 # Rotate composition and palette based on beat structure (every 4 bars = new look)
+                 section_idx = beat_idx // 16
+                 comp = compositions[section_idx % len(compositions)]
+                 pal = palettes[section_idx % len(palettes)]
+                 
+                 # Beat-reactive intensity words woven into core prompt (NOT as metadata)
+                 beat_in_bar = beat_idx % 4
+                 intensity = ["building", "surging", "peaking", "releasing"][beat_in_bar]
+                 
+                 # Compose rich per-frame prompt
+                 raw_desc = f"{prompt_concept}, {phase_desc}, {intensity} energy, {comp}, palette of {pal}"
+                 full_prompt = f"Style: {style_prefix}. Action: {raw_desc}"
+                 prompts.append(full_prompt)
+                 
+                 timeline.append({
+                     'prompt': full_prompt,
+                     'log_prompt': full_prompt,
+                     'is_cut': is_cut or (i == 0),
+                     'shot_idx': section_idx
+                 })
 
     elif args.vpform == "music-video":
         print(f"   Mode: Music Video Agency (Legacy: music-agency)")
@@ -2337,14 +2509,37 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             if not args.mu or not os.path.exists(args.mu):
                  logging.error("❌ Music Visualizer requires --mu [audio_path]")
                  return
-                 
-            # 1. Analyze Audio
-            bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=(getattr(args, 'fsync', None) or 1.0))
-            target_frames = int(duration * fps)
-            project_fps = fps
-            target_duration = duration
-            
-            logging.info(f"   🎹 Visualizer Target: {target_frames} frames @ {fps:.2f} FPS ({duration:.1f}s)")
+
+            # === LOCAL: PROCEDURAL VISUALIZER (No Flux) ===
+            if args.local:
+                logging.info("🎆 Music Visualizer (LOCAL/XB): Routing to Procedural Engine...")
+                try:
+                    from procedural_visualizer import run_procedural_visualizer
+                    result = run_procedural_visualizer(args, project_dir, te, key_cycle)
+                    if result:
+                        frames_dir_pv, project_fps, target_duration, target_frames = result
+                        prompts = ["procedural"] * target_frames
+                        args._procedural_frames_dir = str(frames_dir_pv)
+                        args._procedural_done = True
+                        source_content = ["Procedural Visualizer Mode Active"]
+                        logging.info(f"   ✅ Procedural Visualizer: {target_frames} frames ready")
+                    else:
+                        args._procedural_done = False
+                except Exception as e:
+                    logging.error(f"❌ Procedural Visualizer failed: {e}")
+                    args._procedural_done = False
+            else:
+                args._procedural_done = False
+
+            # === CLOUD / FALLBACK ===
+            if not getattr(args, '_procedural_done', False):
+                # 1. Analyze Audio
+                bpm, duration, fpb, fps = analyze_audio(args.mu, fsync=(getattr(args, 'fsync', None) or 1.0))
+                target_frames = int(duration * fps)
+                project_fps = fps
+                target_duration = duration
+                
+                logging.info(f"   🎹 Visualizer Target: {target_frames} frames @ {fps:.2f} FPS ({duration:.1f}s)")
             
             # 2. Generate Abstract Prompts
             # No "Story", just pure visual evolution.
@@ -2381,17 +2576,40 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
              try:
                  tree = ET.parse(args.xb)
                  root = tree.getroot()
-                 # Find Portions JSON
-                 p_node = root.find("Portions")
-                 if p_node is not None and p_node.text:
-                     portions_data = json.loads(p_node.text)
-                     # Convert to list of content strings
-                     for p in portions_data:
-                         source_content.append(p.get('content', ''))
-                     context_str = f"Re-render of {args.xb}"
+                 
+                 # FIRST PRIORITY: Re-render from raw GeneratedFrames (Exact Prompts)
+                 gen_frames_node = root.find("GeneratedFrames")
+                 if gen_frames_node is not None and gen_frames_node.text:
+                     frames_data = json.loads(gen_frames_node.text)
+                     timeline = []
+                     
+                     for frame in frames_data:
+                         # Preserve the original exact prompt, bypassing 'Action: ' restructuring
+                         raw_p = frame.get('prompt', 'A static screen of colorful noise.')
+                         timeline.append({
+                             'prompt': raw_p,
+                             'is_cut': False,
+                             'shot_idx': 0
+                         })
+                         prompts.append(raw_p)
+                         
+                     target_frames = len(timeline)
+                     logging.info(f"   🎞️ Found {target_frames} Exact GeneratedFrames! Bypassing Director beats for 1:1 Frame Mapping.")
+                     source_content = ["Bypassed via GeneratedFrames Map"]
+                     context_str = f"1:1 Frame-accurate re-render of {args.xb}"
+                     
+                 # SECOND PRIORITY: Standard XML Portions
                  else:
-                     logging.error("   ❌ No Portions found in XML.")
-                     return
+                     p_node = root.find("Portions")
+                     if p_node is not None and p_node.text:
+                         portions_data = json.loads(p_node.text)
+                         # Convert to list of content strings
+                         for p in portions_data:
+                             source_content.append(p.get('content', ''))
+                         context_str = f"Re-render of {args.xb} (Portions Map)"
+                     else:
+                         logging.error("   ❌ No Portions or GeneratedFrames found in XML.")
+                         return
              except Exception as e:
                  logging.error(f"   ❌ XML Parse Error: {e}")
                  return
@@ -2438,24 +2656,25 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         # 2d. Distribute Beats to Frames
         # If we have N beats and T frames.
         # Simple stretch: Each beat gets T/N frames.
-        if not source_content:
-             source_content = ["Static noise."]
+        if 'timeline' not in locals() or not timeline:
+             if not source_content:
+                  source_content = ["Static noise."]
+                  
+             num_beats = len(source_content)
+             frames_per_beat = target_frames / num_beats
              
-        num_beats = len(source_content)
-        frames_per_beat = target_frames / num_beats
-        
-        # Use new Flipbook Style
-        # Override with args.style if present (already defaulted to Indie Graphic Novel)
-        style_prefix = args.style
-        
-        for i in range(target_frames):
-             beat_idx = int(i / frames_per_beat)
-             beat_idx = min(beat_idx, num_beats - 1)
+             # Use new Flipbook Style
+             # Override with args.style if present (already defaulted to Indie Graphic Novel)
+             style_prefix = args.style
              
-             raw_desc = source_content[beat_idx]
-             # Dynamically append frame index to encourage movement in the LLM's mind
-             # We inject the STYLE here so it travels with the prompt to the Director.
-             prompts.append(f"Style: {style_prefix}. Action: {raw_desc}")
+             for i in range(target_frames):
+                  beat_idx = int(i / frames_per_beat)
+                  beat_idx = min(beat_idx, num_beats - 1)
+                  
+                  raw_desc = source_content[beat_idx]
+                  # Dynamically append frame index to encourage movement in the LLM's mind
+                  # We inject the STYLE here so it travels with the prompt to the Director.
+                  prompts.append(f"Style: {style_prefix}. Action: {raw_desc}")
              
     else:
         # Interpolation Mode (Legacy)
@@ -2490,7 +2709,10 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
     ts = int(time.time())
     # Standardize output folder naming for MVP
     # If the project name already looks like a final folder (MusicVideo_...), don't prepend "cartoon_"
-    if project_name.startswith("MusicVideo_") or project_name.startswith("Agency_"):
+    # Check for uniplus-spawned folder name override first
+    if getattr(args, '_uniplus_name', None):
+        project_out = output_root / args._uniplus_name
+    elif project_name.startswith("MusicVideo_") or project_name.startswith("Agency_"):
         project_out = output_root / f"{project_name}" # Use exact name we generated in main
     else:
         project_out = output_root / f"cartoon_{project_name}_{ts}"
@@ -2699,6 +2921,34 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
     # Normalize Prompt Source
     # The loop below uses 'timeline'.
     
+    # 💥 MAC OS MEMORY SHIELD ("Drop the Mic" Protocol) 💥
+    # The TextEngine (Gemma) generated the pacing timeline above, holding 10GB-40GB of MLX cache.
+    # We MUST explicitly unload it before the Flux VRAM loop starts to prevent 76GB 'Swap Death'.
+    if args.local and 'te' in locals() and hasattr(te, 'unload'):
+        logging.info("   🛡️ Local Memory Shield: Unloading TextEngine MLX cache before starting Diffusers loop.")
+        te.unload()
+        
+    # --- LIVE XMVP MANIFEST LOGGING ---
+    generated_frames = []
+    live_xml_name = f"storyboard_{project_name}_{ts}.xml"
+    live_xml_path = project_out / live_xml_name
+    
+    # Pre-build our core structure so we can just update 'GeneratedFrames' iteratively
+    live_xmvp_data = {
+        "VPForm": getattr(args, "vpform", "unknown"),
+        "ManifestInfo": f"Live manifest for {project_name}"
+    }
+        
+    # === PROCEDURAL VISUALIZER BYPASS ===
+    # If procedural_visualizer already rendered all frames, skip the generation loop
+    if getattr(args, '_procedural_done', False):
+        logging.info("   ⏩ Skipping frame generation loop (Procedural Visualizer already rendered)")
+        success_count = target_frames
+        # Override frames_dir to point to procedural output
+        if hasattr(args, '_procedural_frames_dir'):
+            frames_dir = Path(args._procedural_frames_dir)
+        timeline = []  # Empty timeline = loop doesn't execute
+        
     for i, frame_data in enumerate(timeline):
         if recursive_mode: break # Skip standard generation if recursive mode handled it
         
@@ -2864,11 +3114,26 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 
             continue # Skip standard gen
         else:
-            # Seed Consistency
+            # HYBRID SEED STRATEGY:
+            # Sequential base for smooth evolution, with random bursts at musical boundaries
+            # to inject fresh visual energy synced to the music structure.
             project_seed = args.seed if hasattr(args, "seed") and args.seed is not None else 42
-            # For Flux Img2Img, a locked static seed is dramatically better for coherence.
-            # Only increment for non-img2img styles or if explicitly requested.
-            frame_seed = project_seed if args.local else (project_seed + i)
+            is_section_break = frame_data.get('is_cut', False)  # Audio section cuts
+            is_beat_boundary = False
+            if 'frames_per_beat' in dir() or 'frames_per_beat' in locals():
+                try:
+                    beat_idx_current = int(i / frames_per_beat)
+                    is_beat_boundary = (i > 0) and (beat_idx_current % 16 == 0) and (int((i-1) / frames_per_beat) < beat_idx_current)
+                except:
+                    pass
+            
+            if is_section_break or is_beat_boundary:
+                # BURST: Random seed at musical boundaries for fresh visual energy
+                frame_seed = int.from_bytes(os.urandom(4), 'big') % 2**31
+                logging.info(f"   🎲 Hybrid Seed BURST: Frame {index} (section_break={is_section_break}, beat_16={is_beat_boundary}) → seed={frame_seed}")
+            else:
+                # FLOW: Sequential increment for smooth per-frame evolution
+                frame_seed = project_seed + i
 
             # STANDARD GENERATION (Gemini/Imagen/Universal)
             # DIRECTOR ENFORCEMENT: Enable director by default for creative music modes
@@ -2876,10 +3141,18 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             # force_raw is True only for "agency-video" by default.
             force_raw = (getattr(args, "vpform", "") in ["agency-video"])
             
-            # If local mode and a music visualizer/video, we WANT the director to help Gemma interpret the music beats
+            # DIRECTOR UNLOCK FOR LOCAL FLUX:
+            # The Vision Director uses a CLOUD Gemini 2.0 Flash API call (no local VRAM).
+            # It's essential for local Flux: distills narrative prose into 72-token visual descriptors.
+            # Only force raw if running fully offline (no API keys available).
             if args.local and getattr(args, "vpform", "") in ["music-visualizer", "music-video"]:
-                force_raw = False
-                logging.debug("   🧠 Director pass enabled for local music mode.")
+                has_keys = key_cycle is not None
+                if not has_keys:
+                    force_raw = True
+                    logging.debug("   🛡️ No API keys: Director pass DISABLED (offline mode).")
+                else:
+                    force_raw = False
+                    logging.debug("   🎬 Local+Cloud Director: Flash will distill prompts for Flux.")
 
             success = generate_frame_universal(
                 index=index,
@@ -2892,15 +3165,31 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 width=args.w if args.w else (args.kid if not args.local else 768),
                 height=args.h if args.h else (args.kid if not args.local else 768),
                 force_local=args.local,
-                strength=args.strength / 100.0 if args.strength != 50 else (0.70 if args.local else 0.50),
+                strength=args.strength / 100.0 if args.strength != 50 else (0.55 if args.local else 0.50),
                 use_director=not force_raw,
                 seed=frame_seed,
-                prev_action_prompt=prompts[i-1] if i > 0 else None
+                prev_action_prompt=prompts[i-1] if i > 0 else None,
+                is_cut=is_cut
             )
             
             if success:
                 print(".", end="", flush=True)
                 success_count += 1
+                
+                # --- LIVE MANIFEST UPDATE ---
+                try:
+                    generated_frames.append({
+                        "id": index,
+                        "file": f"frame_{index:04d}.png",
+                        "timestamp": time.time(),
+                        "backend": model_to_use,
+                        "prompt": success if isinstance(success, str) else p
+                    })
+                    live_xmvp_data["GeneratedFrames"] = generated_frames
+                    save_xmvp(live_xmvp_data, live_xml_path)
+                except Exception as e_xml:
+                    logging.warning(f"Failed to save live XML manifest: {e_xml}")
+                    
                 continue
             
             # FAILURE FALLBACK (Gap Filling)
@@ -2927,6 +3216,18 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             if clone_source:
                 shutil.copy(clone_source, target_path)
                 success_count += 1 
+                try:
+                    generated_frames.append({
+                        "id": index,
+                        "file": f"frame_{index:04d}.png",
+                        "timestamp": time.time(),
+                        "backend": "Clone Fallback",
+                        "prompt": "[GENERATION FAILED - PREVIOUS FRAME CLONED FOR SYNC]"
+                    })
+                    live_xmvp_data["GeneratedFrames"] = generated_frames
+                    save_xmvp(live_xmvp_data, live_xml_path)
+                except:
+                    pass
                 logging.warning(f"   🩹 Stuttered: Cloned {clone_source.name} -> {target_path.name}")
             else:
                 # If Frame 1 fails or no history, create a black frame.
@@ -3032,7 +3333,7 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 "-map", "0:v",
                 "-map", "1:a",
                 "-c:v", "copy",
-                "-shortest", # Clip video to audio length (crucial for music videos)
+                "-shortest",
                 str(final_video)
             ]
             try:
@@ -3042,87 +3343,64 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 logging.error(f"Audio mux failed: {e}. Fallback to raw video.")
         else:
              logging.info(f"✅ FINAL CUT (Silent): {raw_video}")
-             
-        # 3. Post-Processing (Music Visualizer Only)
-        if args.vpform == "music-visualizer" and raw_video.exists():
-            logging.info("🔥 Entering Post-Production: Obsessive Video Repainting (ASCII Forge)...")
-            
-            ascii_vid = project_out / "ascii_version.mp4"
-            if run_ascii_forge(raw_video, ascii_vid):
-                logging.info(f"   ✅ ASCII Version Forged: {ascii_vid}")
-                
-                # Blend
-                blended_vid = project_out / "final_blend.mp4"
-                logging.info("   🎨 Blending ASCII Overlay (33%)...")
-                # Use final_video logic? No, we have raw_video.
-                if blend_videos(raw_video, ascii_vid, blended_vid, opacity=0.33):
-                     logging.info(f"   ✅ FINAL VISUALIZER MASTER: {blended_vid}")
-                     
-                     # Mux Audio
-                     final_master = project_out / "master_release.mp4"
-                     if args.mu:
-                         cmd_remix = [
-                            "ffmpeg", "-y",
-                            "-i", str(blended_vid),
-                            "-i", str(args.mu),
-                            "-map", "0:v", "-map", "1:a",
-                            "-c:v", "copy", "-shortest",
-                            str(final_master)
-                         ]
-                         try:
-                             subprocess.run(cmd_remix, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                             logging.info(f"   🏆 MASTER RELEASE: {final_master}")
-                         except:
-                             logging.warning("   ⚠️ Audio remix failed.")
-             
-        # 3. Post-Processing (Music Visualizer Only)
-        if args.vpform == "music-visualizer" and final_video.exists():
-            logging.info("🔥 Entering Post-Production: Obsessive Video Repainting (ASCII Forge)...")
-            
-            ascii_vid = project_out / "ascii_version.mp4"
-            if run_ascii_forge(raw_video, ascii_vid):
-                logging.info(f"   ✅ ASCII Version Forged: {ascii_vid}")
-                
-                # Blend
-                blended_vid = project_out / "final_blend.mp4"
-                logging.info("   🎨 Blending ASCII Overlay (33%)...")
-                if blend_videos(final_video, ascii_vid, blended_vid, opacity=0.33):
-                     logging.info(f"   ✅ FINAL VISUALIZER MASTER: {blended_vid}")
-                     # Ensure audio is present (blend might strip it if checking video streams only?)
-                     # Blend takes video from 0 and 1. Audio from 0? 
-                     # ffmpeg complex filter usually drops audio unless mapped.
-                     # Let's Remix audio just to be safe.
-                     final_master = project_out / "master_release.mp4"
-                     if args.mu:
-                         cmd_remix = [
-                            "ffmpeg", "-y",
-                            "-i", str(blended_vid),
-                            "-i", str(args.mu),
-                            "-map", "0:v", "-map", "1:a",
-                            "-c:v", "copy", "-shortest",
-                            str(final_master)
-                         ]
-                         try:
-                             subprocess.run(cmd_remix, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                             logging.info(f"   🏆 MASTER RELEASE: {final_master}")
-                         except:
-                             logging.warning("   ⚠️ Audio remix failed.")
+              
+        # (ASCII Forge post-processing removed — music-visualizer output is already abstract)
 
-    # 7. Frame Cleanup (Keep First Frame Only)
-    # -------------------------------------------------------------------------
-    try:
-        logging.info("🧹 Cleaning up frames (Keeping only frame_0001.png)...")
-        deleted_count = 0
-        for frame_file in frames_dir.glob("frame_*.png"):
-            if frame_file.name != "frame_0001.png":
+        # === UNIPLUS: Automatic Unicode Repainting Pass ===
+        if getattr(args, 'uniplus', False) and args.vpform != 'cartoon-video':
+            # Find the best video to repaint (final_cut with audio > raw_video)
+            uniplus_source = final_video if final_video.exists() else raw_video
+            
+            if uniplus_source.exists():
+                # Build unicode folder name: "001_2_6-4_Video" → "001_2_6-4-unicode_Video"
+                base_folder_name = project_out.name  # e.g. "001_2_6-4_Video" or "cartoon_X_12345"
+                parts = base_folder_name.rsplit("_", 1)  # Split on last underscore
+                if len(parts) == 2:
+                    unicode_folder_name = f"{parts[0]}-unicode_{parts[1]}"
+                else:
+                    unicode_folder_name = f"{base_folder_name}-unicode"
+                
+                logging.info(f"")
+                logging.info(f"🎨 ════════════════════════════════════════════")
+                logging.info(f"🎨 UNIPLUS: Launching Unicode Repainting Pass")
+                logging.info(f"🎨 Source: {uniplus_source.name}")
+                logging.info(f"🎨 Output: {unicode_folder_name}/")
+                logging.info(f"🎨 Canvas: {args.w if args.w else 120} character columns")
+                logging.info(f"🎨 ════════════════════════════════════════════")
+                
+                # Build subprocess command — re-invoke cartoon_producer.py as cartoon-video
+                import sys as _sys
+                uniplus_cmd = [
+                    _sys.executable,
+                    str(Path(__file__).resolve()),
+                    "--vpform", "cartoon-video",
+                    "--mu", str(uniplus_source),
+                    "--w", str(args.w if args.w else 120),
+                    "--_uniplus_name", unicode_folder_name,
+                ]
+                # Propagate fsync if provided
+                if getattr(args, 'fsync', None) is not None:
+                    uniplus_cmd.extend(["--fsync", str(args.fsync)])
+                
+                logging.info(f"🎨 CMD: {' '.join(uniplus_cmd)}")
+                
                 try:
-                    frame_file.unlink()
-                    deleted_count += 1
-                except Exception as e_del:
-                    logging.warning(f"Failed to delete {frame_file.name}: {e_del}")
-        logging.info(f"   Deleted {deleted_count} intermediate frames.")
-    except Exception as e_clean:
-         logging.error(f"Cleanup failed: {e_clean}")
+                    subprocess.run(
+                        uniplus_cmd,
+                        cwd=str(Path(__file__).resolve().parent),
+                        check=True
+                    )
+                    logging.info(f"🎨 ✅ UNIPLUS complete: {unicode_folder_name}/")
+                except subprocess.CalledProcessError as e:
+                    logging.error(f"🎨 ❌ UNIPLUS failed (exit {e.returncode})")
+                except Exception as e:
+                    logging.error(f"🎨 ❌ UNIPLUS error: {e}")
+            else:
+                logging.warning(f"🎨 ⚠️ UNIPLUS: No video found to repaint ({final_video} / {raw_video})")
+
+    # 7. Frame Cleanup (REMOVED: Keeping all frames)
+    # -------------------------------------------------------------------------
+    logging.info("🧹 Skipping frame cleanup to preserve raw assets...")
 
     # 8. XMVP Export (Storyboard Mode)
     # -------------------------------------------------------------------------
@@ -3183,7 +3461,8 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
         try:
             # Use a fast text model
             from definitions import Modality, get_active_model
-            text_model = get_active_model(Modality.TEXT).name
+            # Force local=False since meta_client is a cloud SDK hitting Google APIs
+            text_model = get_active_model(Modality.TEXT, local=False).name
             resp = meta_client.models.generate_content(model=text_model, contents=meta_prompt)
             if resp.text:
                 clean_json = re.sub(r"```json|```", "", resp.text).strip()
@@ -3238,12 +3517,13 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
             "VPForm": vp,
             "CSSV": cssv,
             "Story": story,
-            "Portions": [p.model_dump() for p in portions]
+            "Portions": [p.model_dump() for p in portions],
+            "GeneratedFrames": generated_frames if 'generated_frames' in locals() else []
         }
         
         xml_name = f"storyboard_{project_name}_{ts}.xml"
         xml_path = project_out / xml_name
-        mvp_shared.save_xmvp(xmvp_data, xml_path)
+        save_xmvp(xmvp_data, xml_path)
         logging.info(f"   📜 XMVP Saved: {xml_path}")
         
         # --- WAN VIDEO HIJACK (Full Movie) ---
@@ -3285,16 +3565,8 @@ def process_project(project_dir, vf_dir, key_cycle, args, output_root, keys, tex
                 return
 
         # 6. Cleanup
-        # "Delete all but frame one from the frames folder"
-        logging.info("   🧹 Cleaning up frames...")
-        try:
-            frames_to_keep = ["frame_0001.png"]
-            if frames_dir.exists():
-                for f in frames_dir.iterdir():
-                    if f.name not in frames_to_keep:
-                        f.unlink()
-        except Exception as e:
-            logging.warning(f"   ⚠️ Cleanup failed: {e}")
+        # (REMOVED: Keep all frames)
+        logging.info("   🧹 Skipping frame cleanup...")
         
     except Exception as e_xml:
         logging.error(f"XMVP Generation Failed: {e_xml}")
@@ -3370,6 +3642,8 @@ def main():
     parser.add_argument("--fsync", type=float, default=None, help="FPS Sync Multiplier (0.1 - 6.0). If provided for cartoon-video, calculates FPS from BPM. If omitted, uses native source FPS.")
     parser.add_argument("--f", type=str, help="Source Folder for Clip Video Mode")
     parser.add_argument("--blend", type=int, default=70, help="Blend ratio for cartoon-color 1-99 (Default: 70). Higher = More palette color.")
+    parser.add_argument("--uniplus", action="store_true", help="After primary job completes, auto-run output through cartoon-video (Unicode art repainting)")
+    parser.add_argument("--_uniplus_name", type=str, default=None, help=argparse.SUPPRESS)  # Hidden: folder name override for uniplus-spawned jobs
     
     args, unknown = parser.parse_known_args()
 
@@ -3553,11 +3827,11 @@ def main():
                  p_dir = Path(args.xb).parent / p_name
              else:
                  # USEFUL NAMING: Use Music Filename or Default
-                 if args.mu:
+                 # UNIPLUS OVERRIDE: If spawned by uniplus, use the pre-computed folder name
+                 if getattr(args, '_uniplus_name', None):
+                     p_name = args._uniplus_name
+                 elif args.mu:
                      clean_stem = Path(args.mu).stem.replace(" ", "_").replace(".", "_")
-                     p_name = f"{clean_stem}_{int(time.time())}" # Add timestamp to avoid collisions? Or just overwrite? 
-                     # User hates clutter. Let's just use Stem + Date-Time or just Stem if we want single folder.
-                     # Let's use Stem_Agency
                      p_name = f"{clean_stem}_Video"
                  else:
                      p_name = f"Agency_Creative_{int(time.time())}"
@@ -3646,6 +3920,9 @@ def main():
             
             process_project(proj, args.vf, key_cycle, args, output_root, keys, text_engine)
             processed_count += 1
+        except KeyboardInterrupt:
+            logging.info("🚪 Ctrl-C Detected! Gracefully shutting down project queue...")
+            sys.exit(0)
         except Exception as e:
             logging.error(f"Failed to process {proj.name}: {e}")
             

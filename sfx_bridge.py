@@ -78,8 +78,23 @@ class SFXGenerator:
         if self.model and self.backend == "stable_audio": return
         
         from diffusers import StableAudioPipeline, EulerDiscreteScheduler
+        import torch
+        import os
         
+        # FIX: "RuntimeError: invalid low watermark ratio 1.4" on Apple Silicon
+        # Stable Audio initialization can fail if this is set in the environment.
+        os.environ.pop("PYTORCH_MPS_HIGH_WATERMARK_RATIO", None)
+        # 1. Resolve Local Path from definitions.py
         model_id = "stabilityai/stable-audio-open-1.0"
+        try:
+            import definitions
+            conf = definitions.MODAL_REGISTRY[definitions.Modality.FOLEY].get("stable-audio-open")
+            if conf and conf.backend == definitions.BackendType.LOCAL and os.path.exists(conf.path):
+                model_id = conf.path
+                logging.info(f"   [🏠] SFX Bridge: Using Local Weights: {model_id}")
+        except Exception as e:
+            logging.warning(f"   [!] SFX Bridge: Definitions resolve failed: {e}")
+
         logging.info(f"   LOADING STABLE AUDIO: {model_id}...")
         
         # FIX: Force CPU to avoid MPS Contention and Recursion Errors

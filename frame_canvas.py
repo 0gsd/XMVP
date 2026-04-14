@@ -22,7 +22,7 @@ except ImportError:
 import definitions
 from definitions import Modality, BackendType
 try:
-    from flux_bridge import get_flux_bridge
+    from mflux_bridge import get_flux_bridge
 except ImportError:
     pass # Flux might not be installed, handle gracefully
 

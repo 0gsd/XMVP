@@ -17,8 +17,8 @@ def ensure_library():
     try:
         import huggingface_hub
     except ImportError:
-        print("[-] Installing huggingface_hub...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "huggingface_hub"], check=True)
+        print("[-] Installing huggingface_hub, mflux, and hf_transfer...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "huggingface_hub", "mflux", "hf_transfer"], check=True)
 
 def main():
     parser = argparse.ArgumentParser(description="XMVP Model Populator")
@@ -30,6 +30,7 @@ def main():
 
     # Ensure Environment for Cache
     os.environ["HF_HOME"] = str(HF_CACHE)
+    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 
     MODELS = {
         "Gemma 4": {
@@ -47,6 +48,11 @@ def main():
             "type": "file",
             "filename": "flux2-dev.safetensors",
             "target": MW_ROOT / "flux-root" / "dev"
+        },
+        "MFLUX-Klein-4B": {
+            "repo": "black-forest-labs/FLUX.2-klein-4B",
+            "type": "snapshot",
+            "target": MW_ROOT / "mflux-root" / "klein-4b"
         },
         "F5-TTS": {
             "repo": "SWivid/F5-TTS",
@@ -67,6 +73,11 @@ def main():
             "type": "files",
             "filenames": ["hubert_base.pt", "rmvpe.pt"],
             "target": MW_ROOT / "rvc-root"
+        },
+        "Stable-Audio-Open": {
+            "repo": "stabilityai/stable-audio-open-1.0",
+            "type": "snapshot",
+            "target": MW_ROOT / "stable-audio-root"
         }
     }
 

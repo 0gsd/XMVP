@@ -84,6 +84,9 @@ MODAL_REGISTRY: Dict[Modality, Dict[str, ModelConfig]] = {
     Modality.SPOKEN_TTS: {
         "google-journey": ModelConfig("en-US-Journey-F", BackendType.CLOUD, Modality.SPOKEN_TTS, api_key_env="GOOGLE_CLOUD_ACCESS_TOKEN"),
         "kokoro-v1": ModelConfig("kokoro-v0_19.onnx", BackendType.LOCAL, Modality.SPOKEN_TTS, path="/Users/m3u/METMcloud/METMroot/tools/fmv/weights/kokoro-root/kokoro-v0_19.onnx")
+    },
+    Modality.FOLEY: {
+        "stable-audio-open": ModelConfig("stable-audio-open-1.0", BackendType.LOCAL, Modality.FOLEY, path="/Users/m3u/METMcloud/METMroot/tools/fmv/weights/stable-audio-root")
     }
 }
 

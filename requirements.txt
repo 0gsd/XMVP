@@ -1,6 +1,7 @@
-# Local Training
+# Local Training & Generation
 mlx
 mlx-lm
+mflux
 huggingface_hub
 peft
 

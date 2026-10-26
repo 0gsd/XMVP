@@ -389,9 +389,9 @@ class FrameUpscaler:
                     conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-dev")
                     if not conf:
                         conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-dev")
-                    flux_root = conf.path if conf else "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
+                    flux_root = conf.path if conf else "/Users/0gs/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
                 except:
-                    flux_root = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
+                    flux_root = "/Users/0gs/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
                 
                 guidance_val = 4.0 if "dev" in str(flux_root).lower() else 0.0
                 
@@ -502,9 +502,9 @@ class FrameInterpolator:
                     conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-dev")
                     if not conf:
                         conf = definitions.MODAL_REGISTRY[Modality.IMAGE].get("flux-dev")
-                    flux_root = conf.path if conf else "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
+                    flux_root = conf.path if conf else "/Users/0gs/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
                 except:
-                    flux_root = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
+                    flux_root = "/Users/0gs/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
                     
                 guidance_val = 4.0 if "dev" in str(flux_root).lower() else 0.0
                 

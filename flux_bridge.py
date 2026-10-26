@@ -200,7 +200,7 @@ def get_flux_bridge(path):
     # because the user explicitly stated to REMOVE fal.ai fallback entirely. 
     # Hardcode resolution directly to locally downloaded weights.
     if res_path == "cloud" or "flux-root" not in res_path:
-        local_override = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev/flux2-dev.safetensors"
+        local_override = "/Users/0gs/METMcloud/METMroot/tools/fmv/weights/flux-root/dev/flux2-dev.safetensors"
         logging.info(f"   🔀 Cloud/Unknown Flux path intercepted. Redirecting cleanly to local weights: {local_override}")
         res_path = os.path.abspath(local_override)
 
@@ -215,7 +215,7 @@ def generate_via_hf_endpoint(*args, **kwargs):
     return bridge.generate(*args, **kwargs)
 
 if __name__ == "__main__":
-    bridge = get_flux_bridge("/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev/flux2-dev.safetensors")
+    bridge = get_flux_bridge("/Users/0gs/METMcloud/METMroot/tools/fmv/weights/flux-root/dev/flux2-dev.safetensors")
     print("Bridge tested and loaded successfully.")
 
 

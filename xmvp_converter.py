@@ -412,38 +412,44 @@ def parse_element47_fountain(content):
         if line.isupper() and len(line) < 30 and not line.startswith(".") and not line.startswith(">"):
             potential_performer = line
             
-            # Look ahead for (as Character)
-            if i + 1 < len(lines):
+            # Look ahead for (as Character). If absent, the performer speaks as themself.
+            is_transition = potential_performer.endswith(":") or potential_performer.startswith(("INT.", "EXT.", "INT ", "EXT "))
+            if i + 1 < len(lines) and not is_transition:
                 next_line = lines[i+1].strip()
                 if next_line.startswith("(as ") and next_line.endswith(")"):
-                    # Precise Match
+                    # Precise Match: PERFORMER (as Character)
                     current_performer = potential_performer
                     current_character = next_line[4:-1].strip() # Remove (as )
                     i += 2
+                else:
+                    # Performer out of character (e.g. BURN / DRIP talking as themselves)
+                    current_performer = potential_performer
+                    current_character = potential_performer
+                    i += 1
                     
-                    # Look ahead for dialogue
-                    # Skip parentheticals like (smooth) if present
-                    while i < len(lines) and lines[i].strip().startswith("("):
-                        # Capture as action/direction?
-                        # For now, ignore direction
-                        i += 1
-                        
-                    # Capture Dialogue Block
-                    dialogue_text = ""
-                    while i < len(lines):
-                        d_line = lines[i].strip()
-                        if not d_line or d_line.isupper() or "[[" in d_line:
-                            break
-                        dialogue_text += " " + d_line
-                        i += 1
-                        
-                    if dialogue_text:
-                        parsed_items.append({
-                            "type": "dialogue",
-                            "speaker": f"{current_performer}::{current_character}",
-                            "text": dialogue_text.strip()
-                        })
-                    continue
+                # Look ahead for dialogue
+                # Skip parentheticals like (smooth) if present
+                while i < len(lines) and lines[i].strip().startswith("("):
+                    # Capture as action/direction?
+                    # For now, ignore direction
+                    i += 1
+                    
+                # Capture Dialogue Block
+                dialogue_text = ""
+                while i < len(lines):
+                    d_line = lines[i].strip()
+                    if not d_line or d_line.isupper() or "[[" in d_line:
+                        break
+                    dialogue_text += " " + d_line
+                    i += 1
+                    
+                if dialogue_text:
+                    parsed_items.append({
+                        "type": "dialogue",
+                        "speaker": f"{current_performer}::{current_character}",
+                        "text": dialogue_text.strip()
+                    })
+                continue
         
         # 3. Fallback or Skip
         i += 1

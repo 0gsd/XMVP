@@ -7,7 +7,7 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 
-ROOT_DIR = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/kokoro-root"
+ROOT_DIR = "/Users/0gs/METMcloud/METMroot/tools/fmv/weights/kokoro-root"
 VOICES_DIR = os.path.join(ROOT_DIR, "voices")
 OUTPUT_PATH = os.path.join(ROOT_DIR, "voices.npz")
 

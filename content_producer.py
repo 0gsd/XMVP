@@ -82,7 +82,7 @@ print("DEBUG: Imports Done.")
 # --- CONFIG ---
 OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "z_test-outputs"))
 TRIPLETS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../z_podcast_triplets"))
-MW_ROOT = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights" # Standard mount point
+MW_ROOT = "/Users/0gs/METMcloud/METMroot/tools/fmv/weights" # Standard mount point
 
 # Resolve Flux Path via Definitions
 def _init_flux():
@@ -2452,7 +2452,7 @@ def main():
     if not args.geminiapi:
         print("   [Engine] Defaulting Text Engine to Local Gemma (Saving API Quota)...")
         os.environ["TEXT_ENGINE"] = "local_gemma"
-        # We assume local_gemma path is set in env_vars or defaults to /Users/m3u/METMcloud/METMroot/tools/fmv/weights/gemma-3-root
+        # We assume local_gemma path is set in env_vars or defaults to /Users/0gs/METMcloud/METMroot/tools/fmv/weights/gemma-3-root
     else:
         print("   [Engine] Text Engine Forced to Gemini API (Cloud).")
     
@@ -2470,7 +2470,7 @@ def main():
     if args.vpform == "element-47":
         if args.xb:
             manifest_path = args.xb
-            if manifest_path.lower().endswith(".fountain"):
+            if manifest_path.lower().endswith((".fountain", ".fountain.txt")):
                 print(f"    [🔄] Fountain Input Detected. Converting to XMVP XML...")
                 import sys
                 cmd = [sys.executable, "xmvp_converter.py", manifest_path, "--vpform", "element-47"]

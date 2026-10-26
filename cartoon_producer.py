@@ -180,7 +180,7 @@ def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration, bpm=No
         from mflux_bridge import get_flux_bridge
         from definitions import Modality, get_active_model
         flux_conf = get_active_model(Modality.IMAGE)
-        flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
+        flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Users/0gs/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
         flux_bridge = get_flux_bridge(flux_path)
         if not flux_bridge: raise ImportError("No Flux Bridge")
     except Exception as e:
@@ -559,7 +559,7 @@ def run_wan_keyframe_anim(args, prompts, project_fps, out_root, duration):
         from mflux_bridge import get_flux_bridge
         from definitions import Modality, get_active_model
         flux_conf = get_active_model(Modality.IMAGE)
-        flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
+        flux_path = flux_conf.path if (flux_conf and flux_conf.backend == "local") else "/Users/0gs/METMcloud/METMroot/tools/fmv/weights/flux-root/dev"
         flux_bridge = get_flux_bridge(flux_path) # Default local path
         if not flux_bridge: raise ImportError("No Flux Bridge")
     except Exception as e:
@@ -3746,7 +3746,7 @@ def main():
             # Switch Text -> Gemma
             definitions.set_active_model(Modality.TEXT, "gemma-2-9b-it")
             os.environ["TEXT_ENGINE"] = "local_gemma"
-            os.environ["LOCAL_MODEL_PATH"] = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/gemma-3-root"
+            os.environ["LOCAL_MODEL_PATH"] = "/Users/0gs/METMcloud/METMroot/tools/fmv/weights/gemma-3-root"
             # Switch Image -> Flux
             definitions.set_active_model(Modality.IMAGE, "flux-dev", local=True)
             # Switch Video -> LTX
@@ -3762,7 +3762,7 @@ def main():
             # TEXT stays LOCAL (Gemma) — avoids burning Gemini text quotas
             definitions.set_active_model(Modality.TEXT, "gemma-2-9b-it")
             os.environ["TEXT_ENGINE"] = "local_gemma"
-            os.environ["LOCAL_MODEL_PATH"] = "/Users/m3u/METMcloud/METMroot/tools/fmv/weights/gemma-3-root"
+            os.environ["LOCAL_MODEL_PATH"] = "/Users/0gs/METMcloud/METMroot/tools/fmv/weights/gemma-3-root"
             # IMAGE goes to Cloud
             target_model = args.model if getattr(args, "model", None) else "gemini-2.5-flash-image"
             definitions.set_active_model(Modality.IMAGE, target_model)

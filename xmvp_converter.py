@@ -411,47 +411,58 @@ def parse_element47_fountain(content):
         # Or just generic UPPER handling if it's not a transition.
         if line.isupper() and len(line) < 30 and not line.startswith(".") and not line.startswith(">"):
             potential_performer = line
-            
-            # Look ahead for (as Character). If absent, the performer speaks as themself.
             is_transition = potential_performer.endswith(":") or potential_performer.startswith(("INT.", "EXT.", "INT ", "EXT "))
-            if i + 1 < len(lines) and not is_transition:
-                next_line = lines[i+1].strip()
-                if next_line.startswith("(as ") and next_line.endswith(")"):
-                    # Precise Match: PERFORMER (as Character)
-                    current_performer = potential_performer
-                    current_character = next_line[4:-1].strip() # Remove (as )
-                    i += 2
-                else:
-                    # Performer out of character (e.g. BURN / DRIP talking as themselves)
-                    current_performer = potential_performer
-                    current_character = potential_performer
-                    i += 1
-                    
-                # Look ahead for dialogue
-                # Skip parentheticals like (smooth) if present
-                while i < len(lines) and lines[i].strip().startswith("("):
-                    # Capture as action/direction?
-                    # For now, ignore direction
-                    i += 1
-                    
-                # Capture Dialogue Block
-                dialogue_text = ""
-                while i < len(lines):
-                    d_line = lines[i].strip()
-                    if not d_line or d_line.isupper() or "[[" in d_line:
-                        break
-                    dialogue_text += " " + d_line
-                    i += 1
-                    
-                if dialogue_text:
-                    parsed_items.append({
-                        "type": "dialogue",
-                        "speaker": f"{current_performer}::{current_character}",
-                        "text": dialogue_text.strip()
-                    })
+            if is_transition:
+                current_performer = None
+                current_character = None
+                i += 1
                 continue
-        
-        # 3. Fallback or Skip
+
+            # Look ahead for (as Character). If absent, the performer speaks as themself.
+            current_performer = potential_performer
+            current_character = potential_performer
+            i += 1
+            if i < len(lines):
+                next_line = lines[i].strip()
+                if next_line.startswith("(as ") and next_line.endswith(")"):
+                    current_character = next_line[4:-1].strip() # Remove (as )
+                    i += 1
+            # The dialogue itself is picked up by step 4 below, one paragraph at a time.
+            continue
+
+        # 3. Section boundaries end the current speaker block:
+        # headings (.SEGMENT), transitions (> TRANSITION:) and page breaks (===).
+        if line.startswith((".", ">", "=")):
+            current_performer = None
+            current_character = None
+            i += 1
+            continue
+
+        # Standalone parentheticals are stage directions, e.g. (smooth; out of practice). Skip.
+        if line.startswith("(") and line.endswith(")"):
+            i += 1
+            continue
+
+        # 4. Dialogue paragraph. A speaker block may hold several paragraphs separated by
+        # blank lines; each one becomes its own dialogue item for the active speaker.
+        if current_performer:
+            dialogue_text = ""
+            while i < len(lines):
+                d_line = lines[i].strip()
+                if not d_line or d_line.isupper() or "[[" in d_line:
+                    break
+                dialogue_text += " " + d_line
+                i += 1
+
+            if dialogue_text:
+                parsed_items.append({
+                    "type": "dialogue",
+                    "speaker": f"{current_performer}::{current_character}",
+                    "text": dialogue_text.strip()
+                })
+            continue
+
+        # 5. Fallback or Skip (title page, action lines before any speaker)
         i += 1
         
     return parsed_items
